@@ -144,7 +144,6 @@ class InFlightExecutionRegistry:
             cls._instance._watcher_task.cancel()
         cls._instance = None
 
-
     def record_revoked_epoch(self, organization_id: str, epoch: int) -> None:
         """Record the latest revoked epoch for an organization to reject late registrations."""
         current = self._latest_revoked_epoch.get(organization_id, -1)
@@ -375,9 +374,17 @@ class InFlightExecutionRegistry:
 
     def count_unresolved(self, organization_id: str | None = None) -> int:
         """Count active unresolved containment failures, including unconfirmed remote workers."""
-        local_count = sum(1 for e in self._unresolved.values() if organization_id is None or e.organization_id == organization_id)
+        local_count = sum(
+            1
+            for e in self._unresolved.values()
+            if organization_id is None or e.organization_id == organization_id
+        )
         remote_active = _check_remote_worker_active(organization_id)
-        remote_ids = {r["execution_id"] for r in remote_active if r.get("execution_id") not in self._unresolved}
+        remote_ids = {
+            r["execution_id"]
+            for r in remote_active
+            if r.get("execution_id") not in self._unresolved
+        }
         return local_count + len(remote_ids)
 
     async def retry_unresolved(self, organization_id: str | None = None) -> list[str]:

@@ -83,6 +83,39 @@ class AuthorityResolver:
         principal = context.subject_id
         if not action.purpose or not action.purpose.strip():
             raise AuthorityDenied("PURPOSE_REQUIRED")
+
+        if hasattr(self.roots, "_engine"):
+            from sqlalchemy import select
+
+            from responsibleai.db.engine import trust_fabric_principals
+
+            async with self.roots._engine.raw.connect() as conn:
+                target_agent_id = action.agent.agent_id or principal
+                agent_row = (
+                    await conn.execute(
+                        select(trust_fabric_principals).where(
+                            trust_fabric_principals.c.id == target_agent_id,
+                            trust_fabric_principals.c.org_id == org,
+                        )
+                    )
+                ).fetchone()
+                if agent_row is not None:
+                    if agent_row.lifecycle_state != "ACTIVE":
+                        raise AuthorityDenied("PRINCIPAL_DISABLED")
+                    meta = json.loads(getattr(agent_row, "metadata_json", None) or "{}")
+                    app_id = meta.get("application_id")
+                    if app_id:
+                        app_row = (
+                            await conn.execute(
+                                select(trust_fabric_principals).where(
+                                    trust_fabric_principals.c.id == app_id,
+                                    trust_fabric_principals.c.org_id == org,
+                                )
+                            )
+                        ).fetchone()
+                        if app_row is not None and app_row.lifecycle_state != "ACTIVE":
+                            raise AuthorityDenied("APPLICATION_DISABLED")
+
         consent = await self.consents.get_latest_for_grantee(principal, organization_id=org)
         if (
             consent is None

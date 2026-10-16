@@ -49,8 +49,12 @@ async def create_owner_session(email: str, slug: str) -> tuple[str, str, str, st
 
 @pytest.mark.asyncio
 async def test_application_lifecycle_and_tenant_boundary(client):
-    own_org, own_token, own_user, own_csrf = await create_owner_session("app.owner@example.com", "app-own")
-    other_org, other_token, _, other_csrf = await create_owner_session("app.other@example.com", "app-other")
+    own_org, own_token, own_user, own_csrf = await create_owner_session(
+        "app.owner@example.com", "app-own"
+    )
+    other_org, other_token, _, other_csrf = await create_owner_session(
+        "app.other@example.com", "app-other"
+    )
 
     base = f"/api/enterprise/organizations/{own_org}/authority"
 
@@ -108,7 +112,9 @@ async def test_application_lifecycle_and_tenant_boundary(client):
 
 @pytest.mark.asyncio
 async def test_application_agent_association_and_cascading_disable(client):
-    own_org, own_token, _, own_csrf = await create_owner_session("assoc.owner@example.com", "assoc-own")
+    own_org, own_token, _, own_csrf = await create_owner_session(
+        "assoc.owner@example.com", "assoc-own"
+    )
     base = f"/api/enterprise/organizations/{own_org}/authority"
     client.cookies.set("wp_session", own_token)
     client.cookies.set("wp_csrf", own_csrf)
@@ -187,7 +193,9 @@ async def test_application_agent_association_and_cascading_disable(client):
 
 @pytest.mark.asyncio
 async def test_server_authoritative_capabilities(client):
-    own_org, own_token, _, own_csrf = await create_owner_session("caps.owner@example.com", "caps-own")
+    own_org, own_token, _, own_csrf = await create_owner_session(
+        "caps.owner@example.com", "caps-own"
+    )
     base = f"/api/enterprise/organizations/{own_org}/authority"
     client.cookies.set("wp_session", own_token)
     client.cookies.set("wp_csrf", own_csrf)
@@ -229,7 +237,9 @@ async def test_server_authoritative_capabilities(client):
         assert read_res.status_code == 200
         # Only session activity/audit updates permitted, no mutations to authority state
         assert all(
-            st.upper().startswith(("UPDATE WEB_SESSIONS SET LAST_SEEN_AT=", "INSERT INTO AUDIT_LOG ("))
+            st.upper().startswith(
+                ("UPDATE WEB_SESSIONS SET LAST_SEEN_AT=", "INSERT INTO AUDIT_LOG (")
+            )
             for st in writes
         ), writes
     finally:

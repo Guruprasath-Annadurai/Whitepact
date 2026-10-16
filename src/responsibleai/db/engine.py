@@ -2773,7 +2773,12 @@ authority_recovery_votes = Table(
     "authority_recovery_votes",
     metadata,
     Column("id", String(64), primary_key=True),
-    Column("request_id", String(64), ForeignKey("authority_recovery_requests.id", ondelete="CASCADE"), nullable=False),
+    Column(
+        "request_id",
+        String(64),
+        ForeignKey("authority_recovery_requests.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
     Column("voter_user_id", String(36), nullable=False),
     Column("decision", String(20), nullable=False),
     Column("action_digest", String(64), nullable=False),

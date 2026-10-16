@@ -35,12 +35,11 @@ async def webauthn_client(monkeypatch, tmp_path):
 async def create_user_session(email: str) -> tuple[str, str, str]:
     engine = get_enterprise_engine()
     identities = WebIdentityRepository(engine)
-    user_id, verification = await identities.register(
-        "Passkey User", email, "SecurePasskey123!@#"
-    )
+    user_id, verification = await identities.register("Passkey User", email, "SecurePasskey123!@#")
     await identities.verify_email(verification)
+    slug = f"passkey-org-{email.split('@')[0]}"
     org = await EnterpriseIAM(engine).create_workspace(
-        actor_user_id=user_id, name="Passkey Org", slug="passkey-org", kind="ORGANIZATION"
+        actor_user_id=user_id, name="Passkey Org", slug=slug, kind="ORGANIZATION"
     )
     token, csrf = await identities.create_session(user_id, org_id=org["id"])
     return user_id, token, csrf
@@ -75,7 +74,9 @@ async def test_dynamic_origin_binding_in_development(webauthn_client):
 
 @pytest.mark.asyncio
 async def test_configured_origin_takes_precedence(webauthn_client, monkeypatch):
-    monkeypatch.setattr(app_module.settings, "webauthn_origin", "https://auth.whitepact.example.com")
+    monkeypatch.setattr(
+        app_module.settings, "webauthn_origin", "https://auth.whitepact.example.com"
+    )
     monkeypatch.setattr(app_module.settings, "webauthn_rp_id", "whitepact.example.com")
 
     _, token, csrf = await create_user_session("pinned.passkey@example.com")
@@ -91,3 +92,53 @@ async def test_configured_origin_takes_precedence(webauthn_client, monkeypatch):
     # Explicitly configured origin overrides client header
     assert challenge["origin"] == "https://auth.whitepact.example.com"
     assert challenge["rpId"] == "whitepact.example.com"
+
+
+@pytest.mark.asyncio
+async def test_non_production_rejects_untrusted_external_origin_header(webauthn_client):
+    _, token, csrf = await create_user_session("hostile.origin@example.com")
+    webauthn_client.cookies.set("wp_session", token)
+    webauthn_client.cookies.set("wp_csrf", csrf)
+
+    res = await webauthn_client.post(
+        "/api/enterprise/passkeys/register/begin",
+        headers={"X-WhitePact-CSRF": csrf, "Origin": "https://evil.attacker.example"},
+    )
+    assert res.status_code == 400
+    assert res.json()["code"] == "WEBAUTHN_INVALID"
+
+
+@pytest.mark.asyncio
+async def test_production_ignores_forwarded_and_hostile_headers_and_enforces_rp_id(
+    webauthn_client, monkeypatch
+):
+    from responsibleai.enterprise.errors import EnterpriseError
+    from responsibleai.enterprise.security import router as sec_router
+
+    monkeypatch.setattr(app_module.settings, "environment", "production")
+    monkeypatch.setattr(app_module.settings, "allowed_origins", ["https://evil.example.com"])
+    monkeypatch.setattr(app_module.settings, "web_public_url", "https://evil.example.com")
+
+    # 1. Missing configured origin fails closed even when allowed_origins / web_public_url exist
+    monkeypatch.setattr(app_module.settings, "webauthn_origin", "")
+    monkeypatch.setattr(app_module.settings, "webauthn_rp_id", "app.example.com")
+    with pytest.raises(EnterpriseError):
+        sec_router._svc()
+
+    # 2. RP-ID mismatch with origin host fails closed
+    monkeypatch.setattr(app_module.settings, "webauthn_origin", "https://app.example.com")
+    monkeypatch.setattr(app_module.settings, "webauthn_rp_id", "other.example.com")
+    with pytest.raises(EnterpriseError):
+        sec_router._svc()
+
+    # 3. Loopback HTTPS or IP literal fails closed in production
+    monkeypatch.setattr(app_module.settings, "webauthn_origin", "https://localhost:3000")
+    monkeypatch.setattr(app_module.settings, "webauthn_rp_id", "localhost")
+    with pytest.raises(EnterpriseError):
+        sec_router._svc()
+
+    # 4. Path or query in configured origin fails closed
+    monkeypatch.setattr(app_module.settings, "webauthn_origin", "https://app.example.com/subpath")
+    monkeypatch.setattr(app_module.settings, "webauthn_rp_id", "app.example.com")
+    with pytest.raises(EnterpriseError):
+        sec_router._svc()

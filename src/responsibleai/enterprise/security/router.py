@@ -10,7 +10,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from responsibleai.enterprise.errors import EnterpriseError, unauthenticated
+from responsibleai.enterprise.errors import WEBAUTHN_INVALID, EnterpriseError, unauthenticated
 from responsibleai.enterprise.runtime import get_enterprise_engine
 from responsibleai.enterprise.security.policy import SensitiveAction
 from responsibleai.enterprise.security.service import IdentitySecurityService
@@ -83,6 +83,7 @@ def _error(exc: EnterpriseError, request: Request) -> JSONResponse:
     return JSONResponse(
         status_code=exc.http_status,
         content={
+            "code": exc.code,
             **exc.as_detail(),
             "status_code": exc.http_status,
             "request_id": getattr(request.state, "request_id", None),
@@ -90,50 +91,220 @@ def _error(exc: EnterpriseError, request: Request) -> JSONResponse:
     )
 
 
-def _svc(request: Request | None = None) -> IdentitySecurityService:
+def _is_loopback_host(hostname: str) -> bool:
+    return hostname in {"localhost", "127.0.0.1", "::1"} or hostname.endswith(".localhost")
+
+
+def _is_ip_literal(hostname: str) -> bool:
+    import ipaddress
+
+    try:
+        ipaddress.ip_address(hostname.strip("[]"))
+        return True
+    except ValueError:
+        return False
+
+
+def _validate_webauthn_origin_and_rp_id(
+    origin: str,
+    rp_id: str,
+    *,
+    production: bool,
+) -> tuple[str, str]:
+    from urllib.parse import urlparse
+
+    if not origin:
+        raise EnterpriseError(
+            WEBAUTHN_INVALID,
+            "WebAuthn origin must be explicitly configured.",
+            500,
+        )
+
+    parsed = urlparse(origin)
+    scheme = (parsed.scheme or "").lower()
+    hostname = (parsed.hostname or "").lower()
+
+    if production:
+        if scheme != "https":
+            raise EnterpriseError(
+                WEBAUTHN_INVALID,
+                "Production WebAuthn origin must use HTTPS.",
+                500,
+            )
+    else:
+        if scheme not in {"http", "https"}:
+            raise EnterpriseError(
+                WEBAUTHN_INVALID,
+                "WebAuthn origin must use HTTP or HTTPS.",
+                500,
+            )
+        if scheme == "http" and not _is_loopback_host(hostname):
+            raise EnterpriseError(
+                WEBAUTHN_INVALID,
+                "Plain HTTP WebAuthn origin is only permitted for local loopback hosts.",
+                500,
+            )
+
+    if (
+        not hostname
+        or not parsed.netloc
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.path not in {"", "/"}
+        or parsed.params
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise EnterpriseError(
+            WEBAUTHN_INVALID,
+            "WebAuthn origin must be a bare scheme://host[:port] origin without path, query, fragment, or credentials.",
+            500,
+        )
+
+    if production:
+        if _is_loopback_host(hostname) or _is_ip_literal(hostname):
+            raise EnterpriseError(
+                WEBAUTHN_INVALID,
+                "Production WebAuthn origin cannot be a loopback or IP literal.",
+                500,
+            )
+        if not rp_id:
+            raise EnterpriseError(
+                WEBAUTHN_INVALID,
+                "Production WebAuthn RP ID must be explicitly configured.",
+                500,
+            )
+    elif not rp_id:
+        rp_id = "localhost" if _is_loopback_host(hostname) else hostname
+
+    norm_rp_id = rp_id.strip().lower()
+    if not norm_rp_id or any(ch in norm_rp_id for ch in ("/", ":", "?", "#", "@", " ", "\t", "\n")):
+        raise EnterpriseError(
+            WEBAUTHN_INVALID,
+            "WebAuthn RP ID must be a valid bare domain name.",
+            500,
+        )
+
+    if production and (
+        _is_loopback_host(norm_rp_id) or _is_ip_literal(norm_rp_id) or "." not in norm_rp_id
+    ):
+        raise EnterpriseError(
+            WEBAUTHN_INVALID,
+            "Production WebAuthn RP ID must be a registrable domain name.",
+            500,
+        )
+
+    if not (not production and _is_loopback_host(hostname) and norm_rp_id == "localhost"):
+        if hostname != norm_rp_id and not hostname.endswith("." + norm_rp_id):
+            raise EnterpriseError(
+                WEBAUTHN_INVALID,
+                f"WebAuthn origin host '{hostname}' is not bound to RP ID '{norm_rp_id}'.",
+                500,
+            )
+
+    return f"{scheme}://{parsed.netloc}", norm_rp_id
+
+
+def resolve_webauthn_origin_and_rp_id(
+    request: Request | None = None,
+    *,
+    default_dev_origin: str = "http://localhost",
+) -> tuple[str, str]:
     import os
     from urllib.parse import urlparse
 
     from responsibleai.dashboard.app import settings
     from responsibleai.dashboard.config import is_production_environment
 
-    origin = (
+    production = is_production_environment(str(getattr(settings, "environment", ""))) or bool(
+        getattr(settings, "is_production", False)
+    )
+
+    configured_origin = str(
         getattr(settings, "webauthn_origin", "")
         or os.environ.get("WHITEPACT_WEBAUTHN_ORIGIN", "")
         or os.environ.get("WP_ORIGIN", "")
         or ""
-    )
-    rp_id = (
+    ).strip()
+    configured_rp_id = str(
         getattr(settings, "webauthn_rp_id", "")
         or os.environ.get("WHITEPACT_WEBAUTHN_RP_ID", "")
         or os.environ.get("WP_RP_ID", "")
         or ""
+    ).strip()
+
+    if production:
+        return _validate_webauthn_origin_and_rp_id(
+            configured_origin,
+            configured_rp_id,
+            production=True,
+        )
+
+    if configured_origin:
+        return _validate_webauthn_origin_and_rp_id(
+            configured_origin,
+            configured_rp_id,
+            production=False,
+        )
+
+    resolved_origin = default_dev_origin
+    if request is not None:
+        hdr_origin = (request.headers.get("origin") or "").strip()
+        if hdr_origin:
+            parsed_hdr = urlparse(hdr_origin)
+            hdr_host = (parsed_hdr.hostname or "").lower()
+            hdr_scheme = (parsed_hdr.scheme or "").lower()
+            if (
+                hdr_scheme not in {"http", "https"}
+                or not _is_loopback_host(hdr_host)
+                or parsed_hdr.username is not None
+                or parsed_hdr.password is not None
+                or parsed_hdr.path not in {"", "/"}
+                or parsed_hdr.params
+                or parsed_hdr.query
+                or parsed_hdr.fragment
+            ):
+                raise EnterpriseError(
+                    WEBAUTHN_INVALID,
+                    "Untrusted non-loopback WebAuthn request origin.",
+                    400,
+                )
+            resolved_origin = f"{hdr_scheme}://{parsed_hdr.netloc}"
+        else:
+            hdr_host_raw = (request.headers.get("host") or "").strip()
+            if hdr_host_raw:
+                parsed_host = urlparse(f"http://{hdr_host_raw}")
+                host_only = (parsed_host.hostname or "").lower()
+                if host_only not in {
+                    "localhost",
+                    "127.0.0.1",
+                    "::1",
+                    "testserver",
+                    "test",
+                } and not host_only.endswith(".localhost"):
+                    raise EnterpriseError(
+                        WEBAUTHN_INVALID,
+                        "Untrusted Host header for unconfigured WebAuthn origin.",
+                        400,
+                    )
+            base_candidate = str(request.base_url).rstrip("/")
+            if base_candidate:
+                parsed_base = urlparse(base_candidate)
+                base_host = (parsed_base.hostname or "").lower()
+                base_scheme = (parsed_base.scheme or "").lower()
+                if base_scheme in {"http", "https"} and _is_loopback_host(base_host):
+                    resolved_origin = f"{base_scheme}://{parsed_base.netloc}"
+
+    return _validate_webauthn_origin_and_rp_id(
+        resolved_origin,
+        configured_rp_id or "localhost",
+        production=False,
     )
 
-    if request is not None and not origin:
-        req_origin = request.headers.get("origin") or str(request.base_url).rstrip("/")
-        if req_origin:
-            parsed = urlparse(req_origin)
-            hostname = parsed.hostname or "localhost"
-            if not is_production_environment(settings.environment):
-                if hostname in {"localhost", "127.0.0.1", "::1"}:
-                    origin = f"{parsed.scheme}://{parsed.netloc}"
-                    if not rp_id:
-                        rp_id = "localhost"
-            else:
-                allowed = getattr(settings, "allowed_origins", [])
-                if req_origin in allowed or (parsed.netloc and parsed.netloc == urlparse(getattr(settings, "web_public_url", "")).netloc):
-                    origin = req_origin
-                    if not rp_id:
-                        rp_id = hostname
 
-    kwargs: dict[str, Any] = {}
-    if origin:
-        kwargs["origin"] = origin
-    if rp_id:
-        kwargs["rp_id"] = rp_id
-
-    return IdentitySecurityService(get_enterprise_engine(), **kwargs)
+def _svc(request: Request | None = None) -> IdentitySecurityService:
+    origin, rp_id = resolve_webauthn_origin_and_rp_id(request)
+    return IdentitySecurityService(get_enterprise_engine(), origin=origin, rp_id=rp_id)
 
 
 async def _session(request: Request):
@@ -157,7 +328,10 @@ async def passkey_register_begin(request: Request) -> Any:
     try:
         _token, _csrf, assurance = await _session(request)
         return await _svc(request).begin_webauthn(
-            user_id=assurance.user_id, session_id=assurance.session_id, ceremony="register"
+            user_id=assurance.user_id,
+            session_id=assurance.session_id,
+            ceremony="register",
+            org_id=assurance.org_id,
         )
     except EnterpriseError as exc:
         return _error(exc, request)
@@ -178,12 +352,19 @@ async def passkey_register_finish(request: Request, body: PasskeyFinishBody) -> 
         )
     except EnterpriseError as exc:
         return _error(exc, request)
+    except Exception:
+        import traceback
+
+        traceback.print_exc()
+        raise
 
 
 @router.post("/passkeys/authenticate/begin")
 async def passkey_auth_begin(request: Request) -> Any:
     try:
-        return await _svc(request).begin_webauthn(user_id=None, session_id=None, ceremony="authenticate")
+        return await _svc(request).begin_webauthn(
+            user_id=None, session_id=None, ceremony="authenticate"
+        )
     except EnterpriseError as exc:
         return _error(exc, request)
 
@@ -191,13 +372,60 @@ async def passkey_auth_begin(request: Request) -> Any:
 @router.post("/passkeys/authenticate/finish")
 async def passkey_auth_finish(request: Request, body: PasskeyFinishBody) -> Any:
     try:
-        token, _csrf, assurance = await _svc(request).authenticate_passkey(
+        prior_token = request.cookies.get("wp_session", "")
+        prior_org_id = None
+        rotate_from = None
+        if prior_token:
+            try:
+                raw_tok = (
+                    prior_token
+                    if "." in prior_token
+                    else f"{prior_token}.{request.cookies.get('wp_csrf', '')}"
+                )
+                _, _, prior_session = await _svc(request).load_session(raw_tok)
+                prior_org_id = prior_session.org_id
+                rotate_from = prior_token.partition(".")[0]
+            except Exception:
+                pass
+
+        token, csrf, assurance = await _svc(request).authenticate_passkey(
             client_data_b64=body.client_data_json,
             authenticator_data_b64=body.authenticator_data,
             signature_b64=body.signature or "",
             credential_id=body.credential_id or "",
+            org_id=prior_org_id,
+            rotate_from=rotate_from,
         )
-        return {"status": "AUTHENTICATED", "assurance": assurance.level, "session_token": token}
+        response = JSONResponse(
+            content={
+                "status": "AUTHENTICATED",
+                "assurance": assurance.level,
+                "session_token": token,
+            }
+        )
+        from responsibleai.dashboard.app import settings
+
+        max_age = int(getattr(settings, "web_session_ttl_hours", 12)) * 3600
+        secure = bool(getattr(settings, "web_session_secure", False))
+        response.set_cookie(
+            "wp_session",
+            token,
+            max_age=max_age,
+            httponly=True,
+            secure=secure,
+            samesite="lax",
+            path="/",
+        )
+        response.set_cookie(
+            "wp_csrf",
+            csrf,
+            max_age=max_age,
+            httponly=False,
+            secure=secure,
+            samesite="strict",
+            path="/",
+        )
+        return response
     except EnterpriseError as exc:
         return _error(exc, request)
 
