@@ -9,6 +9,7 @@ re-authorization, and cascading revocation.
 
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -17,6 +18,14 @@ from responsibleai.db import (
     DelegationEscalationError,
     DelegationRepository,
     create_engine,
+)
+from responsibleai.governance import (
+    ActionRequest,
+    AgentContext,
+    AuthorityContext,
+    GovernanceDecision,
+    IdentityContext,
+    WhitePactRuntimeGateway,
 )
 from responsibleai.governance.delegation import DelegationRecord
 
@@ -463,3 +472,154 @@ class TestExplainAuthority:
         await repo.revoke_branch("org-1", "agent-1", revoked_by="owner-1", reason="done")
         explanation = await repo.explain_authority("org-1", "agent-1")
         assert explanation["currently_active"] is False
+
+
+class TestMemoryScopeDelegationPath:
+    """A denied memory-scope delegation must not become executable authority."""
+
+    async def _root(self, repo: DelegationRepository, scope: str = "org:acme") -> None:
+        await repo.grant(
+            "org-1",
+            "manager-1",
+            granted_action_types=frozenset({"mcp_tool_call"}),
+            constraints={"memory_scope": scope},
+            purpose="tenant memory root",
+            granted_by="owner-1",
+        )
+
+    async def _delegate(self, repo: DelegationRepository, identity: str, scope: object) -> object:
+        return await repo.grant(
+            "org-1",
+            identity,
+            granted_action_types=frozenset({"mcp_tool_call"}),
+            constraints={"memory_scope": scope},
+            purpose="child memory grant",
+            granted_by="manager-1",
+            from_identity_id="manager-1",
+        )
+
+    async def test_widened_scope_is_not_stored_or_executable(self, repo) -> None:
+        await self._root(repo)
+        with pytest.raises(DelegationEscalationError, match="memory_scope"):
+            await self._delegate(repo, "agent-evil", "org")
+        assert await repo.get_latest_delegation("org-1", "agent-evil") is None
+        assert await repo.get_effective_authority("org-1", "agent-evil") is None
+        parent = await repo.get_active_delegation("org-1", "manager-1")
+        assert parent is not None
+        forged = AuthorityContext(
+            delegated_by="manager-1",
+            granted_action_types=frozenset({"mcp_tool_call"}),
+            constraints={"memory_scope": "org"},
+        )
+        identity = IdentityContext(identity_id="agent-evil", kind="api_key", org_id="org-1")
+        action = ActionRequest(
+            agent=AgentContext(identity=identity, framework="test"),
+            action_type="mcp_tool_call",
+            target="memory",
+            arguments={"memory_scope": "org:other"},
+        )
+        result = WhitePactRuntimeGateway().evaluate(
+            action, forged, parent_authority=parent.to_authority_context()
+        )
+        assert result.decision == GovernanceDecision.DENY
+        assert result.reason_codes[0].startswith("DELEGATION_AUTHORITY_ESCALATION")
+        with pytest.raises(DelegationEscalationError):
+            await repo.grant(
+                "org-1",
+                "agent-next",
+                granted_action_types=frozenset({"mcp_tool_call"}),
+                constraints={"memory_scope": "org:acme:bot"},
+                purpose="hop from a grant that was never stored",
+                granted_by="agent-evil",
+                from_identity_id="agent-evil",
+            )
+
+    @pytest.mark.parametrize(
+        ("scope", "allowed"),
+        [
+            ("org:acme", True),
+            ("org:acme:agent:bot1", True),
+            ("org:acme:b", True),
+            ("org:other", False),
+            ("org:acmeb", False),
+            ("org:acme2", False),
+            ("", False),
+            (None, False),
+            (1, False),
+            (["org:acme"], False),
+        ],
+    )
+    async def test_scope_matrix_persists_only_attenuated_grants(self, repo, scope, allowed) -> None:
+        await self._root(repo)
+        identity = f"agent-{allowed}-{scope!r}"
+        if allowed:
+            record = await self._delegate(repo, identity, scope)
+            assert record.to_identity_id == identity
+            stored = await repo.get_effective_authority("org-1", identity)
+            assert stored is not None
+            assert stored.constraints["memory_scope"] == scope
+        else:
+            with pytest.raises(DelegationEscalationError):
+                await self._delegate(repo, identity, scope)
+            assert await repo.get_effective_authority("org-1", identity) is None
+
+    async def test_missing_memory_scope_key_is_denied(self, repo) -> None:
+        await self._root(repo)
+        with pytest.raises(DelegationEscalationError, match="memory_scope"):
+            await repo.grant(
+                "org-1",
+                "agent-missing",
+                granted_action_types=frozenset({"mcp_tool_call"}),
+                constraints={},
+                purpose="drop the parent memory constraint",
+                granted_by="manager-1",
+                from_identity_id="manager-1",
+            )
+        assert await repo.get_effective_authority("org-1", "agent-missing") is None
+
+    async def test_multi_hop_cannot_widen_back_to_an_ancestor_scope(self, repo) -> None:
+        await self._root(repo, "org:acme")
+        await self._delegate(repo, "team-1", "org:acme:team")
+        with pytest.raises(DelegationEscalationError, match="memory_scope"):
+            await repo.grant(
+                "org-1",
+                "agent-wide",
+                granted_action_types=frozenset({"mcp_tool_call"}),
+                constraints={"memory_scope": "org:acme"},
+                purpose="widen relative to the immediate parent",
+                granted_by="team-1",
+                from_identity_id="team-1",
+            )
+        narrowed = await repo.grant(
+            "org-1",
+            "agent-bot",
+            granted_action_types=frozenset({"mcp_tool_call"}),
+            constraints={"memory_scope": "org:acme:team:bot"},
+            purpose="narrower third hop",
+            granted_by="team-1",
+            from_identity_id="team-1",
+        )
+        assert narrowed.from_identity_id == "team-1"
+        chain = await repo.get_authority_chain("org-1", "agent-bot")
+        assert [item.to_identity_id for item in chain] == ["manager-1", "team-1", "agent-bot"]
+        assert await repo.get_effective_authority("org-1", "agent-wide") is None
+
+    async def test_concurrent_widen_does_not_persist(self, repo) -> None:
+        await self._root(repo)
+
+        async def attempt(identity: str, scope: str) -> str:
+            try:
+                await self._delegate(repo, identity, scope)
+            except DelegationEscalationError:
+                return "denied"
+            return "granted"
+
+        results = await asyncio.gather(
+            attempt("agent-wide", "org"),
+            attempt("agent-narrow", "org:acme:bot"),
+        )
+        assert sorted(results) == ["denied", "granted"]
+        assert await repo.get_effective_authority("org-1", "agent-wide") is None
+        stored = await repo.get_effective_authority("org-1", "agent-narrow")
+        assert stored is not None
+        assert stored.constraints["memory_scope"] == "org:acme:bot"

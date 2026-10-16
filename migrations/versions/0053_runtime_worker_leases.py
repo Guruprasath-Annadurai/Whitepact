@@ -158,12 +158,8 @@ def downgrade() -> None:
     op.drop_index("idx_outbox_status_created", table_name="runtime_execution_dispatch_outbox")
     op.drop_index("idx_outbox_active_attempt", table_name="runtime_execution_dispatch_outbox")
     op.drop_table("runtime_execution_dispatch_outbox")
-    op.drop_index(
-        "idx_runtime_worker_leases_generation", table_name="runtime_worker_leases"
-    )
-    op.drop_index(
-        "idx_runtime_worker_leases_active_execution", table_name="runtime_worker_leases"
-    )
+    op.drop_index("idx_runtime_worker_leases_generation", table_name="runtime_worker_leases")
+    op.drop_index("idx_runtime_worker_leases_active_execution", table_name="runtime_worker_leases")
     if bind.dialect.name == "postgresql":
         op.drop_index("idx_runtime_worker_leases_reaper", table_name="runtime_worker_leases")
     op.drop_table("runtime_worker_leases")

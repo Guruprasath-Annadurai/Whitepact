@@ -111,6 +111,7 @@ from responsibleai.sovereign.simulation import (
 from responsibleai.sovereign.sources import SovereignCanonicalStore
 from responsibleai.sovereign.trace_builder import build_trace_from_evidence
 from responsibleai.sovereign.xray_builder import build_repository_xray
+from tests.step_up_helpers import valid_totp_code
 
 TEST_GOVERNANCE_PURPOSE = "batch15-coverage"
 
@@ -595,35 +596,42 @@ class TestStepUpBatch15:
             )
         assert exc.value.required_nonce.startswith("wp_nonce_")
 
-    async def test_invalid_auth_time_rejected(self, engine) -> None:
+    async def test_client_supplied_auth_time_is_ignored(self, engine) -> None:
+        """Freshness is server-derived, so a garbage client auth_time neither helps nor hurts."""
         verifier = StepUpVerifier(engine)
         nonce = await verifier.issue_step_up_nonce(org_id="org-1", principal_id="p-1", action="A")
         proof = StepUpProof(
             nonce=nonce,
             method=StepUpMethod.MFA_TOTP,
             auth_time="not-a-timestamp",
-            token_or_code="123456",
+            token_or_code=await valid_totp_code(engine, "org-1", "p-1"),
         )
-        with pytest.raises(StepUpVerificationFailedError, match="Invalid auth_time"):
-            await verifier.verify_and_consume_step_up(
-                org_id="org-1",
-                principal_id="p-1",
-                action="A",
-                risk_tier=PrivilegeRiskTier.PRIVILEGED_HIGH,
-                proof=proof,
-            )
+        assert await verifier.verify_and_consume_step_up(
+            org_id="org-1",
+            principal_id="p-1",
+            action="A",
+            risk_tier=PrivilegeRiskTier.PRIVILEGED_HIGH,
+            proof=proof,
+        )
 
-    async def test_stale_auth_time_for_critical_window(self, engine) -> None:
+    async def test_stale_challenge_for_critical_window(self, engine) -> None:
+        """A CRITICAL step-up must be completed within 5 minutes of the server issuing the challenge."""
+        from sqlalchemy import update
+
+        from responsibleai.db.engine import iam_step_up_nonces
+
         verifier = StepUpVerifier(engine)
         nonce = await verifier.issue_step_up_nonce(org_id="org-1", principal_id="p-1", action="A")
         old = (datetime.now(UTC) - timedelta(minutes=10)).isoformat()
+        async with engine.raw.begin() as conn:
+            await conn.execute(update(iam_step_up_nonces).values(created_at=old))
         proof = StepUpProof(
             nonce=nonce,
             method=StepUpMethod.MFA_TOTP,
-            auth_time=old,
-            token_or_code="123456",
+            auth_time=datetime.now(UTC).isoformat(),  # a fresh-looking client claim changes nothing
+            token_or_code=await valid_totp_code(engine, "org-1", "p-1"),
         )
-        with pytest.raises(StepUpVerificationFailedError, match="freshness window"):
+        with pytest.raises(StepUpVerificationFailedError, match="older than 300s"):
             await verifier.verify_and_consume_step_up(
                 org_id="org-1",
                 principal_id="p-1",
@@ -644,7 +652,7 @@ class TestStepUpBatch15:
             nonce=nonce,
             method=StepUpMethod.MFA_TOTP,
             auth_time=datetime.now(UTC).isoformat(),
-            token_or_code="123456",
+            token_or_code=await valid_totp_code(engine, "org-1", "p-1"),
         )
         with pytest.raises(StepUpVerificationFailedError, match="target resource mismatch"):
             await verifier.verify_and_consume_step_up(
@@ -665,7 +673,7 @@ class TestStepUpBatch15:
             auth_time=datetime.now(UTC).isoformat(),
             token_or_code="unsupported_stub",
         )
-        with pytest.raises(StepUpVerificationFailedError, match="Unsupported WebAuthn"):
+        with pytest.raises(StepUpVerificationFailedError, match="not supported"):
             await verifier.verify_and_consume_step_up(
                 org_id="org-1",
                 principal_id="p-1",
@@ -683,7 +691,7 @@ class TestStepUpBatch15:
             auth_time=datetime.now(UTC).isoformat(),
             token_or_code="short",
         )
-        with pytest.raises(StepUpVerificationFailedError, match="Invalid OIDC"):
+        with pytest.raises(StepUpVerificationFailedError, match="not supported"):
             await verifier.verify_and_consume_step_up(
                 org_id="org-1",
                 principal_id="p-1",
@@ -741,7 +749,7 @@ class TestGuardBatch15:
             ),
             method=StepUpMethod.MFA_TOTP,
             auth_time=datetime.now(UTC).isoformat(),
-            token_or_code="123456",
+            token_or_code=await valid_totp_code(guard_db, "org_alpha", "admin_alpha"),
         )
         with pytest.raises(PrivilegedAccessDeniedError, match="not authorized by JIT"):
             await guard.authorize_privileged_operation(
@@ -783,7 +791,7 @@ class TestGuardBatch15:
             ),
             method=StepUpMethod.MFA_TOTP,
             auth_time=datetime.now(UTC).isoformat(),
-            token_or_code="123456",
+            token_or_code=await valid_totp_code(guard_db, "org_alpha", "admin_alpha"),
         )
         with pytest.raises(PrivilegedAccessDeniedError, match="action mismatch"):
             await guard.authorize_privileged_operation(
@@ -827,7 +835,7 @@ class TestGuardBatch15:
             ),
             method=StepUpMethod.MFA_TOTP,
             auth_time=datetime.now(UTC).isoformat(),
-            token_or_code="123456",
+            token_or_code=await valid_totp_code(guard_db, "org_alpha", "admin_alpha"),
         )
         with pytest.raises(PrivilegedAccessDeniedError, match="Sovereign Root"):
             await guard.authorize_privileged_operation(

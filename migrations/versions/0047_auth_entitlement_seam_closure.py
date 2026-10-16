@@ -23,19 +23,21 @@ depends_on: str | Sequence[str] | None = None
 def upgrade() -> None:
     # 1. Add Paddle and Entitlement columns to organizations table
     op.add_column("organizations", sa.Column("paddle_customer_id", sa.String(64), nullable=True))
-    op.add_column("organizations", sa.Column("paddle_subscription_id", sa.String(64), nullable=True))
+    op.add_column(
+        "organizations", sa.Column("paddle_subscription_id", sa.String(64), nullable=True)
+    )
     op.add_column(
         "organizations",
         sa.Column("entitlement_version", sa.Integer(), nullable=False, server_default="0"),
     )
-    op.add_column("organizations", sa.Column("entitlement_updated_at", sa.String(32), nullable=True))
-    op.add_column("organizations", sa.Column("paddle_last_occurred_at", sa.String(36), nullable=True))
-    op.create_index(
-        "idx_org_paddle_customer", "organizations", ["paddle_customer_id"], unique=True
+    op.add_column(
+        "organizations", sa.Column("entitlement_updated_at", sa.String(32), nullable=True)
     )
-    op.create_index(
-        "idx_org_paddle_subscription", "organizations", ["paddle_subscription_id"]
+    op.add_column(
+        "organizations", sa.Column("paddle_last_occurred_at", sa.String(36), nullable=True)
     )
+    op.create_index("idx_org_paddle_customer", "organizations", ["paddle_customer_id"], unique=True)
+    op.create_index("idx_org_paddle_subscription", "organizations", ["paddle_subscription_id"])
 
     # 2. Add session_id column to iam_step_up_nonces for authenticated-session binding
     op.add_column("iam_step_up_nonces", sa.Column("session_id", sa.String(128), nullable=True))
@@ -44,7 +46,12 @@ def upgrade() -> None:
     op.create_table(
         "web_identity_providers",
         sa.Column("id", sa.String(36), primary_key=True),
-        sa.Column("user_id", sa.String(36), sa.ForeignKey("web_users.id", ondelete="CASCADE"), nullable=False),
+        sa.Column(
+            "user_id",
+            sa.String(36),
+            sa.ForeignKey("web_users.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
         sa.Column("issuer", sa.String(512), nullable=False),
         sa.Column("subject", sa.String(255), nullable=False),
         sa.Column("email_at_link", sa.String(254), nullable=True),
@@ -58,11 +65,26 @@ def upgrade() -> None:
         "web_invitations",
         sa.Column("id", sa.String(36), primary_key=True),
         sa.Column("token_hash", sa.String(64), nullable=False, unique=True),
-        sa.Column("org_id", sa.String(36), sa.ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False),
+        sa.Column(
+            "org_id",
+            sa.String(36),
+            sa.ForeignKey("organizations.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
         sa.Column("email", sa.String(254), nullable=False),
         sa.Column("role", sa.String(20), nullable=False),
-        sa.Column("invited_by_user_id", sa.String(36), sa.ForeignKey("web_users.id", ondelete="RESTRICT"), nullable=False),
-        sa.Column("accepted_by_user_id", sa.String(36), sa.ForeignKey("web_users.id", ondelete="SET NULL"), nullable=True),
+        sa.Column(
+            "invited_by_user_id",
+            sa.String(36),
+            sa.ForeignKey("web_users.id", ondelete="RESTRICT"),
+            nullable=False,
+        ),
+        sa.Column(
+            "accepted_by_user_id",
+            sa.String(36),
+            sa.ForeignKey("web_users.id", ondelete="SET NULL"),
+            nullable=True,
+        ),
         sa.Column("status", sa.String(24), nullable=False, server_default="PENDING"),
         sa.Column("created_at", sa.String(32), nullable=False),
         sa.Column("expires_at", sa.String(32), nullable=False),

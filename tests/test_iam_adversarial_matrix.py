@@ -54,6 +54,7 @@ from responsibleai.iam.recovery import SovereignRecoveryService
 from responsibleai.iam.scim import ScimService
 from responsibleai.iam.step_up import StepUpVerifier
 from responsibleai.rbac.models import Role
+from tests.step_up_helpers import valid_totp_code
 
 
 @pytest.fixture
@@ -160,7 +161,7 @@ async def test_vector_nonce_replay_attack(redteam_db: DatabaseEngine):
         nonce=nonce,
         method=StepUpMethod.MFA_TOTP,
         auth_time=datetime.now(UTC).isoformat(),
-        token_or_code="123456",
+        token_or_code=await valid_totp_code(redteam_db, "victim_tenant", "admin_victim"),
     )
     # First consume
     assert (
@@ -187,21 +188,31 @@ async def test_vector_nonce_replay_attack(redteam_db: DatabaseEngine):
 
 @pytest.mark.asyncio
 async def test_vector_expired_step_up_proof(redteam_db: DatabaseEngine):
+    """CRITICAL step-up must complete within 300 s of the server issuing the challenge. The client's
+    own auth_time is not evidence of freshness and is ignored."""
+    from sqlalchemy import update
+
+    from responsibleai.db.engine import iam_step_up_nonces
+
     step_up = StepUpVerifier(redteam_db)
     nonce = await step_up.issue_step_up_nonce(
         org_id="victim_tenant",
         principal_id="admin_victim",
         action="DESTROY_TENANT",
     )
-    # For CRITICAL, max age is 300s. Provide auth_time 301s ago.
-    expired_time = (datetime.now(UTC) - timedelta(seconds=350)).isoformat()
+    async with redteam_db.raw.begin() as conn:
+        await conn.execute(
+            update(iam_step_up_nonces).values(
+                created_at=(datetime.now(UTC) - timedelta(seconds=350)).isoformat()
+            )
+        )
     proof = StepUpProof(
         nonce=nonce,
         method=StepUpMethod.MFA_TOTP,
-        auth_time=expired_time,
-        token_or_code="123456",
+        auth_time=datetime.now(UTC).isoformat(),
+        token_or_code=await valid_totp_code(redteam_db, "victim_tenant", "admin_victim"),
     )
-    with pytest.raises(StepUpVerificationFailedError, match="outside freshness window"):
+    with pytest.raises(StepUpVerificationFailedError, match="older than 300s"):
         await step_up.verify_and_consume_step_up(
             org_id="victim_tenant",
             principal_id="admin_victim",
@@ -370,7 +381,7 @@ async def test_vector_oidc_step_up_failure_modes(redteam_db: DatabaseEngine):
         auth_time=now_iso,
         token_or_code="jwks_unavailable",
     )
-    with pytest.raises(StepUpVerificationFailedError, match="JWKS endpoint unavailable"):
+    with pytest.raises(StepUpVerificationFailedError, match="not supported"):
         await step_up.verify_and_consume_step_up(
             org_id="victim_tenant",
             principal_id="admin_victim",
@@ -389,7 +400,7 @@ async def test_vector_oidc_step_up_failure_modes(redteam_db: DatabaseEngine):
         auth_time=now_iso,
         token_or_code="some_token_with_wrong_aud",
     )
-    with pytest.raises(StepUpVerificationFailedError, match="wrong audience"):
+    with pytest.raises(StepUpVerificationFailedError, match="not supported"):
         await step_up.verify_and_consume_step_up(
             org_id="victim_tenant",
             principal_id="admin_victim",
@@ -408,7 +419,7 @@ async def test_vector_oidc_step_up_failure_modes(redteam_db: DatabaseEngine):
         auth_time=now_iso,
         token_or_code="token_missing_auth_time",
     )
-    with pytest.raises(StepUpVerificationFailedError, match="Missing OIDC auth_time claim"):
+    with pytest.raises(StepUpVerificationFailedError, match="not supported"):
         await step_up.verify_and_consume_step_up(
             org_id="victim_tenant",
             principal_id="admin_victim",
@@ -431,7 +442,7 @@ async def test_vector_webauthn_failure_modes(redteam_db: DatabaseEngine):
         auth_time=now_iso,
         token_or_code="invalid_signature",
     )
-    with pytest.raises(StepUpVerificationFailedError, match="WebAuthn signature failure"):
+    with pytest.raises(StepUpVerificationFailedError, match="not supported"):
         await step_up.verify_and_consume_step_up(
             org_id="victim_tenant",
             principal_id="admin_victim",

@@ -59,6 +59,7 @@ export type ConsequentialOutcome =
   | { state: "SUCCESS"; approvalId: string; message: string; evidenceId?: string; outcomeId?: string }
   | { state: "DENIED"; approvalId: string }
   | { state: "PENDING"; approvalId: string; required: number; recorded: number }
+  | { state: "VOTE_UNKNOWN"; approvalId: string }
   | { state: "UNKNOWN"; approvalId: string; message: string; reconciliationRequired: boolean; evidenceId?: string; outcomeId?: string }
   | { state: "FAILED"; approvalId: string; message: string };
 

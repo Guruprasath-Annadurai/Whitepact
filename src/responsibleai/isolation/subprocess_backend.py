@@ -135,7 +135,83 @@ if __name__ == "__main__":
                 preexec_fn=_apply_resource_limits,
             )
 
+            from responsibleai.isolation.in_flight import InFlightExecutionRegistry
+
+            registry = InFlightExecutionRegistry.get_instance()
+            execution_id = f"subproc_{request.organization_id}_{request.action_id}"
+
+            async def _terminate_subprocess() -> bool:
+                if proc.returncode is not None:
+                    return True
+                kill_err: Exception | None = None
+                try:
+                    os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+                except Exception as exc:
+                    kill_err = exc
+                    try:
+                        proc.kill()
+                        kill_err = None
+                    except Exception as exc2:
+                        kill_err = exc2
+
+                # Allow the event loop to run child watcher and reap process
+                for _ in range(5):
+                    await asyncio.sleep(0.02)
+                    if proc.returncode is not None:
+                        return True
+                    try:
+                        wpid, _ = os.waitpid(proc.pid, os.WNOHANG)
+                        if wpid == proc.pid:
+                            return True
+                    except ChildProcessError:
+                        return True
+
+                # On Linux, inspect /proc status to recognize zombie or dead states
+                if os.path.exists(f"/proc/{proc.pid}/status"):
+                    try:
+                        with open(f"/proc/{proc.pid}/status") as f:
+                            for line in f:
+                                if line.startswith("State:") and ("Z" in line or "X" in line):
+                                    return True
+                    except Exception:
+                        return True
+
+                try:
+                    os.kill(proc.pid, 0)
+                    raise RuntimeError(
+                        f"Subprocess pid {proc.pid} still alive after SIGKILL (initial error: {kill_err})"
+                    )
+                except ProcessLookupError:
+                    return True
+                except Exception as exc:
+                    if isinstance(exc, RuntimeError):
+                        raise
+                    raise RuntimeError(
+                        f"Failed to confirm subprocess pid {proc.pid} termination: {exc}"
+                    ) from exc
+
+            try:
+                await registry.register(
+                    execution_id=execution_id,
+                    organization_id=request.organization_id,
+                    action_id=request.action_id,
+                    task=asyncio.current_task(),
+                    terminate_callback=_terminate_subprocess,
+                    admission_epoch=request.admission_epoch,
+                )
+            except PermissionError as exc:
+                return ExecutionOutcome(
+                    action_id=request.action_id,
+                    exit_code=-9,
+                    result_payload=None,
+                    stdout="",
+                    stderr=str(exc),
+                    duration_seconds=time.monotonic() - start_time,
+                    violation=f"Execution authorization revoked in-flight: {exc}",
+                )
+
             timed_out = False
+            revoked_in_flight = False
             stdout_data = b""
             stderr_data = b""
             try:
@@ -154,6 +230,18 @@ if __name__ == "__main__":
                     except Exception:
                         pass
                 await proc.wait()
+            except asyncio.CancelledError:
+                revoked_in_flight = True
+                try:
+                    os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+                except Exception:
+                    try:
+                        proc.kill()
+                    except Exception:
+                        pass
+                await proc.wait()
+            finally:
+                await registry.unregister(execution_id)
 
             duration = time.monotonic() - start_time
 
@@ -169,6 +257,9 @@ if __name__ == "__main__":
             if timed_out:
                 violation = f"Wall timeout of {limits.wall_timeout_seconds}s exceeded"
                 exit_code = -signal.SIGKILL
+            elif revoked_in_flight:
+                violation = "Execution revoked in-flight: subprocess terminated immediately"
+                exit_code = -signal.SIGTERM
             elif exit_code == 0:
                 try:
                     parsed = json.loads(stdout_str)

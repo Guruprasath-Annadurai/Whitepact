@@ -10,6 +10,7 @@ org's policy rule set it was evaluated against -- only that "a Policy"
 was or wasn't consulted. See governance/policy.py's Policy.version and
 db/policy_repository.py's version bump on every mutation.
 """
+
 from __future__ import annotations
 
 from collections.abc import Sequence

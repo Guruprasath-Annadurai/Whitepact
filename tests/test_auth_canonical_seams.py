@@ -59,8 +59,19 @@ from responsibleai.iam.errors import (
 from responsibleai.iam.models import StepUpProof
 from responsibleai.iam.step_up import StepUpVerifier
 from responsibleai.rbac.models import Plan
+from tests.step_up_helpers import valid_human_totp_code, valid_totp_code
 
 # ── Fixtures & Helpers ────────────────────────────────────────────────────────
+
+
+async def _totp_for_current_user(web_client: AsyncClient) -> str:
+    """A real, unused TOTP code for the signed-in web user (enrolling a factor if needed)."""
+
+    me = await web_client.get("/api/web/session")
+    assert me.status_code == 200, me.text
+    return await valid_human_totp_code(
+        app_module._ready(app_module._db_engine), me.json()["user"]["id"]
+    )
 
 
 @pytest.fixture()
@@ -173,7 +184,7 @@ class TestStepUpAndPrivilegedOperations:
             nonce=nonce,
             method=StepUpMethod.MFA_TOTP,
             auth_time=datetime.now(UTC).isoformat(),
-            token_or_code="123456",
+            token_or_code=await valid_totp_code(db_engine, "org_test", "user_1"),
         )
 
         # First consumption must succeed
@@ -209,7 +220,7 @@ class TestStepUpAndPrivilegedOperations:
             nonce=nonce,
             method=StepUpMethod.MFA_TOTP,
             auth_time=datetime.now(UTC).isoformat(),
-            token_or_code="123456",
+            token_or_code=await valid_totp_code(db_engine, "org_test", "user_1"),
         )
 
         # Presented for a different action -> must fail
@@ -235,7 +246,7 @@ class TestStepUpAndPrivilegedOperations:
             nonce=nonce,
             method=StepUpMethod.MFA_TOTP,
             auth_time=datetime.now(UTC).isoformat(),
-            token_or_code="123456",
+            token_or_code=await valid_totp_code(db_engine, "org_test", "user_1"),
         )
 
         with pytest.raises(StepUpVerificationFailedError, match="expired"):
@@ -261,7 +272,7 @@ class TestStepUpAndPrivilegedOperations:
             nonce=nonce,
             method=StepUpMethod.MFA_TOTP,
             auth_time=datetime.now(UTC).isoformat(),
-            token_or_code="123456",
+            token_or_code=await valid_totp_code(db_engine, "org_test", "user_1"),
         )
 
         success = await verifier.verify_and_consume_step_up(
@@ -288,7 +299,7 @@ class TestStepUpAndPrivilegedOperations:
             nonce=nonce,
             method=StepUpMethod.MFA_TOTP,
             auth_time=datetime.now(UTC).isoformat(),
-            token_or_code="123456",
+            token_or_code=await valid_totp_code(db_engine, "org_test", "user_1"),
         )
 
         cross_session_successes = 0
@@ -320,7 +331,7 @@ class TestStepUpAndPrivilegedOperations:
             nonce=nonce,
             method=StepUpMethod.MFA_TOTP,
             auth_time=datetime.now(UTC).isoformat(),
-            token_or_code="123456",
+            token_or_code=await valid_totp_code(db_engine, "org_test", "user_1"),
         )
 
         wrong_principal_successes = 0
@@ -351,7 +362,7 @@ class TestStepUpAndPrivilegedOperations:
             nonce=nonce,
             method=StepUpMethod.MFA_TOTP,
             auth_time=datetime.now(UTC).isoformat(),
-            token_or_code="123456",
+            token_or_code=await valid_totp_code(db_engine, "org_1", "user_1"),
         )
 
         wrong_tenant_successes = 0
@@ -419,7 +430,7 @@ class TestStepUpAndPrivilegedOperations:
             nonce=nonce,
             method=StepUpMethod.MFA_TOTP,
             auth_time=now_iso,
-            token_or_code="123456",
+            token_or_code=await valid_totp_code(db_engine, "org_test", "user_sess_rev"),
         )
 
         with pytest.raises(StepUpVerificationFailedError, match="revoked or expired"):
@@ -449,7 +460,7 @@ class TestStepUpAndPrivilegedOperations:
             nonce=nonce,
             method=StepUpMethod.MFA_TOTP,
             auth_time=datetime.now(UTC).isoformat(),
-            token_or_code="123456",
+            token_or_code=await valid_totp_code(db_engine, "org_test", "user_1"),
         )
 
         with pytest.raises(StepUpVerificationFailedError, match="session mismatch"):
@@ -542,7 +553,7 @@ class TestStepUpAndPrivilegedOperations:
                 "X-WP-CSRF": csrf_owner,
                 "X-Step-Up-Nonce": nonce2,
                 "X-Step-Up-Method": "mfa_totp",
-                "X-Step-Up-Token": "123456",
+                "X-Step-Up-Token": await _totp_for_current_user(web_client),
             },
             json=transfer_req,
         )
@@ -601,7 +612,7 @@ class TestStepUpAndPrivilegedOperations:
                 "X-WP-CSRF": csrf,
                 "X-Step-Up-Nonce": nonce,
                 "X-Step-Up-Method": "mfa_totp",
-                "X-Step-Up-Token": "123456",
+                "X-Step-Up-Token": await _totp_for_current_user(web_client),
             },
             json={"role": "ADMIN"},
         )
@@ -1001,7 +1012,7 @@ class TestAccountLifecycleAndSoleOwnerProtection:
                 "X-WP-CSRF": csrf,
                 "X-Step-Up-Nonce": nonce,
                 "X-Step-Up-Method": "mfa_totp",
-                "X-Step-Up-Token": "123456",
+                "X-Step-Up-Token": await _totp_for_current_user(web_client),
             },
             json=delete_payload,
         )
@@ -1061,7 +1072,7 @@ class TestAccountLifecycleAndSoleOwnerProtection:
                 "X-WP-CSRF": csrf_alice,
                 "X-Step-Up-Nonce": nonce_trans,
                 "X-Step-Up-Method": "mfa_totp",
-                "X-Step-Up-Token": "123456",
+                "X-Step-Up-Token": await _totp_for_current_user(web_client),
             },
             json={"new_owner_user_id": bob_id, "confirmation": "TRANSFER OWNERSHIP"},
         )
@@ -1090,7 +1101,7 @@ class TestAccountLifecycleAndSoleOwnerProtection:
                 "X-WP-CSRF": csrf_alice,
                 "X-Step-Up-Nonce": nonce_del,
                 "X-Step-Up-Method": "mfa_totp",
-                "X-Step-Up-Token": "123456",
+                "X-Step-Up-Token": await _totp_for_current_user(web_client),
             },
             json={"password": "Alice-Secure-42!", "confirmation": "DELETE MY ACCOUNT"},
         )
@@ -1148,7 +1159,7 @@ class TestAccountLifecycleAndSoleOwnerProtection:
                 "X-WP-CSRF": csrf,
                 "X-Step-Up-Nonce": nonce_t,
                 "X-Step-Up-Method": "mfa_totp",
-                "X-Step-Up-Token": "123456",
+                "X-Step-Up-Token": await _totp_for_current_user(web_client),
             },
             json={"new_owner_user_id": bob_id, "confirmation": "TRANSFER OWNERSHIP"},
         )
@@ -1182,7 +1193,7 @@ class TestAccountLifecycleAndSoleOwnerProtection:
                 "X-WP-CSRF": csrf,
                 "X-Step-Up-Nonce": nonce_d,
                 "X-Step-Up-Method": "mfa_totp",
-                "X-Step-Up-Token": "123456",
+                "X-Step-Up-Token": await _totp_for_current_user(web_client),
             },
             json={"password": "Hold-Secure-42!", "confirmation": "DELETE MY ACCOUNT"},
         )

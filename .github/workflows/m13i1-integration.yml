@@ -1,0 +1,205 @@
+name: M13-I1 Independent Integration Review
+
+on:
+  pull_request:
+    paths:
+      - 'docs/engineering/m13i3/**'
+      - 'scripts/engineering/m13i3_*'
+      - 'tests/test_m13i3_*'
+      - 'tests/js/m13i3-*'
+      - 'docs/engineering/m13i2/**'
+      - 'scripts/engineering/m13i2_*'
+      - 'tests/test_m13i2_*'
+      - 'web/**'
+      - 'src/responsibleai/dashboard/static/whitepact/**'
+      - 'docs/engineering/m13i1/**'
+      - 'docs/security/m13s4/**'
+      - 'scripts/engineering/m13i1_*'
+      - 'tests/test_crewai_llamaindex_governance_consumers.py'
+      - 'tests/test_wave1_framework_compatibility.py'
+      - '.github/workflows/m13i1-integration.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  independent-security:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.11', '3.12']
+    services:
+      postgres:
+        image: postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685
+        env:
+          POSTGRES_USER: wp
+          POSTGRES_PASSWORD: wp
+          POSTGRES_DB: postgres
+        ports: ['55432:5432']
+        options: >-
+          --health-cmd "pg_isready -U wp" --health-interval 5s
+          --health-timeout 5s --health-retries 12
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: ${{ matrix.python }}
+      - run: |
+          python -m pip install -r tests/requirements-m11.txt
+          python -m pip install '.[dashboard,postgres,mcp]' alembic
+      - name: Record exact candidate and preserved reproducers
+        env:
+          CANDIDATE: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          git rev-parse HEAD 'HEAD^{tree}' HEAD^@
+          python scripts/engineering/m13p4_security_acceptance.py --repo "$GITHUB_WORKSPACE" --candidate "$CANDIDATE"
+      - name: Independently execute original assertion suites
+        env:
+          PYTHONPATH: src:.
+          WHITEPACT_QUALIFICATION_SKIP_LOG: /tmp/m13i1-core-skips.json
+        run: |
+          python -m pytest tests/independent_m13r2 tests/test_m13r3_security_regression.py tests/test_m12fs_root_hardening.py -o addopts='' --tb=short -ra
+          python -c 'import json; r=json.load(open("/tmp/m13i1-core-skips.json")); assert r["exit_status"] == 0 and r["skip_count"] == 0, r'
+      - name: Revocation and egress regression scope
+        env:
+          PYTHONPATH: src:.
+          WHITEPACT_QUALIFICATION_SKIP_LOG: /tmp/m13i1-extended-skips.json
+        run: |
+          python -m pytest tests/test_m13s_security_regression.py tests/test_revocation_kernel.py tests/test_delegation_revocation_verification.py tests/test_in_flight_revocation.py tests/test_dns_egress_security.py tests/test_isolation_egress_boundary.py -o addopts='' --tb=short -ra
+          python -c 'import json; r=json.load(open("/tmp/m13i1-extended-skips.json")); assert r["exit_status"] == 0 and r["skip_count"] == 0, r'
+
+  real-customer-journey:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685
+        env:
+          POSTGRES_USER: wp
+          POSTGRES_PASSWORD: wp
+          POSTGRES_DB: postgres
+        ports: ['55432:5432']
+        options: >-
+          --health-cmd "pg_isready -U wp" --health-interval 5s
+          --health-timeout 5s --health-retries 12
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.11'
+      - run: |
+          python -m pip install -r tests/requirements-m11.txt
+          python -m pip install '.[dashboard,postgres,mcp]' alembic
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+      - name: Install real Chromium ceremony runtime
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: /tmp/whitepact-m13i3-chromium
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npx playwright install --with-deps chromium
+          node --check tests/js/m13i3-real-webauthn.mjs
+      - name: Attempt actual fresh-customer browser journey; BLOCKED remains a failed gate
+        env:
+          PYTHONPATH: src:.
+          WHITEPACT_ENV: development
+          PLAYWRIGHT_BROWSERS_PATH: /tmp/whitepact-m13i3-chromium
+        run: |
+          ruff check scripts/engineering/m13i2_customer_journey.py tests/test_m13i2_customer_journey.py
+          ruff format --check scripts/engineering/m13i2_customer_journey.py tests/test_m13i2_customer_journey.py
+          ruff check scripts/engineering/m13i3_browser_journey.py tests/test_m13i3_browser_evidence.py
+          ruff format --check scripts/engineering/m13i3_browser_journey.py tests/test_m13i3_browser_evidence.py
+          python -m pytest tests/test_m13i2_customer_journey.py tests/test_m13i3_browser_evidence.py -o addopts='' --tb=short -ra
+          python scripts/engineering/m13i3_browser_journey.py --report /tmp/m13i3-browser-evidence.json
+      - name: Preserve redacted actual browser evidence even when blocked
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: m13i3-actual-browser-evidence
+          path: /tmp/m13i3-browser-evidence.json
+          if-no-files-found: error
+
+  native-container-scope:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.11'
+      - name: Prepare existing Linux runner for actual container probes
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y acl
+          docker info
+          python -m pip install -r tests/requirements-m11.txt
+          python -m pip install '.[dashboard,postgres,mcp]' alembic
+          docker build -f Dockerfile.isolation -t whitepact-isolated-runtime:m13i1 .
+      - name: Execute actual kernel and container ownership scope without skips
+        env:
+          PYTHONPATH: src:.
+          WHITEPACT_REQUIRE_DOCKER_ISOLATION: '1'
+          WHITEPACT_ISOLATION_IMAGE: whitepact-isolated-runtime:m13i1
+          WHITEPACT_QUALIFICATION_SKIP_LOG: /tmp/m13i1-linux-skips.json
+        run: |
+          python -m pytest tests/test_docker_ownership_regression.py tests/test_runtime_isolation_docker.py tests/test_container_isolation_contract.py -o addopts='' --tb=short -ra
+          python -c 'import json; r=json.load(open("/tmp/m13i1-linux-skips.json")); assert r["exit_status"] == 0 and r["skip_count"] == 0, r'
+
+  inherited-policy-gates:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.11'
+      - run: python -m pip install ruff==0.17.0
+      - name: Existing OpenSSF source and trust controls
+        run: |
+          python scripts/check_pinned_actions.py
+          python scripts/manage_license_headers.py --check
+          python scripts/check_trust_regressions.py
+      - name: Preserve full inherited lint gate without exclusions
+        run: ruff check src/ tests/ sdk/python/
+
+  introduced-dco:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Require signoffs on introduced non-merge commits
+        env:
+          # Preserve the inherited security checkpoint gate across stacked product PRs.
+          DCO_BASE: '5291cc6d4e750c6ec5ec0688f8bfc9e3b72a8558'
+        run: |
+          set -euo pipefail
+          missing=0
+          for sha in $(git rev-list --no-merges "$DCO_BASE..HEAD"); do
+            if ! git log -1 --format=%B "$sha" | grep -qE '^Signed-off-by: .+ <.+@.+>$'; then
+              echo "::error::Commit $sha lacks Signed-off-by; author/owner disposition required."
+              missing=1
+            fi
+          done
+          exit "$missing"
+
+# No deployment or privileged customer activation. Failed policy jobs remain gates.

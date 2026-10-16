@@ -1,21 +1,29 @@
 // Copyright (c) 2026 Guruprasath Annadurai
 // SPDX-License-Identifier: MIT
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { AlertTriangle, Check, Copy, KeyRound, Plus, RefreshCw, ShieldOff, X } from "lucide-react";
 import { AccessibleDialog } from "../../components/AccessibleDialog";
 import { Button } from "../../components/Button";
 import { api, messageFrom } from "../../lib/api";
 import type { LoadState } from "../../lib/contracts";
+import { readKeyInventory, type KeyRecord } from "../../lib/apiKeyInventory";
+import { useOutletContext } from "react-router-dom";
+import type { WebSession } from "../dashboard/DashboardShell";
 
-type KeyRecord = { id: string; name: string; prefix: string; environment: string; scopes: string[]; created_at: string; last_used_at: string | null; expires_at: string | null; status: string };
 type CreatedKey = KeyRecord & { api_key: string };
 type Confirmation = { kind: "rotate" | "revoke"; key: KeyRecord };
 
 export function ApiKeysPage() {
+  const session = useOutletContext<WebSession | undefined>();
+  return <KeyWorkspace key={`${session?.organization?.id ?? "unavailable"}:${session?.user.email ?? "unavailable"}`} organizationId={session?.organization?.id} />;
+}
+
+function KeyWorkspace({ organizationId }: { organizationId?: string }) {
   const [keys,setKeys]=useState<KeyRecord[]>([]); const [state,setState]=useState<LoadState>("loading"); const [creating,setCreating]=useState(false); const [created,setCreated]=useState<CreatedKey|null>(null); const [confirm,setConfirm]=useState<Confirmation|null>(null); const [busy,setBusy]=useState(""); const [error,setError]=useState(""); const [notice,setNotice]=useState(""); const [copyState,setCopyState]=useState<"idle"|"copied"|"failed">("idle");
   const [form,setForm]=useState({name:"",environment:"test",scopes:["governance:read"],expires_in_days:90});
-  const load=useCallback(async()=>{setState("loading");setError("");try{const value=await api<{keys:KeyRecord[]}>("/api/v1/web/api-keys");setKeys(value.keys);setState(value.keys.length?"success":"empty");}catch(cause){setError(messageFrom(cause,"API keys could not be loaded"));setState("error");}},[]);
-  useEffect(()=>{void load();},[load]);
+  const request = useRef<AbortController | null>(null);
+  const load=useCallback(async()=>{request.current?.abort();const controller=new AbortController();request.current=controller;setKeys([]);setState("loading");setError("");try{const value=readKeyInventory(await api<unknown>("/api/v1/web/api-keys",{signal:controller.signal}),organizationId);if(controller.signal.aborted)return;setKeys(value);setState(value.length?"success":"empty");}catch(cause){if(!controller.signal.aborted){setError(messageFrom(cause,"API keys could not be loaded"));setState("error");}}},[organizationId]);
+  useEffect(()=>{void load();return()=>request.current?.abort();},[load]);
   const closeCreate=useCallback(()=>setCreating(false),[]); const closeReveal=useCallback(()=>{setCreated(null);setCopyState("idle");},[]); const closeConfirm=useCallback(()=>setConfirm(null),[]);
   async function create(event:FormEvent){event.preventDefault();setBusy("create");setError("");setNotice("");const expires_at=new Date(Date.now()+form.expires_in_days*86_400_000).toISOString();try{const key=await api<CreatedKey>("/api/v1/web/api-keys",{method:"POST",body:JSON.stringify({name:form.name,environment:form.environment,scopes:form.scopes,expires_at})});setCreated(key);setCreating(false);setNotice("API key created. Copy the secret before closing the dialog.");await load();}catch(cause){setError(messageFrom(cause,"Key creation failed"));}finally{setBusy("");}}
   async function mutate(){if(!confirm)return;const {kind,key}=confirm;setBusy(kind);setError("");setNotice("");try{if(kind==="rotate"){const next=await api<CreatedKey>(`/api/v1/web/api-keys/${key.id}/rotate`,{method:"POST"});setCreated(next);setNotice("API key rotated. The previous secret is no longer valid.");}else{await api(`/api/v1/web/api-keys/${key.id}`,{method:"DELETE"});setNotice("API key revoked.");}setConfirm(null);await load();}catch(cause){setError(messageFrom(cause,kind==="rotate"?"Key rotation failed":"Key revocation failed"));setConfirm(null);}finally{setBusy("");}}

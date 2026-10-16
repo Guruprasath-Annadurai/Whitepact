@@ -7,7 +7,6 @@ from __future__ import annotations
 import hashlib
 import json
 
-import cbor2
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.asymmetric.ec import ECDSA
 from cryptography.hazmat.primitives.hashes import SHA256
@@ -34,6 +33,8 @@ def client_data(*, typ: str, origin: str, challenge: bytes) -> str:
 def registration_blob(
     *, rp_id: str, origin: str, challenge: bytes, private_key: ec.EllipticCurvePrivateKey
 ) -> tuple[str, str, str, bytes]:
+    import cbor2
+
     public = private_key.public_key()
     x, y = _coords(public)
     cred_id = hashlib.sha256(x + y).digest()[:16]

@@ -1,0 +1,105 @@
+name: M13-P4 Product Candidate Review
+
+on:
+  pull_request:
+    paths:
+      - 'docs/engineering/m13-forge/**'
+      - 'scripts/engineering/m13_forge_*'
+      - 'tests/test_m13_forge_*'
+      - 'docs/engineering/m13i3/**'
+      - 'scripts/engineering/m13i3_*'
+      - 'tests/test_m13i3_*'
+      - 'docs/engineering/m13i2/**'
+      - 'scripts/engineering/m13i2_*'
+      - 'tests/test_m13i2_*'
+      - 'web/**'
+      - 'src/responsibleai/dashboard/static/whitepact/**'
+      - 'tests/test_m13p4_*'
+      - 'tests/test_mcp_wave1_compatibility.py'
+      - 'tests/js/m13p4-*'
+      - 'scripts/engineering/m13p4_*'
+      - 'docs/engineering/m13p4/**'
+      - '.github/workflows/m13p4-product-review.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  console:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+      - run: |
+          npm --prefix web ci --ignore-scripts --no-audit --no-fund
+          npm --prefix web run lint
+          npm --prefix web test -- --maxWorkers=2
+          npm --prefix web run build
+          git diff --exit-code -- src/responsibleai/dashboard/static/whitepact
+
+  contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.11', '3.12']
+    services:
+      postgres:
+        image: postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685
+        env:
+          POSTGRES_USER: wp
+          POSTGRES_PASSWORD: wp
+          POSTGRES_DB: postgres
+        ports: ['55432:5432']
+        options: >-
+          --health-cmd "pg_isready -U wp"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: ${{ matrix.python }}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+      - name: Install disposable test dependencies
+        run: |
+          python -m pip install -r tests/requirements-m11.txt
+          python -m pip install '.[dashboard,postgres,mcp]' alembic
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm --prefix sdk/typescript ci --ignore-scripts --no-audit --no-fund
+      - name: Product reads, MCP lifecycle, SDK and migrated schema
+        env:
+          PYTHONPATH: src:sdk/python:.
+        run: |
+          ruff check tests/test_m13p4_*.py tests/test_mcp_wave1_compatibility.py scripts/engineering/m13p4_security_acceptance.py
+          ruff format --check tests/test_m13p4_*.py tests/test_mcp_wave1_compatibility.py scripts/engineering/m13p4_security_acceptance.py
+          git diff --check
+          ruff check scripts/engineering/m13_forge_browser_journey.py tests/test_m13_forge_*.py
+          ruff format --check scripts/engineering/m13_forge_browser_journey.py tests/test_m13_forge_*.py
+          python -m pytest tests/test_m13_forge_browser_evidence.py tests/test_m13_forge_summary_serialization.py tests/test_m13i3_browser_evidence.py -o addopts='' --tb=short -q
+          npm --prefix sdk/typescript test
+          python -m pytest tests/test_m13p4_inventory_read_contract.py tests/test_m13p4_mcp_lifecycle.py tests/test_m13p4_acceptance_preflight.py tests/test_mcp_wave1_compatibility.py tests/test_m13p_postgres_schema.py tests/test_sdk*.py tests/test_evaluation_benchmark_safety.py -o addopts='' --tb=short -q
+      - name: Browser accessibility and real unauthenticated PostgreSQL app
+        if: matrix.python == '3.11'
+        env:
+          PYTHONPATH: src:sdk/python:.
+          PLAYWRIGHT_BROWSERS_PATH: /tmp/whitepact-m13p4-chromium
+        run: |
+          npx playwright install --with-deps chromium
+          python -m pytest tests/test_m12p_live_public_browser.py tests/test_m13p4_browser_accessibility.py tests/test_m13i2_browser_accessibility.py tests/test_m13i3_records_browser.py -o addopts='' --tb=short -q
+
+# Local/CI fixtures only. No independent privileged acceptance or deployment.

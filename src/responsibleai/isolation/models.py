@@ -73,6 +73,7 @@ class IsolatedExecutionRequest:
     profile: IsolationProfile = field(default_factory=IsolationProfile)
     environment_overrides: dict[str, str] = field(default_factory=dict)
     workspace_files: dict[str, str | bytes] = field(default_factory=dict)
+    admission_epoch: int = 0
 
 
 @dataclass(frozen=True)

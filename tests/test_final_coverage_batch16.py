@@ -734,6 +734,7 @@ async def test_remove_containers_uninterruptible_runs_in_thread(
 
 
 @pytest.mark.asyncio
+@pytest.mark.usefixtures("portable_workspace_mapping")
 async def test_execute_invalid_json_stdout_is_violation(monkeypatch: pytest.MonkeyPatch) -> None:
     backend = DockerContainerBackend(docker_cmd="docker")
     monkeypatch.setattr(backend, "is_available", lambda: True)
@@ -1201,14 +1202,25 @@ async def test_auth_failure_limiter_require_durable_without_backend() -> None:
 async def test_resolve_saml_maps_developer_role(engine) -> None:
     repo = OrgRepository(engine)
     org = await repo.create_org("SAML Dev", f"saml-dev-{uuid.uuid4().hex[:8]}")
+    from responsibleai.db import WebIdentityRepository
+
+    await WebIdentityRepository(engine).bind_sso_principal(
+        org_id=org.id,
+        issuer="test-idp",
+        subject="saml-dev-user",
+        role=Role.DEVELOPER,
+        email=f"dev-{org.id[:8]}@example.com",
+    )
     claims = SAMLAssertionClaims(
         sub="saml-dev-user",
         org_id=org.id,
-        roles=["DEVELOPER", "bogus"],
+        roles=["DEVELOPER"],
         email="dev@example.com",
     )
+    saml_config = MagicMock()
+    saml_config.idp_entity_id = "test-idp"
     monkeypatch = pytest.MonkeyPatch()
-    monkeypatch.setattr(app_module, "_saml_config", MagicMock())
+    monkeypatch.setattr(app_module, "_saml_config", saml_config)
     monkeypatch.setattr(app_module, "_org_repo", repo)
     monkeypatch.setattr(app_module, "validate_session_token", lambda _cfg, _tok: claims)
     ctx = await _resolve_saml_context("wp_saml.valid.token")
@@ -1431,7 +1443,7 @@ async def test_step_up_invalid_auth_time_rejected(engine) -> None:
         token_or_code="valid-token-1234567890",
         claims={"auth_time": 1},
     )
-    with pytest.raises(StepUpVerificationFailedError, match="auth_time"):
+    with pytest.raises(StepUpVerificationFailedError, match="not supported"):
         await verifier.verify_and_consume_step_up(
             org_id="org-step",
             principal_id="principal-1",
@@ -1462,7 +1474,7 @@ async def test_step_up_oidc_missing_auth_time_claim(engine) -> None:
         token_or_code="missing_auth_time",
         claims={},
     )
-    with pytest.raises(StepUpVerificationFailedError, match="auth_time"):
+    with pytest.raises(StepUpVerificationFailedError, match="not supported"):
         await verifier.verify_and_consume_step_up(
             org_id="org-step",
             principal_id="principal-1",
@@ -1581,7 +1593,7 @@ async def test_step_up_webauthn_unsupported_stub_rejected(engine) -> None:
         auth_time=datetime.now(UTC).isoformat(),
         token_or_code="unsupported_stub",
     )
-    with pytest.raises(StepUpVerificationFailedError, match="Unsupported WebAuthn"):
+    with pytest.raises(StepUpVerificationFailedError, match="not supported"):
         await verifier.verify_and_consume_step_up(
             org_id="org-step",
             principal_id="principal-1",
@@ -1649,7 +1661,7 @@ async def test_step_up_stale_auth_time_rejected(engine) -> None:
         token_or_code="valid-token-1234567890",
         claims={"auth_time": stale},
     )
-    with pytest.raises(StepUpVerificationFailedError, match="freshness window"):
+    with pytest.raises(StepUpVerificationFailedError, match="not supported"):
         await verifier.verify_and_consume_step_up(
             org_id="org-step",
             principal_id="principal-1",
@@ -2141,6 +2153,7 @@ def test_remove_containers_stable_window_elapsed(monkeypatch: pytest.MonkeyPatch
 
 
 @pytest.mark.asyncio
+@pytest.mark.usefixtures("portable_workspace_mapping")
 async def test_container_execute_reads_cidfile_for_cleanup(monkeypatch: pytest.MonkeyPatch) -> None:
     from responsibleai.isolation.models import IsolatedExecutionRequest
 

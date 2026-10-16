@@ -33,7 +33,9 @@ def upgrade() -> None:
 
     op.add_column(
         "organizations",
-        sa.Column("workspace_kind", sa.String(length=20), nullable=False, server_default="ORGANIZATION"),
+        sa.Column(
+            "workspace_kind", sa.String(length=20), nullable=False, server_default="ORGANIZATION"
+        ),
     )
     op.add_column("organizations", sa.Column("owner_user_id", sa.String(length=36), nullable=True))
     op.add_column(
@@ -61,7 +63,9 @@ def upgrade() -> None:
         "web_memberships",
         sa.Column("status", sa.String(length=20), nullable=False, server_default="ACTIVE"),
     )
-    op.add_column("web_memberships", sa.Column("invited_by_user_id", sa.String(length=36), nullable=True))
+    op.add_column(
+        "web_memberships", sa.Column("invited_by_user_id", sa.String(length=36), nullable=True)
+    )
     op.add_column("web_memberships", sa.Column("accepted_at", sa.String(length=32), nullable=True))
     op.add_column("web_memberships", sa.Column("revoked_at", sa.String(length=32), nullable=True))
     op.add_column("web_memberships", sa.Column("updated_at", sa.String(length=32), nullable=True))
@@ -69,15 +73,23 @@ def upgrade() -> None:
     op.add_column("web_sessions", sa.Column("session_id", sa.String(length=36), nullable=True))
     op.create_index("uq_web_sessions_session_id", "web_sessions", ["session_id"], unique=True)
 
-    op.add_column("org_api_keys", sa.Column("created_by_user_id", sa.String(length=36), nullable=True))
-    op.add_column("org_api_keys", sa.Column("accountable_human_user_id", sa.String(length=36), nullable=True))
-    op.add_column("org_api_keys", sa.Column("service_account_id", sa.String(length=36), nullable=True))
+    op.add_column(
+        "org_api_keys", sa.Column("created_by_user_id", sa.String(length=36), nullable=True)
+    )
+    op.add_column(
+        "org_api_keys", sa.Column("accountable_human_user_id", sa.String(length=36), nullable=True)
+    )
+    op.add_column(
+        "org_api_keys", sa.Column("service_account_id", sa.String(length=36), nullable=True)
+    )
     op.add_column("org_api_keys", sa.Column("environment_id", sa.String(length=36), nullable=True))
     op.add_column(
         "org_api_keys",
         sa.Column("holder_kind", sa.String(length=32), nullable=False, server_default="human_key"),
     )
-    op.add_column("org_api_keys", sa.Column("overlap_expires_at", sa.String(length=32), nullable=True))
+    op.add_column(
+        "org_api_keys", sa.Column("overlap_expires_at", sa.String(length=32), nullable=True)
+    )
     op.add_column("org_api_keys", sa.Column("revoked_at", sa.String(length=32), nullable=True))
     op.create_index("idx_oak_environment", "org_api_keys", ["environment_id"])
     op.create_index("idx_oak_service_account", "org_api_keys", ["service_account_id"])
@@ -211,7 +223,9 @@ def upgrade() -> None:
         sa.Column("request_id", sa.String(length=64), nullable=True),
         sa.Column("metadata_json", sa.Text(), nullable=False, server_default="{}"),
     )
-    op.create_index("idx_enterprise_audit_org_ts", "enterprise_security_audit", ["org_id", "timestamp"])
+    op.create_index(
+        "idx_enterprise_audit_org_ts", "enterprise_security_audit", ["org_id", "timestamp"]
+    )
     op.create_index("idx_enterprise_audit_action", "enterprise_security_audit", ["action"])
 
     op.create_table(

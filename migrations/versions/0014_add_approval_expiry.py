@@ -10,6 +10,7 @@ requested weeks or months ago, against a context that may no longer be
 valid. See governance/approval.py's DEFAULT_APPROVAL_TTL_HOURS/
 is_expired and db/approval_repository.py's resolve()/consume().
 """
+
 from __future__ import annotations
 
 from collections.abc import Sequence

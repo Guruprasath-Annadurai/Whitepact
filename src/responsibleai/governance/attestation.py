@@ -13,19 +13,13 @@ rotation burden this project has no infrastructure for (compare the
 release-tag signing set up for `version_tags_signed`, which
 deliberately uses the *founder's own, out-of-band, human-operated* SSH
 key for infrequent, human-triggered release events — not applicable to
-signing every single runtime decision automatically). A forged
-attestation would require the same DB write access that could also
-rewrite `EvidenceRecord`'s own hash chain, at which point an
-automated in-process signature would not be verifying anything an
-attacker couldn't also forge. What *is* real: this record packages the
-`EvidenceRecord`'s own tamper-evident `hash` (from
-`db/evidence_repository.py`'s per-org hash chain) alongside the
-outcome and reconciliation status, so verifying an attestation means
-verifying it against that already-real hash chain — integrity by
-linkage to existing tamper-evidence, not a new cryptographic claim.
-Publishing periodic chain-checkpoint commitments somewhere external
-(so a compromised DB alone isn't sufficient to also rewrite history
-undetected) is real, valuable, separate future work, not built here.
+signing every single runtime decision automatically). The ordinary database hash chain is not resistant to an attacker who
+rewrites the rows and recomputes the hashes. An in-process signature
+made with a key stored next to the database would not change that.
+``governance.evidence_witness`` defines an offline-verifiable head
+witness whose signing key is held outside the database. This attestation
+record still does not carry that witness. Live publication of witnesses
+is an external deployment gate and is not claimed here.
 """
 
 from __future__ import annotations
@@ -68,11 +62,12 @@ class AttestationRecord:
             "reconciliation_status": self.reconciliation_status,
             "attested_at": self.attested_at,
             "integrity_note": (
-                "Not cryptographically signed. Verify evidence_hash against "
-                "this organization's evidence chain via db/evidence_repository.py "
-                "(or governance/evidence_bundle.py's bundle verification) -- "
-                "integrity here is by linkage to that hash chain, not a "
-                "separate signature. See this module's own docstring for why."
+                "Not cryptographically signed. evidence_hash links this "
+                "attestation to the organization's database hash chain. That "
+                "chain detects internal inconsistency. It does not detect a "
+                "full rewrite that recomputes the hashes. Independent "
+                "verification requires an EvidenceHeadWitness signed outside "
+                "the database. Live witness publication is not deployed."
             ),
         }
 

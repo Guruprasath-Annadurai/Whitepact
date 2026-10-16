@@ -1,6 +1,11 @@
 // Package raiclient provides a Go client for the ResponsibleAI Governance Platform.
 package raiclient
 
+import (
+	"encoding/json"
+	"errors"
+)
+
 // TrustScore holds the result of a trust score evaluation.
 type TrustScore struct {
 	Overall    float64            `json:"overall"`
@@ -27,6 +32,26 @@ type GuardrailScan struct {
 	RedactedText  string       `json:"redacted_text"`
 }
 
+// UnmarshalJSON requires an explicit backend decision; missing/null is not safe.
+func (s *GuardrailScan) UnmarshalJSON(data []byte) error {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	var decision *bool
+	raw, exists := fields["is_blocked"]
+	if !exists || json.Unmarshal(raw, &decision) != nil || decision == nil {
+		return errors.New("scan response requires explicit boolean is_blocked")
+	}
+	type plain GuardrailScan
+	var decoded plain
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	*s = GuardrailScan(decoded)
+	return nil
+}
+
 // HallucinationAnalysis holds hallucination risk assessment.
 type HallucinationAnalysis struct {
 	HallucinationRisk float64 `json:"hallucination_risk"`
@@ -44,12 +69,12 @@ type ComplianceReport struct {
 
 // CostRecord holds per-request cost tracking data.
 type CostRecord struct {
-	RequestID    string  `json:"request_id"`
-	Provider     string  `json:"provider"`
-	Model        string  `json:"model"`
-	InputCostUSD float64 `json:"input_cost_usd"`
+	RequestID     string  `json:"request_id"`
+	Provider      string  `json:"provider"`
+	Model         string  `json:"model"`
+	InputCostUSD  float64 `json:"input_cost_usd"`
 	OutputCostUSD float64 `json:"output_cost_usd"`
-	TotalCostUSD float64 `json:"total_cost_usd"`
+	TotalCostUSD  float64 `json:"total_cost_usd"`
 }
 
 // EvalCompareResult holds the A/B model comparison result.
@@ -74,16 +99,16 @@ type HealthStatus struct {
 
 // EvaluateRequest is the request body for the evaluate endpoint.
 type EvaluateRequest struct {
-	ModelName   string  `json:"model_name"`
-	Provider    string  `json:"provider"`
-	Fairness    float64 `json:"fairness"`
-	Privacy     float64 `json:"privacy"`
-	Security    float64 `json:"security"`
-	Robustness  float64 `json:"robustness"`
-	Compliance  float64 `json:"compliance"`
+	ModelName    string  `json:"model_name"`
+	Provider     string  `json:"provider"`
+	Fairness     float64 `json:"fairness"`
+	Privacy      float64 `json:"privacy"`
+	Security     float64 `json:"security"`
+	Robustness   float64 `json:"robustness"`
+	Compliance   float64 `json:"compliance"`
 	Authenticity float64 `json:"authenticity"`
-	UseCase     string  `json:"use_case"`
-	RecordDrift bool    `json:"record_drift"`
+	UseCase      string  `json:"use_case"`
+	RecordDrift  bool    `json:"record_drift"`
 }
 
 // RecordUsageRequest is the request body for the cost/record endpoint.

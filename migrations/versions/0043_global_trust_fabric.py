@@ -43,7 +43,9 @@ def upgrade() -> None:
         ),
         sa.Column("principal_type", sa.String(32), nullable=False),
         sa.Column("display_name", sa.String(255), nullable=False),
-        sa.Column("lifecycle_state", sa.String(32), nullable=False, server_default="PENDING_VERIFICATION"),
+        sa.Column(
+            "lifecycle_state", sa.String(32), nullable=False, server_default="PENDING_VERIFICATION"
+        ),
         sa.Column("created_at", sa.String(32), nullable=False),
         sa.Column("updated_at", sa.String(32), nullable=False),
         sa.Column("metadata_json", sa.Text(), nullable=True),
@@ -79,7 +81,9 @@ def upgrade() -> None:
         sa.Column("source_id", sa.String(64), nullable=True),
         sa.Column("created_at", sa.String(32), nullable=False),
     )
-    op.create_index("idx_tf_ident_norm", "trust_fabric_identifiers", ["normalized_value", "identifier_type"])
+    op.create_index(
+        "idx_tf_ident_norm", "trust_fabric_identifiers", ["normalized_value", "identifier_type"]
+    )
     op.create_index("idx_tf_ident_prin", "trust_fabric_identifiers", ["principal_id"])
     op.create_index("idx_tf_ident_org", "trust_fabric_identifiers", ["org_id"])
     op.create_index(
@@ -135,7 +139,9 @@ def upgrade() -> None:
         sa.Column("revoked_at", sa.String(32), nullable=True),
         sa.Column("evidence_digest", sa.String(64), nullable=False),
     )
-    op.create_index("idx_tf_asst_prin_field", "trust_fabric_assertions", ["principal_id", "field_name"])
+    op.create_index(
+        "idx_tf_asst_prin_field", "trust_fabric_assertions", ["principal_id", "field_name"]
+    )
     op.create_index("idx_tf_asst_org", "trust_fabric_assertions", ["org_id"])
 
     # 5. Relationships

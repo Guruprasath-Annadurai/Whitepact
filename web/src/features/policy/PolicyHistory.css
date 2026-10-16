@@ -1,0 +1,6 @@
+/* Copyright (c) 2026 Guruprasath Annadurai; SPDX-License-Identifier: MIT */
+.policy-history { min-width: 0; }
+.policy-history dl, .policy-history dd { min-width: 0; margin-inline-start: 0; }
+.policy-history dd, .policy-history code { overflow-wrap: anywhere; white-space: normal; }
+.policy-page > .data-panel { padding: 20px; margin-block: 20px; }
+.policy-page fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }

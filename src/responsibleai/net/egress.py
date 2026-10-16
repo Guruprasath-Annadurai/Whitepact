@@ -207,7 +207,11 @@ def normalize_and_validate_url(
             f"Target host {host!r} is a forbidden network address ({parsed_ip})"
         )
 
-    port = parsed.port
+    try:
+        port = parsed.port
+    except ValueError as exc:
+        raise InvalidURLError(f"Invalid URL port: {exc}") from exc
+
     if port is None:
         port = 443 if parsed.scheme == "https" else 80
     elif not (1 <= port <= 65535):
@@ -321,18 +325,20 @@ class SafeNetworkBackend(httpcore.AsyncNetworkBackend):
 
         # Check if host is an explicit IP literal
         is_literal_ip = False
+        ip_obj: ipaddress.IPv4Address | ipaddress.IPv6Address | None = None
         try:
             ip_obj = ipaddress.ip_address(host_str)
             is_literal_ip = True
+        except ValueError:
+            pass
+
+        if is_literal_ip and ip_obj is not None:
             if not is_address_allowed(ip_obj, self.policy):
                 raise ForbiddenDestinationError(
                     f"Direct outbound connection to forbidden address {host_str} rejected"
                 )
             candidate_ips = [ip_obj]
-        except ValueError:
-            pass
-
-        if not is_literal_ip:
+        else:
             if host_str.lower() in FORBIDDEN_HOSTNAMES:
                 raise ForbiddenDestinationError(
                     f"Outbound connection to forbidden internal hostname {host_str!r} rejected"
