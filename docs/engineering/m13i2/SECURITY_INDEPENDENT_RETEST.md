@@ -11,3 +11,11 @@ Fresh local original-suite run also completed: **36 passed**, one deprecation wa
 Original tests retain their real scope: some exercise seeded software credentials, controlled scheduling, injected cancellation or service-level fixtures. Native Linux/container execution must be distinguished from Darwin skips. None of these alone proves the real customer WebAuthn/authority journey or physical multi-host crash recovery.
 
 No security-owned enforcement or original reproducer assertion is modified. Full independent acceptance remains BLOCKED where the actual customer contract fails.
+
+## Newly published ATLAS checkpoint
+
+Exact PR #212 checkpoint `d0041e4f6e9436bcdcec30612a6e35e10dc6af8f` was independently reviewed outside the unified candidate. Its two existing origin tests plus unchanged original suites passed **38 tests**, one warning, zero skips, 175.91s. Existing application tests passed **3**, 11.81s, using SQLite/ASGI fixtures. The actual fresh PostgreSQL/HTTP journey confirmed **22 phases** and observed the local origin mismatch resolved, then correctly stopped before real authenticator completion. No browser authenticator assertion, consent/root/execution or authority revocation is thereby qualified.
+
+New pure defensive configuration tests preserve **two failures** for missing/non-HTTPS production origin, alongside one HTTPS control pass. Signed isolated review commit `d1fe6964cb79abc70eec149e8e3fa5fd236010b9` changes tests only, parent exact ATLAS checkpoint. Capability projection, consent/policy/expiry and cascade atomicity gaps remain source/test-review blockers. See `ANTIGRAVITY_INTEGRATION_HANDOFF.md` for exact scope and owner actions. ATLAS implementation is **NOT integrated**; neither its report nor the 38 passing assertions clears those blockers.
+
+`scripts/check_security_regressions.py` also freshly passed **18 tests in 37.30s** against the integrated source. Separate `git diff --exit-code` verification confirmed no changes from I1 to enterprise/runtime enforcement, original independent reproducer directory, R3/root-hardening suites, or the original I1 customer-origin reproducer. These checks do not clear privileged customer acceptance.
