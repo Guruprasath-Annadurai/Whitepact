@@ -41,8 +41,10 @@ from responsibleai.db.engine import (
     governance_root_authority_records,
     org_authority_ceilings,
     org_security_policies,
+    organizations,
     passkey_credentials,
     trust_fabric_bootstrap_records,
+    trust_fabric_identifiers,
     trust_fabric_principals,
     trust_fabric_trust_roots,
     web_memberships,
@@ -84,6 +86,9 @@ from responsibleai.enterprise.authority.errors import (
 from responsibleai.enterprise.errors import (
     CROSS_TENANT,
     FORBIDDEN,
+    MEMBERSHIP_REVOKED,
+    ORG_DISABLED,
+    ORG_SUSPENDED,
     forbidden,
 )
 from responsibleai.enterprise.security.webauthn import (
@@ -101,7 +106,7 @@ from responsibleai.governance.root_authority import (
     RootType,
     build_root_authority_record,
 )
-from responsibleai.rbac.models import Role
+from responsibleai.rbac.models import GovernanceStatus, Role
 from responsibleai.trust_fabric.enums import PrincipalState, PrincipalType
 from responsibleai.trust_fabric.models import compute_digest
 
@@ -247,6 +252,43 @@ class CustomerAuthorityService:
         self._verify_tenant_and_role(actor, org_id, require_owner=True)
 
         async with self._engine.raw.connect() as conn:
+            # Enforce organization is active
+            org_row = (
+                await conn.execute(
+                    select(
+                        organizations.c.governance_status,
+                        organizations.c.deactivated_at,
+                    ).where(organizations.c.id == org_id)
+                )
+            ).first()
+            if not org_row:
+                raise forbidden(FORBIDDEN, f"Organization {org_id!r} not found.")
+            if (
+                org_row.governance_status == GovernanceStatus.DISABLED.value
+                or org_row.deactivated_at
+            ):
+                raise forbidden(ORG_DISABLED, "Organization is disabled.")
+            if org_row.governance_status == GovernanceStatus.SUSPENDED.value:
+                raise forbidden(ORG_SUSPENDED, "Organization is suspended.")
+
+            # Enforce caller membership in organization is active and owner
+            m_row = (
+                await conn.execute(
+                    select(web_memberships.c.role, web_memberships.c.status).where(
+                        and_(
+                            web_memberships.c.org_id == org_id,
+                            web_memberships.c.user_id == actor.user_id,
+                        )
+                    )
+                )
+            ).first()
+            if not m_row or m_row.status != "ACTIVE":
+                raise forbidden(MEMBERSHIP_REVOKED, "Caller membership is revoked or inactive.")
+            if m_row.role != Role.OWNER.value:
+                raise unauthorized_caller(
+                    "This operation requires verified Organization Owner role."
+                )
+
             # 1. Enforce actor account is not disabled or suspended
             u_row = (
                 await conn.execute(
@@ -267,20 +309,24 @@ class CustomerAuthorityService:
             # 2. Enforce principal is not revoked in trust fabric if registered
             p_row = (
                 await conn.execute(
-                    select(trust_fabric_principals.c.lifecycle_state).where(
-                        and_(
-                            trust_fabric_principals.c.id == actor.user_id,
-                            trust_fabric_principals.c.org_id == org_id,
-                        )
-                    )
+                    select(
+                        trust_fabric_principals.c.lifecycle_state,
+                        trust_fabric_principals.c.org_id,
+                    ).where(trust_fabric_principals.c.id == actor.user_id)
                 )
             ).first()
-            if p_row and p_row.lifecycle_state in {
-                PrincipalState.REVOKED.value,
-                PrincipalState.SUSPENDED.value,
-                PrincipalState.DISABLED.value,
-            }:
-                raise unauthorized_caller(f"Principal identity is {p_row.lifecycle_state}.")
+            if p_row:
+                if p_row.org_id != org_id:
+                    raise unauthorized_caller(
+                        f"Principal {actor.user_id!r} is registered to tenant {p_row.org_id!r}, cannot initiate root for {org_id!r}."
+                    )
+                if p_row.lifecycle_state in {
+                    PrincipalState.REVOKED.value,
+                    PrincipalState.SUSPENDED.value,
+                    PrincipalState.DISABLED.value,
+                    PrincipalState.DELETED.value,
+                }:
+                    raise unauthorized_caller(f"Principal identity is {p_row.lifecycle_state}.")
 
             # 3. Enforce identity assurance if required
             if require_identity_assurance:
@@ -824,10 +870,50 @@ class CustomerAuthorityService:
             # 1. Lock tenant revocation epoch to serialize concurrent ceremony attempts
             await lock_epoch(conn, org_id)
 
+            # Enforce organization is active
+            org_row = (
+                await conn.execute(
+                    select(
+                        organizations.c.governance_status,
+                        organizations.c.deactivated_at,
+                    ).where(organizations.c.id == org_id)
+                )
+            ).first()
+            if not org_row:
+                raise forbidden(FORBIDDEN, f"Organization {org_id!r} not found.")
+            if (
+                org_row.governance_status == GovernanceStatus.DISABLED.value
+                or org_row.deactivated_at
+            ):
+                raise forbidden(ORG_DISABLED, "Organization is disabled.")
+            if org_row.governance_status == GovernanceStatus.SUSPENDED.value:
+                raise forbidden(ORG_SUSPENDED, "Organization is suspended.")
+
+            # Enforce caller membership in organization is active and owner
+            m_row = (
+                await conn.execute(
+                    select(web_memberships.c.role, web_memberships.c.status).where(
+                        and_(
+                            web_memberships.c.org_id == org_id,
+                            web_memberships.c.user_id == actor.user_id,
+                        )
+                    )
+                )
+            ).first()
+            if not m_row or m_row.status != "ACTIVE":
+                raise forbidden(MEMBERSHIP_REVOKED, "Caller membership is revoked or inactive.")
+            if m_row.role != Role.OWNER.value:
+                raise unauthorized_caller(
+                    "This operation requires verified Organization Owner role."
+                )
+
             # Enforce actor account is not disabled or suspended
             u_row = (
                 await conn.execute(
                     select(
+                        web_users.c.id,
+                        web_users.c.full_name,
+                        web_users.c.email,
                         web_users.c.disabled,
                         web_users.c.verification_status,
                     ).where(web_users.c.id == actor.user_id)
@@ -843,20 +929,25 @@ class CustomerAuthorityService:
             # Enforce principal is not revoked in trust fabric if registered
             p_row = (
                 await conn.execute(
-                    select(trust_fabric_principals.c.lifecycle_state).where(
-                        and_(
-                            trust_fabric_principals.c.id == actor.user_id,
-                            trust_fabric_principals.c.org_id == org_id,
-                        )
-                    )
+                    select(
+                        trust_fabric_principals.c.id,
+                        trust_fabric_principals.c.org_id,
+                        trust_fabric_principals.c.lifecycle_state,
+                    ).where(trust_fabric_principals.c.id == actor.user_id)
                 )
             ).first()
-            if p_row and p_row.lifecycle_state in {
-                PrincipalState.REVOKED.value,
-                PrincipalState.SUSPENDED.value,
-                PrincipalState.DISABLED.value,
-            }:
-                raise unauthorized_caller(f"Principal identity is {p_row.lifecycle_state}.")
+            if p_row:
+                if p_row.org_id != org_id:
+                    raise unauthorized_caller(
+                        f"Principal {actor.user_id!r} belongs to tenant {p_row.org_id!r}, cannot establish root for {org_id!r}."
+                    )
+                if p_row.lifecycle_state in {
+                    PrincipalState.REVOKED.value,
+                    PrincipalState.SUSPENDED.value,
+                    PrincipalState.DISABLED.value,
+                    PrincipalState.DELETED.value,
+                }:
+                    raise unauthorized_caller(f"Principal identity is {p_row.lifecycle_state}.")
 
             pending_rec = (
                 await conn.execute(
@@ -968,7 +1059,82 @@ class CustomerAuthorityService:
                 .values(consumed_at=now_iso, claimed_by_principal_id=actor.user_id)
             )
 
-            # 5. Insert or update Trust Fabric Trust Root
+            # 5. Canonical Principal Enrollment & Identity Binding
+            # Bridges verified web identity into Trust Fabric before root binding.
+            if not p_row:
+                display_name = (
+                    u_row.full_name or u_row.email or f"Owner {actor.user_id[:8]}"
+                ).strip()
+                meta = {
+                    "origin": "customer_root_bootstrap",
+                    "verified_email": u_row.email,
+                    "established_at": now_iso,
+                }
+                await conn.execute(
+                    trust_fabric_principals.insert().values(
+                        id=actor.user_id,
+                        org_id=org_id,
+                        principal_type=PrincipalType.HUMAN.value,
+                        display_name=display_name,
+                        lifecycle_state=PrincipalState.ACTIVE.value,
+                        created_at=now_iso,
+                        updated_at=now_iso,
+                        metadata_json=json.dumps(meta),
+                    )
+                )
+            elif p_row.lifecycle_state == PrincipalState.PENDING_VERIFICATION.value:
+                await conn.execute(
+                    update(trust_fabric_principals)
+                    .where(
+                        and_(
+                            trust_fabric_principals.c.id == actor.user_id,
+                            trust_fabric_principals.c.org_id == org_id,
+                        )
+                    )
+                    .values(
+                        lifecycle_state=PrincipalState.ACTIVE.value,
+                        updated_at=now_iso,
+                    )
+                )
+
+            if u_row.email:
+                norm_email = u_row.email.strip().lower()
+                chk_ident = (
+                    await conn.execute(
+                        select(trust_fabric_identifiers.c.principal_id).where(
+                            and_(
+                                trust_fabric_identifiers.c.org_id == org_id,
+                                trust_fabric_identifiers.c.identifier_type == "EMAIL",
+                                trust_fabric_identifiers.c.normalized_value == norm_email,
+                                trust_fabric_identifiers.c.revoked_at.is_(None),
+                            )
+                        )
+                    )
+                ).first()
+                if chk_ident and chk_ident[0] != actor.user_id:
+                    raise unauthorized_caller(
+                        f"Identifier EMAIL:{norm_email!r} is already claimed by principal {chk_ident[0]!r}."
+                    )
+                if not chk_ident:
+                    await conn.execute(
+                        trust_fabric_identifiers.insert().values(
+                            id=f"wp_ident_{uuid.uuid4().hex}",
+                            principal_id=actor.user_id,
+                            org_id=org_id,
+                            identifier_type="EMAIL",
+                            raw_value=u_row.email,
+                            normalized_value=norm_email,
+                            is_primary=1,
+                            verification_state="VERIFIED",
+                            verified_at=now_iso,
+                            expires_at=None,
+                            revoked_at=None,
+                            source_id="customer_root_bootstrap",
+                            created_at=now_iso,
+                        )
+                    )
+
+            # 6. Insert or update Trust Fabric Trust Root
             tf_root_id = f"wp_tfroot_{uuid.uuid4().hex}"
             tf_digest = compute_digest(
                 {
@@ -1017,7 +1183,7 @@ class CustomerAuthorityService:
                     )
                 )
 
-            # 6. Bridge into Canonical Governance: Root Authority Record
+            # 7. Bridge into Canonical Governance: Root Authority Record
             canon_refs_list = list(evidence_refs or [f"bootstrap_nonce:{nonce}"])
             if step_up_info:
                 canon_refs_list.append(f"webauthn_stepup:{step_up_info['credential_id']}")
@@ -1061,7 +1227,7 @@ class CustomerAuthorityService:
                 )
             )
 
-            # 7. Bridge into Canonical Governance: Explicit Consent Proof
+            # 8. Bridge into Canonical Governance: Explicit Consent Proof
             cm_enum = ConsentMethod.SIGNED_DOCUMENT
             try:
                 cm_enum = ConsentMethod(consent_method)
@@ -1108,7 +1274,7 @@ class CustomerAuthorityService:
                 )
             )
 
-            # 8. Grant Initial Root Delegation to the Customer Owner
+            # 9. Grant Initial Root Delegation to the Customer Owner
             delegation_id = str(uuid.uuid4())
             await conn.execute(
                 governance_delegations.insert().values(
@@ -1126,10 +1292,10 @@ class CustomerAuthorityService:
                 )
             )
 
-            # 9. Authoritative Revocation Epoch Bump
+            # 10. Authoritative Revocation Epoch Bump
             new_epoch = await bump_epoch_on_connection(conn, org_id)
 
-            # 10. Durable Audit Evidence
+            # 11. Durable Audit Evidence
             await self._audit.record(
                 action="CUSTOMER_ROOT_AUTHORITY_BOOTSTRAPPED",
                 actor_type=actor.actor_type,
