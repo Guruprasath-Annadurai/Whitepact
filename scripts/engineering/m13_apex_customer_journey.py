@@ -16,13 +16,21 @@ from pathlib import Path
 from scripts.engineering.m13i1_customer_journey import serve
 from scripts.engineering.m13i2_customer_journey import configured_settings
 from scripts.engineering.m13i3_browser_journey import git_identity
+from sqlalchemy import func, select
 from starlette.applications import Starlette
 from starlette.responses import JSONResponse, Response
 from starlette.routing import Route
 from tests.pg_test_url import isolated_pg_url
 
 import responsibleai.dashboard.app as dashboard
+from responsibleai.db.engine import (
+    governance_consent_proofs,
+    governance_root_authority_records,
+    trust_fabric_principals,
+    web_users,
+)
 from responsibleai.db.migrate import _migration_env, _run_alembic
+from responsibleai.enterprise.runtime import get_enterprise_engine
 
 PHASES = (
     "signup",
@@ -73,13 +81,20 @@ def validate_evidence(result: dict) -> None:
     )
     if result.get("acceptance") != expected:
         raise ValueError("Customer verdict contradicts stage evidence")
-    stopped = False
-    for stage in stages:
-        if stage["phase"] == "logout_session_invalidation":
-            continue
-        if stopped and stage["status"] == "PASS":
+    # Consent is stored by bootstrap completion, after initiation. Report order
+    # follows the acceptance checklist; dependencies follow the actual contract.
+    execution_order = (
+        *PHASES[:8],
+        "root_initiation",
+        "root_proof_of_possession",
+        "explicit_customer_consent",
+        "root_activation",
+        *PHASES[12:24],
+    )
+    state = {stage["phase"]: stage["status"] for stage in stages}
+    for previous, current in zip(execution_order, execution_order[1:], strict=False):
+        if state[current] == "PASS" and state[previous] != "PASS":
             raise ValueError("Privileged success after an unqualified boundary")
-        stopped = stopped or stage["status"] != "PASS"
 
 
 async def attempt() -> dict:
@@ -162,6 +177,34 @@ async def attempt() -> dict:
                             result["harness_git"] = git_identity(root)
                             result["fresh_postgresql"] = True
                             result["migration_configuration"] = str(ini)
+                            # Read-only diagnostics, never provision missing identity rows.
+                            async with get_enterprise_engine().raw.connect() as connection:
+                                user_id = await connection.scalar(
+                                    select(web_users.c.id).where(
+                                        web_users.c.email == config["credentials"]["email"]
+                                    )
+                                )
+                                count = await connection.scalar(
+                                    select(func.count())
+                                    .select_from(trust_fabric_principals)
+                                    .where(trust_fabric_principals.c.id == user_id)
+                                )
+                                result["identity_binding_diagnostic"] = {
+                                    "user_exists": user_id is not None,
+                                    "canonical_principal_count": count,
+                                    "read_only": True,
+                                }
+                                for table, field in (
+                                    (governance_root_authority_records, "root_records"),
+                                    (governance_consent_proofs, "consent_records"),
+                                ):
+                                    result["identity_binding_diagnostic"][
+                                        field
+                                    ] = await connection.scalar(
+                                        select(func.count())
+                                        .select_from(table)
+                                        .where(table.c.subject_id == user_id)
+                                    )
                             return result
                         finally:
                             if process.returncode is None:

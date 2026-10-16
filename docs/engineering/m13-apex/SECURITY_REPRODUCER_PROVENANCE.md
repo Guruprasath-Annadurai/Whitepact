@@ -27,3 +27,10 @@ Against candidate40e43440 the original broader36-assertion suite records35PASS,
 requires0064. Preserve that failure; later downgrade assertions in that test
 were not reached. Separate new forward/data-retention probe supplements it,
 without replacing or editing the protected original.
+
+At e1a9f123 TITAN restored the exact original test blob and original manifest.
+Both files match the preserved9fc baseline byte-for-byte. APEX verified all8
+original test blobs against the unchanged manifest. Status: PRESERVED upstream
+and APEX; historical intervening071cbecd revision remains REVIEWED_CHANGE in Git
+history. Original assertions still35PASS/1FAIL against the newer0065 head, as
+expected; restoration is integrity evidence, not a green migration assertion.

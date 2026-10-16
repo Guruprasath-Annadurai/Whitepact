@@ -44,3 +44,25 @@ def test_duplicate_stages_are_rejected():
     evidence["stages"][24] = evidence["stages"][0]
     with pytest.raises(ValueError, match="distinct"):
         validate_evidence(evidence)
+
+
+def test_root_initiation_can_precede_consent_persistence_without_claiming_root_success():
+    evidence = receipt()
+    for stage in evidence["stages"]:
+        if stage["phase"] in {"legitimate_identity_qualification", "root_initiation"}:
+            stage["status"] = "PASS"
+    validate_evidence(evidence)
+
+
+def test_root_activation_requires_persisted_consent():
+    evidence = receipt()
+    for stage in evidence["stages"]:
+        if stage["phase"] in {
+            "legitimate_identity_qualification",
+            "root_initiation",
+            "root_proof_of_possession",
+            "root_activation",
+        }:
+            stage["status"] = "PASS"
+    with pytest.raises(ValueError, match="boundary"):
+        validate_evidence(evidence)
