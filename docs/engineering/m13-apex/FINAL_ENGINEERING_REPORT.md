@@ -179,3 +179,31 @@ satisfied): core product/regression evidence exists but real authority activatio
 execution chain and policy closure are absent. This is not a test-pass percentage.
 **NO-GO. Full M13 acceptance is not satisfied.** No main merge, deployment, DNS,
 paid services, provisioning, package publication, M14 or M21 execution occurred.
+
+## Subsequent exact-head receipts and startup-test maintenance
+
+At5a02bf4d30830284f1650f94ae4a634a7315e7f6 (tree
+cba08437caa9f8db1c08b953aea7e8b3ed879426), the clean committed harness repeated
+the e1a9 genuine failure: user exists, canonical principal0, root records0,
+consent records0. The unchanged18a probe again PASSed c9/0064->e1a9/0065.
+CodeQL38911491837 PASSed both Python and JavaScript/TypeScript analysis;
+Gitleaks38911486998 FAILED with6full-history findings. One proven type-annotation
+match contains no string literal; two entity-key fixture matches are outside
+candidate ancestry. Remaining findings require owner triage; no allowlist,
+history rewrite or blanket false-positive dismissal was applied.
+
+The mutable `tests/test_db_migrate.py` independently reproduced2FAIL/12PASS
+against e1a9: startup correctly reaches0065 but two tests expected0063. These
+non-manifest tests now compare actual database revision with the independently
+loaded single declared Alembic head. Fresh/idempotence/no-false-stamping assertions
+remain; immutable original migration evidence is untouched. The suite is added
+to product CI with scoped lint/format checks. This exercises SQLite startup
+paths; it does not claim PostgreSQL concurrent-startup qualification. New
+checkpoint CI and final Git provenance are attached to PR216's latest receipt.
+
+Startup verification:14PASS/0SKIP onAPEX0064 and14PASS/0SKIP on detachedTITAN0065,
+with2deprecation warnings each. A cross-worktree test-fixture path mismatch was
+corrected by resolving the relative migration scripts against the selected ini's
+directory. No application migration logic or original immutable test was edited.
+Supply-chain owner handoff:
+https://github.com/Guruprasath-Annadurai/Whitepact/pull/215#issuecomment-6217172171.

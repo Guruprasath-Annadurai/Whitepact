@@ -100,3 +100,23 @@ https://github.com/Guruprasath-Annadurai/Whitepact/pull/215#issuecomment-6216956
 Next three actions: publish full report/current receipts; run final exact-head
 CI/scans and genuine failure diagnostic; incorporate only owner-qualified root
 binding/rollback contracts after independent acceptance. No approval flow bypass.
+
+## Additional CI regression APEX-CI-02
+
+P1 / starting state2FAIL+12PASS in mutable startup suite: obsolete0063 literal
+after real `upgrade head`. Files changed: `tests/test_db_migrate.py`,
+`.github/workflows/m13p4-product-review.yml`. Compare real DB revision to the
+single declared canonical head; preserve all immutable original test/hash files.
+Implementation SHA recorded in next signed checkpoint receipt. Scoped Ruff and
+format PASS; full14-case runs against APEX0064 and detachedTITAN0065 in progress.
+CI:5a02 productPASS, independent original/extended/nativePASS with3retained
+policy/customer failures, CodeQLPASS, full-historyGitleaks6findingsFAIL; new-head CI pending.
+Independent review: legitimate mutable-test scope maintenance, not protected
+evidence replacement. Next action: retain results, commit, re-run exact-head CI.
+
+Verification complete: startup14PASS onAPEX (42.31seconds),14PASS onTITAN0065
+(34.97seconds), zero skips,2deprecation warnings each. The intermediate
+cross-worktree fixture resolved a relative scripts directory against harness CWD;
+fixed to resolve relative to the selected candidate ini. No production migration
+logic changed. Protected originals and manifest unchanged. Owner policy handoff:
+https://github.com/Guruprasath-Annadurai/Whitepact/pull/215#issuecomment-6217172171.

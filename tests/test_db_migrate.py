@@ -129,15 +129,34 @@ class TestNeedsBaselineStamp:
         assert result is True
 
 
+@pytest.fixture
+def canonical_migration_head():
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+
+    ini = _find_alembic_ini()
+    assert ini is not None
+    config = Config(str(ini))
+    location = config.get_main_option("script_location")
+    assert location is not None
+    migration_directory = Path(location)
+    if not migration_directory.is_absolute():
+        migration_directory = ini.parent / migration_directory
+    config.set_main_option("script_location", str(migration_directory))
+    heads = ScriptDirectory.from_config(config).get_heads()
+    assert len(heads) == 1, "Startup qualification requires one canonical migration head"
+    return heads[0]
+
+
 class TestRunMigrationsOrRaise:
-    async def test_fresh_database_reaches_head(self, tmp_sqlite_path):
+    async def test_fresh_database_reaches_head(self, tmp_sqlite_path, canonical_migration_head):
         await run_migrations_or_raise(tmp_sqlite_path)
 
         engine = create_engine(tmp_sqlite_path)
         try:
             async with engine.raw.connect() as conn:
                 rows = await conn.execute(text("SELECT version_num FROM alembic_version"))
-                assert rows.scalar() == "0063"
+                assert rows.scalar() == canonical_migration_head
 
                 cols = await conn.execute(text("PRAGMA table_info(organizations)"))
                 col_names = {r[1] for r in cols.fetchall()}
@@ -165,7 +184,7 @@ class TestRunMigrationsOrRaise:
         finally:
             await engine2.raw.dispose()
 
-    async def test_running_twice_is_idempotent(self, tmp_sqlite_path):
+    async def test_running_twice_is_idempotent(self, tmp_sqlite_path, canonical_migration_head):
         await run_migrations_or_raise(tmp_sqlite_path)
         await run_migrations_or_raise(tmp_sqlite_path)  # should not raise — already at head
 
@@ -173,7 +192,7 @@ class TestRunMigrationsOrRaise:
         try:
             async with engine.raw.connect() as conn:
                 rows = await conn.execute(text("SELECT version_num FROM alembic_version"))
-                assert rows.scalar() == "0063"
+                assert rows.scalar() == canonical_migration_head
         finally:
             await engine.raw.dispose()
 
