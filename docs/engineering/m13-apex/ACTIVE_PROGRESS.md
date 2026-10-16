@@ -1,6 +1,33 @@
 # APEX active engineering ledger
 
 M13 OPEN. GLOBAL PRODUCTION NO-GO. No M14/M21 or additional spending.
+## Strict acceptance continuation from08551472
+
+ACCEPTED: prior selective SSE/nonce/EPERM/directory/organization implementation
+preserved; no new security acceptance declared. IMPLEMENTED: independent
+counterexamples and genuine APEX25-stage CI step, pending exact-head CI.
+FAILED: eb4093 email-verification and IDNA binding tests2FAIL; 9de2 false Docker
+absence and suppressed directory scan errors2FAIL. BLOCKED: nonempty0065
+downgrade loses required passkey bit; root policy and downstream customer chain.
+Owner suites independently root11PASS, container/liveness10PASS; these do not
+override the independent failures. Immutable original migration test stays f4d;
+TITAN-2 still has altered071c. Original19-test scope on eb4093:18PASS/1FAIL,
+zero skips (old0064 head expectation). All findings returned on PR215 comment
+6221687719; no new TITAN implementation imported.
+
+Customer: clean eb4093 implementation + clean08551472 harness gives13PASS /
+1BLOCKED /11NOT_EXECUTED with genuine HTTP/WebAuthn root/consent. Stage13 is
+an explicit unqualified-contract boundary; no application endpoint attempted.
+Previous e1a9 FK counterexample reproduced10PASS/1FAIL/14NOT_EXECUTED; that
+repeat used unchanged harness files but its worktree had an unrelated new
+reproducer, so its harness cleanliness=false is preserved, not relabeled clean.
+CI08551472: product/CodeQL/native PASS; independent overallFAIL (customer,
+Ruff101,DCO). New checkpoint CI pending. See M13_UNIFIED_ACCEPTANCE_REPORT.md
+and versioned positive customer/PostgreSQL receipts.
+
+NEXT: TITAN binding and containment corrections; independently qualify corrected
+source before selective import; close genuine full journey/rollback/compliance.
+
 Latest continuation: final-integration review starts from clean `09f6e4cc`.
 Both fetched TITAN refs are unchanged. Nonce admission and EPERM changes from
 `6b604bf1` selected after three original APEX failures; integrated regression

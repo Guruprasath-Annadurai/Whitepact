@@ -141,12 +141,23 @@ jobs:
           ruff format --check scripts/engineering/m13i3_browser_journey.py tests/test_m13i3_browser_evidence.py
           python -m pytest tests/test_m13i2_customer_journey.py tests/test_m13i3_browser_evidence.py -o addopts='' --tb=short -ra
           python scripts/engineering/m13i3_browser_journey.py --report /tmp/m13i3-browser-evidence.json
+      - name: Attempt preserved APEX 25-stage customer journey independently of legacy gate
+        if: ${{ !cancelled() }}
+        env:
+          PYTHONPATH: src:.
+          WHITEPACT_ENV: development
+          PLAYWRIGHT_BROWSERS_PATH: /tmp/whitepact-m13i3-chromium
+        run: |
+          python -m pytest tests/test_m13_apex_journey_evidence.py -o addopts='' --tb=short -ra
+          python scripts/engineering/m13_apex_customer_journey.py --report /tmp/m13apex-customer-evidence.json
       - name: Preserve redacted actual browser evidence even when blocked
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: m13i3-actual-browser-evidence
-          path: /tmp/m13i3-browser-evidence.json
+          path: |
+            /tmp/m13i3-browser-evidence.json
+            /tmp/m13apex-customer-evidence.json
           if-no-files-found: error
 
   native-container-scope:
