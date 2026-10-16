@@ -65,3 +65,38 @@ Implementation commit pending next checkpoint. Independent new+owner tests PASS;
 broader19PASS/0FAIL/0SKIP includes PostgreSQL concurrent CAS. Review accepted for
 product rename scope only; root/kernel integration pending. Next: commit and
 exact-head CI, then MCP/SDK transport and consumer qualification.
+
+## Signed product integration d9bd5b30121e40547083df2e4d9f3afe73d5d463
+
+Tree e6c6c10dba2f19a537aa1291bb42f3cc62d7723a; parent3ec4317a45caff722d849c440c05d22c3b69ecf3.
+Product CI38891476380PASS. Independent CI38891476353:36+202PASS perPython,
+native15PASS/0SKIP; customer,101Ruff errors and inherited unsigned39619c4b DCO
+remain failed gates. GitHub stacked merge162eaa118a2ee393349b1295999f82b86affbe70
+has the identical implementation tree; no merge performed.
+
+MCP broad local run518PASS/0SKIP; external SDK consumers3PASS/0SKIP; separate
+real framework matrices24PASS and22PASS, zero final skips. See MCP/SDK reports.
+APEX-SDK-02 P1: combined pinned environment has incompatible OpenAI constraints;
+separate environment qualification accepted, co-installation BLOCKED. No pins
+weakened. Provider doc reconciliation pending next documentation checkpoint.
+
+TITAN has advanced to e1a9f1235d6b46b7423c21815ff27ebebf6887c6; separate clean
+review checkout created. Original migration blob and manifest restored upstream.
+Independent genuine journey, original assertions and new owner-authored contracts
+are running. TITAN-2f439553d is a report-only descendant of40e43440; its reported
+results are owner evidence, not copied into Codex independent counts.
+
+## Root failure checkpoint1fd55ed536d4476657eca31463834e7356043951
+
+| Workstream / issue | Priority / starting state | Reproducer / changed files | Implementation SHA | Tests / CI | Independent review | Remaining blocker / next action |
+|---|---|---|---|---|---|---|
+| Root principal binding APEX-ROOT-02 | P0 / actual completion500 | Fresh e1a9 journey, FK `trust_fabric_trust_roots_root_principal_id_fkey`; `scripts/engineering/m13_apex_customer_journey.py`, `tests/test_m13_apex_journey_evidence.py` |1fd55ed536d4476657eca31463834e7356043951 |10PASS/1FAIL/14NOT_EXECUTED; diagnostic principal_count0; receipt6PASS; final CI pending | Security implementation not accepted | TITAN-1 must establish real tenant-scoped principal binding; no fixture insertion |
+| Root identity APEX-ROOT-01 | P0 / earlier403 | Real e1a9 basic-email qualification/initiation now200 | Owner e1a9f1235d6b46b7423c21815ff27ebebf6887c6; not integrated | Owner contracts15PASS, original35PASS/1head-versionFAIL | Narrow initiation improvement independently observed | Do not equate basic email with external proofing; overall root remains blocked |
+| Evidence APEX-EVIDENCE-01 | P0 / changed upstream original |8original blobs match unchanged manifest; isolated9fc checkout | Restored by owner e1a9f1235d6b46b7423c21815ff27ebebf6887c6; APEX never replaced it | Original migration2PASS on9fc; known newer-head assertion retained | PRESERVED, intervening change REVIEWED_CHANGE | Keep revised forward tests separate; do not fake original test PASS |
+| SDK co-install APEX-SDK-02 | P1 / optional dependencies skipped | Combined pinned resolver incompatible; separate disposable envs | Product source d9bd5b30121e40547083df2e4d9f3afe73d5d463 unchanged | Separate24PASS+22PASS/0SKIP; packages3PASS; initial32skips retained | Separate environments accepted only | Shared environment BLOCKED on OpenAI2.x/3.x conflict; keep pins |
+
+Current owner handoff:
+https://github.com/Guruprasath-Annadurai/Whitepact/pull/215#issuecomment-6216956340.
+Next three actions: publish full report/current receipts; run final exact-head
+CI/scans and genuine failure diagnostic; incorporate only owner-qualified root
+binding/rollback contracts after independent acceptance. No approval flow bypass.
