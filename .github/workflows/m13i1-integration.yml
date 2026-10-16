@@ -3,6 +3,12 @@ name: M13-I1 Independent Integration Review
 on:
   pull_request:
     paths:
+      - 'docs/engineering/m13-apex/**'
+      - 'scripts/engineering/m13_apex_*'
+      - 'tests/test_m13_apex_*'
+      - 'tests/js/m13-apex-*'
+      - 'src/responsibleai/trust_fabric/directory.py'
+      - 'src/responsibleai/mcp/tools.py'
       - 'docs/engineering/m13i3/**'
       - 'scripts/engineering/m13i3_*'
       - 'tests/test_m13i3_*'

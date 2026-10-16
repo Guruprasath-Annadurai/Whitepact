@@ -50,9 +50,11 @@ from responsibleai.trust_fabric.models import (
 def normalize_identifier(identifier_type: IdentifierType, value: str) -> str:
     """Canonicalize an identifier value based on its type."""
     val = unicodedata.normalize("NFKC", value.strip())
+    if not val:
+        raise ValueError("Identifier must not be empty")
     if identifier_type == IdentifierType.EMAIL:
         val = val.lower()
-        if "@" not in val or val.startswith("@") or val.endswith("@"):
+        if val.count("@") != 1 or val.startswith("@") or val.endswith("@"):
             raise ValueError(f"Invalid email address: {value!r}")
         local_part, domain_part = val.split("@", 1)
         domain_part = domain_part.encode("idna").decode("ascii")
@@ -63,12 +65,16 @@ def normalize_identifier(identifier_type: IdentifierType, value: str) -> str:
             val = val.split("://", 1)[1]
         if "/" in val:
             val = val.split("/", 1)[0]
+        if not val:
+            raise ValueError("Domain identifier must not be empty")
         return val.encode("idna").decode("ascii")
     elif identifier_type == IdentifierType.PHONE:
         # Normalize to E.164 digits with leading +
         digits = re.sub(r"[^\d+]", "", val)
         if not digits.startswith("+"):
             digits = f"+{digits}"
+        if not re.fullmatch(r"\+[0-9]{1,15}", digits):
+            raise ValueError("Phone identifier requires a leading plus and up to 15 digits")
         return digits
     elif identifier_type == IdentifierType.REGISTRATION_NUMBER:
         return val.upper()

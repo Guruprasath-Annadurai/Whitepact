@@ -9,9 +9,13 @@ import pytest
 
 from responsibleai.db.engine import create_engine, organizations
 from responsibleai.db.migrate import _find_alembic_ini, _migration_env, _run_alembic
-from responsibleai.trust_fabric.directory import PrincipalDirectory
+from responsibleai.trust_fabric.directory import PrincipalDirectory, normalize_identifier
 from responsibleai.trust_fabric.enums import IdentifierType, PrincipalType
-from responsibleai.trust_fabric.errors import CrossTenantAccessError, IdentifierCollisionError
+from responsibleai.trust_fabric.errors import (
+    CrossTenantAccessError,
+    IdentifierCollisionError,
+    PrincipalInactiveError,
+)
 from tests.pg_test_url import isolated_pg_url
 
 
@@ -105,3 +109,74 @@ async def test_concurrent_identifier_claim_has_one_winner_without_authority_tran
     )
     assert resolved is not None
     assert resolved.lifecycle_state.value == "PENDING_VERIFICATION"
+
+
+@pytest.mark.parametrize(
+    "kind,value",
+    [
+        (IdentifierType.EMAIL, "a@@example.com"),
+        (IdentifierType.DOMAIN, "https:///"),
+        (IdentifierType.PHONE, "+"),
+        (IdentifierType.PHONE, "call me"),
+        (IdentifierType.REGISTRATION_NUMBER, "   "),
+    ],
+)
+def test_empty_or_malformed_identifiers_are_not_canonical_claims(kind, value):
+    with pytest.raises(ValueError):
+        normalize_identifier(kind, value)
+
+
+@pytest.mark.asyncio
+async def test_unicode_recycling_and_cross_tenant_claims_transfer_no_state(directory):
+    original = await directory.create_principal(
+        org_id="apex-org",
+        principal_type=PrincipalType.HUMAN,
+        display_name="Original",
+        metadata={"descriptive_only": "old"},
+    )
+    await directory.attach_identifier(
+        org_id="apex-org",
+        principal_id=original.id,
+        identifier_type=IdentifierType.EMAIL,
+        value="Ａlice@bücher.example",
+    )
+    resolved = await directory.resolve_by_identifier(
+        org_id="apex-org",
+        identifier_type=IdentifierType.EMAIL,
+        value="alice@xn--bcher-kva.example",
+    )
+    assert resolved is not None and resolved.id == original.id
+    with pytest.raises(CrossTenantAccessError):
+        await directory.delete_principal(original.id, org_id="other-org")
+    await directory.delete_principal(original.id, org_id="apex-org")
+    assert (
+        await directory.resolve_by_identifier(
+            org_id="apex-org",
+            identifier_type=IdentifierType.EMAIL,
+            value="alice@bücher.example",
+        )
+        is None
+    )
+    with pytest.raises(PrincipalInactiveError):
+        await directory.attach_identifier(
+            org_id="apex-org",
+            principal_id=original.id,
+            identifier_type=IdentifierType.DOMAIN,
+            value="example.com",
+        )
+    for org in ("apex-org", "other-org"):
+        replacement = await directory.create_principal(
+            org_id=org,
+            principal_type=PrincipalType.HUMAN,
+            display_name="Replacement",
+        )
+        binding = await directory.attach_identifier(
+            org_id=org,
+            principal_id=replacement.id,
+            identifier_type=IdentifierType.EMAIL,
+            value="alice@bücher.example",
+        )
+        assert replacement.id != original.id
+        assert replacement.metadata == {}
+        assert replacement.lifecycle_state.value == "PENDING_VERIFICATION"
+        assert binding.verification_state.value == "UNVERIFIED"

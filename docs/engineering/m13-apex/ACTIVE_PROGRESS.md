@@ -33,3 +33,19 @@ External identity proofing and founder300-second PathB policy cannot be fabricat
  Ordinary row preservation PASS. See POSTGRES_UPGRADE_ACCEPTANCE.md.
 - New harness receipt unit regressions4PASS; scoped Ruff PASS before checkpoint.
  Next: owner handoff, commit, then continue directory acceptance independently.
+
+## Signed checkpoint c8ec869cbb7e5e82cfea98033e471b507c93acc9
+
+Root/provenance/PG counterexamples and ledger published. TITAN handoff:
+https://github.com/Guruprasath-Annadurai/Whitepact/pull/215#issuecomment-6213967276
+Implementation files: `scripts/engineering/m13_apex_customer_journey.py`,
+`scripts/engineering/m13_apex_postgres_acceptance.py`,
+`tests/js/m13-apex-customer.mjs`, `tests/test_m13_apex_journey_evidence.py`.
+Independent security acceptance remains pending; no security integration claimed.
+
+APEX-DIR-02 P1: five malformed claims reproduced then rejected in
+`src/responsibleai/trust_fabric/directory.py`. Expanded
+`tests/test_m13_apex_directory.py` proves Unicode, recycling and tenant behavior
+on SQLite and migrated PostgreSQL. Directory plus receipt run20PASS/0FAIL/0SKIP.
+Next commit records this repair and adds APEX triggers to independent CI.
+Review status: local regression accepted; broader directory/authority mapping open.
