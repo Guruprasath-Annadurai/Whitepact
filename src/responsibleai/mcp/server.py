@@ -81,6 +81,7 @@ from collections.abc import MutableMapping
 from contextvars import ContextVar
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
+from uuid import UUID
 
 import mcp.types as types
 from mcp.server import Server
@@ -679,7 +680,13 @@ def _build_http_app() -> Any:
     from starlette.applications import Starlette
     from starlette.middleware import Middleware
     from starlette.requests import Request
-    from starlette.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
+    from starlette.responses import (
+        HTMLResponse,
+        JSONResponse,
+        PlainTextResponse,
+        RedirectResponse,
+        Response,
+    )
     from starlette.routing import Mount, Route
     from starlette.types import Receive, Scope, Send
 
@@ -1123,11 +1130,27 @@ def _build_http_app() -> Any:
             )
         return ctx, None
 
+    def _build_authenticated_user(ctx: OrgContext) -> Any:
+        from mcp.server.auth.middleware.bearer_auth import AccessToken, AuthenticatedUser
+
+        client_id = ctx.org_id or "unscoped"
+        key_id = ctx.key_id or "unscoped"
+        return AuthenticatedUser(
+            AccessToken(
+                token=key_id,
+                client_id=client_id,
+                scopes=["whitepact:review"],
+                subject=key_id,
+                claims={"iss": client_id},
+            )
+        )
+
     async def handle_sse(request: Request) -> Any:
         ctx, error = await _authenticate_or_error(request)
         if error is not None:
             return error
 
+        request.scope["user"] = _build_authenticated_user(ctx)
         org_token = _current_org.set(ctx)
         usage_token = _current_usage_repo.set(_usage_repo)
         governance_token = _current_governance.set(_governance_services)
@@ -1145,6 +1168,92 @@ def _build_http_app() -> Any:
             _current_governance.reset(governance_token)
             _current_hosted.reset(hosted_token)
         return JSONResponse({}, status_code=200)
+
+    class _SsePostMessageEndpoint:
+        """Authenticating endpoint for /messages/ on the MCP HTTP+SSE transport.
+
+        Requires a valid Bearer credential, prevents unauthenticated message injection,
+        validates session binding, and rejects cross-tenant hijacking attempts with 403.
+        """
+
+        def __init__(self, transport: SseServerTransport) -> None:
+            self.transport = transport
+
+        async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+            request = Request(scope, receive=receive)
+            ctx, error = await _authenticate_or_error(request)
+            if error is not None:
+                await error(scope, receive, send)
+                return
+
+            session_id_param = request.query_params.get("session_id")
+            if not session_id_param:
+                response = Response("session_id is required", status_code=400)
+                await response(scope, receive, send)
+                return
+
+            try:
+                session_id = UUID(hex=session_id_param)
+            except ValueError:
+                response = Response("Invalid session ID", status_code=400)
+                await response(scope, receive, send)
+                return
+
+            if session_id not in self.transport._read_stream_writers:
+                response = Response("Could not find session", status_code=404)
+                await response(scope, receive, send)
+                return
+
+            owner = self.transport._session_owners.get(session_id)
+            if owner is not None:
+                owner_client_id = (
+                    owner.get("client_id")
+                    if isinstance(owner, dict)
+                    else getattr(owner, "client_id", None)
+                )
+                if owner_client_id and ctx.org_id and owner_client_id != ctx.org_id:
+                    _logger.warning(
+                        "cross_tenant_sse_post_rejected session_id=%s caller_org=%s owner_org=%s",
+                        session_id,
+                        ctx.org_id,
+                        owner_client_id,
+                    )
+                    response = JSONResponse(
+                        {
+                            "error": "cross_tenant_forbidden",
+                            "message": "Cross-tenant session access is forbidden.",
+                        },
+                        status_code=403,
+                    )
+                    await response(scope, receive, send)
+                    return
+
+                owner_subject = (
+                    owner.get("subject")
+                    if isinstance(owner, dict)
+                    else getattr(owner, "subject", None)
+                )
+                if owner_subject and ctx.key_id and owner_subject != ctx.key_id:
+                    _logger.warning(
+                        "mismatched_key_sse_post_rejected session_id=%s caller_key=%s owner_key=%s",
+                        session_id,
+                        ctx.key_id,
+                        owner_subject,
+                    )
+                    response = JSONResponse(
+                        {
+                            "error": "forbidden",
+                            "message": "Session credential does not match session owner.",
+                        },
+                        status_code=403,
+                    )
+                    await response(scope, receive, send)
+                    return
+
+            scope["user"] = _build_authenticated_user(ctx)
+            await self.transport.handle_post_message(scope, receive, send)
+
+    handle_post_message = _SsePostMessageEndpoint(sse)
 
     class _StreamableHttpEndpoint:
         """A plain `async def` here would make Starlette's `Route` treat it
@@ -1450,7 +1559,7 @@ def _build_http_app() -> Any:
             Route("/ready", endpoint=ready),
             Route("/mcp", endpoint=handle_streamable_http),
             Route("/sse", endpoint=handle_sse),
-            Mount("/messages/", app=sse.handle_post_message),
+            Mount("/messages/", app=handle_post_message),
             Route("/.well-known/oauth-protected-resource", endpoint=protected_resource_metadata),
             Route(
                 "/.well-known/oauth-authorization-server",

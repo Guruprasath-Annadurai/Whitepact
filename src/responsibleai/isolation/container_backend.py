@@ -516,8 +516,6 @@ class DockerContainerBackend(IsolationBackend):
                     except Exception:
                         pass
                 finally:
-                    await registry.unregister(execution_id)
-                    duration = time.monotonic() - start_time
                     # Guarantee container removal for ALL exit paths including
                     # asyncio.CancelledError, TimeoutError, and unexpected exceptions.
                     #
@@ -556,6 +554,11 @@ class DockerContainerBackend(IsolationBackend):
                             proc.kill()
                         except Exception:
                             pass
+
+                    # Unregister AFTER container removal is confirmed, ensuring
+                    # active tracking remains valid until containment is complete.
+                    await registry.unregister(execution_id)
+                    duration = time.monotonic() - start_time
 
                 max_out = limits.max_output_bytes
                 stdout_str = stdout_data[:max_out].decode("utf-8", errors="replace")
