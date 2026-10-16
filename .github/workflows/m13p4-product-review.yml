@@ -96,7 +96,7 @@ jobs:
           git diff --check
           ruff check scripts/engineering/m13_apex_*.py tests/test_m13_apex_*.py
           ruff format --check scripts/engineering/m13_apex_*.py tests/test_m13_apex_*.py
-          python -m pytest tests/test_m13_apex_directory.py tests/test_principal_directory.py tests/test_m13_apex_mcp_metadata.py tests/test_mcp_directory_conformance.py tests/test_m13_apex_journey_evidence.py -o addopts='' --tb=short -q
+          python -m pytest tests/test_m13_apex_*.py tests/test_principal_directory.py tests/test_mcp_directory_conformance.py -o addopts='' --tb=short -q
           ruff check scripts/engineering/m13_forge_browser_journey.py tests/test_m13_forge_*.py
           ruff format --check scripts/engineering/m13_forge_browser_journey.py tests/test_m13_forge_*.py
           python -m pytest tests/test_m13_forge_browser_evidence.py tests/test_m13_forge_summary_serialization.py tests/test_m13i3_browser_evidence.py -o addopts='' --tb=short -q

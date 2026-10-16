@@ -49,3 +49,19 @@ APEX-DIR-02 P1: five malformed claims reproduced then rejected in
 on SQLite and migrated PostgreSQL. Directory plus receipt run20PASS/0FAIL/0SKIP.
 Next commit records this repair and adds APEX triggers to independent CI.
 Review status: local regression accepted; broader directory/authority mapping open.
+
+## Signed directory checkpoint3ec4317a45caff722d849c440c05d22c3b69ecf3
+
+Product CI38890852085PASS, all3jobs. Independent review38890852102: original36
+and extended202PASS on each Python3.11/3.12; native Linux/container15PASS,
+zero skips. Overall independent workflow FAIL: genuine customer-origin gate,
+inherited101Ruff errors, inherited unsigned ancestor DCO. Gates retained.
+
+APEX-ORG-01 P1 product integration: stale workspace/concurrent rename repaired
+selectively from40e43440 with independently verified all-preconditions agreement.
+Files: `src/responsibleai/db/org_repository.py`,
+`src/responsibleai/dashboard/app.py`, `tests/test_m13_apex_organization.py`.
+Implementation commit pending next checkpoint. Independent new+owner tests PASS;
+broader19PASS/0FAIL/0SKIP includes PostgreSQL concurrent CAS. Review accepted for
+product rename scope only; root/kernel integration pending. Next: commit and
+exact-head CI, then MCP/SDK transport and consumer qualification.

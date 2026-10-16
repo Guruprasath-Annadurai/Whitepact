@@ -361,11 +361,18 @@ class OrgRepository:
             await bump_epoch_on_connection(conn, org_id)
         return True
 
-    async def update_org_name(self, org_id: str, name: str) -> bool:
+    async def update_org_name(
+        self,
+        org_id: str,
+        name: str,
+        *,
+        expected_name: str | None = None,
+    ) -> bool:
+        stmt = update(organizations).where(organizations.c.id == org_id)
+        if expected_name is not None:
+            stmt = stmt.where(organizations.c.name == expected_name)
         async with self._engine.raw.begin() as conn:
-            result = await conn.execute(
-                update(organizations).where(organizations.c.id == org_id).values(name=name)
-            )
+            result = await conn.execute(stmt.values(name=name))
         return result.rowcount > 0
 
     async def set_sso_required(self, org_id: str, required: bool) -> bool:
