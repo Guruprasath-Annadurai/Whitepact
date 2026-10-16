@@ -34,3 +34,10 @@ Integrated real-TCP/auth/transport/metadata subset85PASS/0SKIP. Core/optional/de
 SDK floor now1.29.1; older SDK versions are not qualified. Full519-case matrix
 (518existing plus real SSE test) required on both Python CI jobs, not yet claimed
 until final receipts. See SELECTIVE_INTEGRATION_REVIEW.md.
+
+The first e3 full CI run reported517PASS/1collectionSKIP on each Python version,
+not519PASS: missing LangGraph prevented collecting its two tutorial cases. Green
+job status was insufficient because runtime-only skip accounting missed module
+collection skips. APEX-CI-03 fixes that hook and supplies pinned LangGraph1.2.14;
+strict zero-skip qualification is rerun on the next signed head. This limitation
+does not erase the independently passed real-TCP SSE case or other tested scopes.

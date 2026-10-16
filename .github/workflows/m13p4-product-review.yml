@@ -6,6 +6,7 @@ on:
       - 'docs/engineering/m13-apex/**'
       - 'scripts/engineering/m13_apex_*'
       - 'tests/test_m13_apex_*'
+      - 'tests/conftest.py'
       - 'tests/test_db_migrate.py'
       - 'tests/js/m13-apex-*'
       - 'src/responsibleai/trust_fabric/directory.py'

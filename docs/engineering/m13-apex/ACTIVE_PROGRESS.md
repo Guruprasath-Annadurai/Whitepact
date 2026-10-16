@@ -133,3 +133,20 @@ separately. Source review accepted for transport scope; no other runtime/kernel
 fix selected. Full519-case exact-head Python matrix pending next signed checkpoint.
 Remaining blocker: complete root/authority acceptance still fails principal FK;
 this transport hardening enables no new privileged customer workflow.
+
+## APEX-CI-03 — collection skip escaped the qualification receipt
+
+P0 qualification integrity / e3 independent jobs were green but detailed logs
+show517PASS/1collectionSKIP each, not zero skips. `test_mcp_langgraph_tutorial.py`
+could not import LangGraph, hiding two tutorial tests at collection. Existing
+receipt hook observed only runtime reports, so its zero-skip assertion saw0.
+The e3 workflow green status is not accepted as full zero-skip MCP qualification.
+
+Independent real-pytest subprocess reproducer
+`tests/test_m13_apex_skip_receipts.py`: before1FAIL(collection)/1PASS(runtime).
+`tests/conftest.py` now captures both collect and runtime skip reports, without
+changing security fixtures or protected evidence. Both probes plus actual tutorial
+4PASS/0SKIP in10.28seconds. Full-MCP CI installs repository-pinned LangGraph1.2.14;
+no test excluded or assertion relaxed. Source review accepted for receipt scope;
+exact-head full519 matrix pending next signed checkpoint. Other e3 product77,
+original36/extended202 and native15 scopes remain separately evidenced.

@@ -216,3 +216,12 @@ reviewed owner; integrated subset85PASS/0SKIP. SDK floor1.29.1 matches qualified
 APIs; full519 MCP cases are required on both independent Python CI jobs. Other
 TITAN-2 nonce/runtime/container changes remain unintegrated. See selective review;
 final exact-head CI receipts must qualify this new checkpoint separately.
+
+Exact e3 CI detail review found a qualification integrity defect: full-MCP jobs
+were green with517PASS/1collectionSKIP each because LangGraph was absent, and
+the existing receipt hook missed collection skips. Do not count that as zero-skip
+acceptance. New independent subprocess probes reproduce1FAIL/1PASS before the
+fix. Receipt accounting now captures collection as well as runtime skips; both
+probes and the real LangGraph tutorial4PASS. CI installs the already pinned
+LangGraph1.2.14 dependency and retains strict zero-skip assertions. Full519-case
+qualification must be rerun on the new head. No security tests suppressed.

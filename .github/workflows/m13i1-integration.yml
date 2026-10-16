@@ -6,6 +6,7 @@ on:
       - 'docs/engineering/m13-apex/**'
       - 'scripts/engineering/m13_apex_*'
       - 'tests/test_m13_apex_*'
+      - 'tests/conftest.py'
       - 'tests/js/m13-apex-*'
       - 'src/responsibleai/trust_fabric/directory.py'
       - 'src/responsibleai/mcp/tools.py'
@@ -61,6 +62,7 @@ jobs:
       - run: |
           python -m pip install -r tests/requirements-m11.txt
           python -m pip install '.[dashboard,postgres,mcp]' alembic
+          python -m pip install 'langgraph==1.2.14'
       - name: Record exact candidate and preserved reproducers
         env:
           CANDIDATE: ${{ github.event.pull_request.head.sha || github.sha }}
