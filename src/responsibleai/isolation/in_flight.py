@@ -83,8 +83,11 @@ def _check_remote_worker_active(organization_id: str | None) -> list[dict[str, A
                 try:
                     os.kill(pid, 0)
                     is_alive = True
-                except (ProcessLookupError, PermissionError):
+                except ProcessLookupError:
                     is_alive = False
+                except PermissionError:
+                    # Target process is alive under another user, container, or security context
+                    is_alive = True
                 if is_alive:
                     unresolved_remote.append(data)
                 else:

@@ -1,6 +1,16 @@
 # APEX active engineering ledger
 
 M13 OPEN. GLOBAL PRODUCTION NO-GO. No M14/M21 or additional spending.
+Latest continuation: final-integration review starts from clean `09f6e4cc`.
+Both fetched TITAN refs are unchanged. Nonce admission and EPERM changes from
+`6b604bf1` selected after three original APEX failures; integrated regression
+31 PASS, zero skips. IMPLEMENTED, exact-head CI/independent acceptance pending.
+Container absence contract remains BLOCKED; canonical principal FK remains
+FAILED; historical policy gates remain FAILED. See
+`FINAL_INTEGRATION_RUNTIME_REVIEW.md` for exact provenance and exclusions.
+NEXT: exact-head runtime CI; TITAN-1 principal correction and genuine journey;
+TITAN-2 authoritative cleanup and rollback corrections.
+
 Current verified checkpoint: `b524ec85710e6b82cc090f079b71b47a4b4ccc13`,
 tree `6316d2fdc902033cac25d2c301ceb50f5d88e966`; clean at resumption.
 Canonical origin verified; PR216 targets Forge. TITAN PR215 still40e43440,
