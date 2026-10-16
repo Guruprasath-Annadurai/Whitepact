@@ -27,6 +27,15 @@ def stage_journal(evidence: dict) -> dict:
         names.add(name)
         stages.append({"phase": name, "status": "NOT EXECUTED"})
     blocked = [item["phase"] for item in stages if item["status"] == "BLOCKED"]
+    if not blocked and evidence.get("stop") == "DOWNSTREAM_AUTHORITY_CONTRACTS_NOT_QUALIFIED":
+        if not any(
+            item["phase"] == "server_assertion_verification" and item["status"] == "PASS"
+            for item in stages
+        ):
+            raise ValueError("Downstream boundary lacks actual assertion verification")
+        boundary = "downstream_authority_qualification"
+        stages.append({"phase": boundary, "status": "BLOCKED", "reason": evidence["stop"]})
+        blocked = [boundary]
     if not blocked:
         raise ValueError("Incomplete journey has no explicit blocking stage")
     return {

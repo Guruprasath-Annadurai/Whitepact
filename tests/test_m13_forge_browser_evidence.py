@@ -50,3 +50,29 @@ def test_incomplete_journey_requires_an_explicit_blocker():
     original["phases"].pop()
     with pytest.raises(ValueError, match="blocking stage"):
         stage_journal(original)
+
+
+def test_successful_passkey_prefix_stops_at_explicit_downstream_boundary():
+    original = evidence()
+    original["stop"] = "DOWNSTREAM_AUTHORITY_CONTRACTS_NOT_QUALIFIED"
+    original["phases"] = [
+        {"phase": name, "result": "CONFIRMED"}
+        for name in (
+            "server_registration_verification",
+            "browser_generated_assertion",
+            "server_assertion_verification",
+        )
+    ]
+    journal = stage_journal(original)
+    assert journal["first_blocked_stage"] == "downstream_authority_qualification"
+    assert journal["acceptance"] == "BLOCKED"
+    assert journal["stages"][-1]["status"] == "BLOCKED"
+    assert journal["original_evidence"] == original
+
+
+def test_downstream_boundary_without_verified_assertion_is_not_accepted():
+    original = evidence()
+    original["stop"] = "DOWNSTREAM_AUTHORITY_CONTRACTS_NOT_QUALIFIED"
+    original["phases"].pop()
+    with pytest.raises(ValueError, match="assertion verification"):
+        stage_journal(original)

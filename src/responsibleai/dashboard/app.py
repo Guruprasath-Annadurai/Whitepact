@@ -2482,8 +2482,10 @@ async def web_dashboard_summary(
                 "id": record.evidence_id,
                 "agent": record.agent_id,
                 "action": record.action_type,
-                "policy": record.policy_version or "default",
-                "risk": record.risk_tier,
+                "policy": str(record.policy_version)
+                if record.policy_version is not None
+                else "default",
+                "risk": record.risk_tier or "Not recorded",
                 "decision": record.decision,
                 "timestamp": record.recorded_at or record.evaluated_at.isoformat(),
             }

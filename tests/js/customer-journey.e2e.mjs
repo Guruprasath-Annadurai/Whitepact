@@ -323,6 +323,12 @@ try {
   await page.getByText(/PASSWORD|UNAVAILABLE|NOT CONFIGURED|IDENTITY_VERIFIED|BASIC_VERIFIED/i).first().waitFor();
 
   await page.goto(`${baseUrl}/dashboard`, { waitUntil: "domcontentloaded" });
+  const summaryResponse = await context.request.get(`${baseUrl}/api/v1/web/dashboard/summary`);
+  check(summaryResponse.status() === 200, `summary API ${summaryResponse.status()}`);
+  const summaryPayload = await summaryResponse.json();
+  const summaryFields = ["id", "agent", "action", "policy", "risk", "decision", "timestamp"];
+  const summaryTypes = (summaryPayload.recent_governance ?? []).map(record => Object.fromEntries(summaryFields.map(key => [key, record[key] === null ? "null" : typeof record[key]])));
+  check(summaryTypes.every(record => Object.values(record).every(type => type === "string")), `summary display metadata types ${JSON.stringify(summaryTypes)}`);
   await page.getByText(/governance decisions/i).waitFor();
   await page.goto(`${baseUrl}/dashboard/approvals`, { waitUntil: "domcontentloaded" });
   await page.getByRole("heading", { name: "Approvals", exact: true }).waitFor();
@@ -338,9 +344,12 @@ try {
   await page.goto(`${baseUrl}/dashboard/security`, { waitUntil: "domcontentloaded" });
   await page.getByRole("heading", { name: /security/i }).waitFor();
   await page.goto(`${baseUrl}/dashboard/organization`, { waitUntil: "domcontentloaded" });
-  await page.locator("input").first().waitFor();
-  const orgName = await page.locator("input").first().inputValue();
-  check(orgName === "Journey Org", "organization page shows persisted name");
+  await page.getByRole("heading", { name: "Organization name", exact: true }).waitFor();
+  await page.getByRole("main").getByText("Journey Org", { exact: true }).waitFor();
+  await page.getByText("Organization name changes are unavailable pending workspace confirmation.", { exact: true }).waitFor();
+  check(await page.getByRole("button", { name: "Save organization", exact: true }).count() === 0, "organization name is read-only while write preconditions remain unqualified");
+  const organizationRead = await context.request.get(`${baseUrl}/api/v1/web/dashboard/organization`);
+  check(organizationRead.status() === 200 && (await organizationRead.json()).items?.[0]?.name === "Journey Org", "organization page shows persisted backend name");
 
   await page.goto(`${baseUrl}/dashboard/api-keys`, { waitUntil: "domcontentloaded" });
   await page.getByRole("button", { name: /revoke/i }).click();
