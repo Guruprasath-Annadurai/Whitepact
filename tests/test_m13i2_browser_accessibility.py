@@ -67,7 +67,7 @@ async def test_m13i2_record_status_browser_accessibility_with_explicit_ui_fixtur
             )
             result = json.loads(stdout)
             assert result["kind"] == "BROWSER_UI_FIXTURES_NOT_CUSTOMER_AUTHENTICATION_OR_AUTHORITY"
-            assert len(result["checks"]) == 21
+            assert len(result["checks"]) == 30
             assert result["violations"] == [] and result["mutations"] == 0
             print(json.dumps(result))
         finally:

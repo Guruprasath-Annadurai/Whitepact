@@ -23,4 +23,6 @@ Required owner action: provide corrected exact security commits and independent 
 
 Prior concrete handoff: https://github.com/Guruprasath-Annadurai/Whitepact/pull/208#issuecomment-6197828920 . Current integration evidence: https://github.com/Guruprasath-Annadurai/Whitepact/pull/211 .
 
+ATLAS exact-checkpoint handoff with preserved failing-test link: https://github.com/Guruprasath-Annadurai/Whitepact/pull/212#issuecomment-6209071978 .
+
 Future integration requires exact commit ancestry/diff review, reproduction of the old failure, independent fix validation and regression before merging into a separate candidate. Do not edit Antigravity's branch or active directory.

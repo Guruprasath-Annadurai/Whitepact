@@ -87,7 +87,7 @@ export function OrganizationSettingsPage({ session, renameContractVerified = fal
 
   const busy = ["loading", "saving", "reconciling"].includes(phase);
   return <main className="dashboard-content"><div className="page-heading"><div><h1>Organization</h1><p>Organization identity and name returned for the authenticated workspace.</p></div></div>
-    <section className="data-panel settings-panel" aria-label="Organization settings" aria-busy={busy}>
+    <section className="data-panel settings-panel" aria-label="Organization settings" aria-busy={busy} style={{ overflowWrap: "anywhere" }}>
       {message && <p role="alert">{message}</p>}{notice && <p role="status">{notice}</p>}
       {busy ? <p role="status">{phase === "saving" ? "Submitting organization name change…" : phase === "reconciling" ? "Checking the current server name…" : "Loading organization…"}</p>
         : phase === "uncertain" ? <><p>Another rename is disabled until a current read succeeds. The submitted name is not presented as persisted.</p><Button onClick={() => void inspect(undefined, true)}>Check current organization name</Button></>

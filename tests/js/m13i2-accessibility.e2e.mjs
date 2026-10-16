@@ -18,6 +18,8 @@ try {
     const context = await browser.newContext({ viewport: { width, height: 1000 }, reducedMotion: "reduce" });
     const session = { user: { full_name: "UI Fixture Owner", email: "fixture@example.invalid" }, organization: { id: "fixture-org", name: "Browser fixture workspace", plan: "FREE", role: "OWNER" } };
     let mode = "pending";
+    let organizationMode = "valid";
+    const organizationName = "W".repeat(200);
     let statusReads = 0;
     let release;
     const pending = new Promise((resolve) => { release = resolve; });
@@ -28,6 +30,7 @@ try {
       if (!url.pathname.startsWith("/api/")) return route.continue();
       if (request.method() !== "GET") { mutations++; return route.abort(); }
       if (url.pathname === "/api/v1/web/session") return route.fulfill({ json: session });
+      if (url.pathname === "/api/v1/web/dashboard/organization") return route.fulfill({ json: { source: "organization_repository", domain: "organization", items: [{ id: organizationMode === "foreign" ? "foreign-fixture" : "fixture-org", name: organizationName, slug: "s".repeat(180), plan: "FREE" }] } });
       if (url.pathname === "/api/enterprise/organizations/fixture-org/authority/agents") return route.fulfill({ json: { agents: [] } });
       if (url.pathname === "/api/enterprise/organizations/fixture-org/authority/status") {
         statusReads++;
@@ -91,6 +94,24 @@ try {
     assert.equal(statusReads, 5);
     assert.equal(await page.getByRole("button", { name: /register|delegate|disable|execute|authorize|grant|revoke/i }).count(), 0);
     await audit("expired read UI fixture");
+
+    await page.goto(new URL("/dashboard/organization", origin).href);
+    const organization = page.getByRole("region", { name: "Organization settings" });
+    await organization.getByText(organizationName, { exact: true }).waitFor();
+    assert.equal(await organization.getByRole("textbox").count(), 0);
+    assert.equal(await organization.getByRole("button", { name: "Save organization" }).count(), 0);
+    await audit("organization read with long metadata UI fixture");
+    organizationMode = "foreign";
+    await page.reload();
+    await organization.getByRole("alert").waitFor();
+    assert.equal(await organization.getByText(organizationName, { exact: true }).count(), 0);
+    await audit("organization foreign payload rejected UI fixture");
+    organizationMode = "valid";
+    await organization.getByRole("button", { name: "Retry organization read" }).focus();
+    await page.keyboard.press("Enter");
+    await organization.getByText(organizationName, { exact: true }).waitFor();
+    assert.equal(await organization.getByRole("textbox").count(), 0);
+    await audit("organization read retry without rename activation UI fixture");
     await context.close();
   }
   console.log(JSON.stringify({ kind: "BROWSER_UI_FIXTURES_NOT_CUSTOMER_AUTHENTICATION_OR_AUTHORITY", browser: browser.version(), checks, violations, mutations }));
