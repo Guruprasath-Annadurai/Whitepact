@@ -8,5 +8,6 @@
 6. Inherited101full-source Ruff diagnostics and unsigned security checkpoint39619c4 remain gates. No forged attestations or protected-history rewriting.
 7. Historical aggregate CodeQL/SDK timeout, full dependency/supply-chain acceptance and founder300-second lifetime decision remain open. Original security registers preserved.
 8. Incident/recovery/new delegation authority paths remain blocked where supported independently qualified contracts are absent. Recorded metadata is not authority.
+9. Fresh mixed-scope238-test Argon run surfaced an aiosqlite connection-worker `Event loop is closed` warning. Assertions pass but cleanup lifecycle/root cause remains unresolved; it is not suppressed or relabeled a clean teardown qualification.
 
 **M13 OPEN. M14 NOT AUTHORIZED. GLOBAL PRODUCTION NO-GO.** No deployment, merge, cloud/paid infrastructure, DNS, billing or publishing.

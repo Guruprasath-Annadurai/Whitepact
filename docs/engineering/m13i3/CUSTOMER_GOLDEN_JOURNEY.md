@@ -16,3 +16,5 @@
 | Authority revocation / post-revocation denial | NOT EXECUTED; session logout is not authority revocation |
 
 The source policy requires TOTP assurance for ADD_PASSKEY. The inspected public identity routes expose TOTP enrollment/confirmation but no demonstrated password-to-TOTP session elevation. No assurance is rewritten, fake passkey inserted or security precondition bypassed. Security owner must supply a supported independently qualified first-factor enrollment/step-up contract. Existing I2 normal-session reads/rename evidence is historical and not a replacement for this chain.
+
+Clean-source JSON receipts: product223c74e4 has10confirmed/1blocked at RP/origin; Argon test-only review childce41f204 with unchanged e6af2f8 implementation has13confirmed/1blocked at registration assurance. Fresh account, organization, database and browser context remain the same within each run. The supported passkey-list read returns200/zero credentials after refusal; actual logout200 completes safe cleanup. No server registration or signed assertion verification is claimed.
