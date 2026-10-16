@@ -17,6 +17,7 @@ Enforces:
 from __future__ import annotations
 
 import asyncio
+import functools
 import json
 import logging
 import os
@@ -243,19 +244,34 @@ class DockerContainerBackend(IsolationBackend):
                     )
                 except Exception:
                     pass
-                exists = False
+                is_absent = False
                 try:
                     check = subprocess.run(  # noqa: S603
                         [self.docker_cmd, "inspect", target],
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL,
+                        capture_output=True,
+                        text=True,
                         timeout=5,
                         check=False,
                     )
-                    exists = check.returncode == 0
+                    if check.returncode != 0:
+                        err = check.stderr.lower()
+                        if (
+                            "no such container" in err
+                            or "no such object" in err
+                            or "not found" in err
+                        ):
+                            is_absent = True
+                        else:
+                            # Nonzero inspect with daemon error or disconnection: absence unconfirmed!
+                            is_absent = False
+                    else:
+                        # Container still exists in dockerd
+                        is_absent = False
                 except Exception:
-                    exists = False
-                if exists:
+                    # Timeout or inspection execution error: cannot establish absence!
+                    is_absent = False
+
+                if not is_absent:
                     gone_since[target] = None
                     remaining = True
                     continue
@@ -271,6 +287,17 @@ class DockerContainerBackend(IsolationBackend):
                 return
             time.sleep(0.2)
 
+        # If deadline expires and any target was not confirmed absent, fail closed!
+        unconfirmed = [
+            t
+            for t, g in gone_since.items()
+            if g is None or (stable_seconds > 0 and (time.monotonic() - g < stable_seconds))
+        ]
+        if unconfirmed:
+            raise RuntimeError(
+                f"Container containment unconfirmed after {wait_seconds}s for targets: {unconfirmed}"
+            )
+
     async def _remove_containers_uninterruptible(
         self,
         targets: list[str],
@@ -278,24 +305,29 @@ class DockerContainerBackend(IsolationBackend):
         stable_seconds: float,
         wait_seconds: float,
     ) -> None:
-        """Run container removal off the event loop, even if this task is cancelled."""
-        current = asyncio.current_task()
-        restored = 0
-        if current is not None and hasattr(current, "uncancel"):
-            while current.cancelling() > 0:
-                current.uncancel()
-                restored += 1
+        """Run container removal off the event loop, guaranteed to finish even if cancelled."""
+        loop = asyncio.get_running_loop()
+        thread_future = loop.run_in_executor(
+            None,
+            functools.partial(
+                self._remove_containers,
+                targets,
+                stable_seconds=stable_seconds,
+                wait_seconds=wait_seconds,
+            ),
+        )
+        was_cancelled = False
+        while not thread_future.done():
+            try:
+                await asyncio.shield(thread_future)
+            except asyncio.CancelledError:
+                was_cancelled = True
         try:
-            await asyncio.shield(
-                asyncio.to_thread(
-                    self._remove_containers,
-                    targets,
-                    stable_seconds=stable_seconds,
-                    wait_seconds=wait_seconds,
-                )
-            )
+            # Propagate any exception from _remove_containers (e.g. unconfirmed containment)
+            thread_future.result()
         finally:
-            for _ in range(restored):
+            if was_cancelled:
+                current = asyncio.current_task()
                 if current is not None:
                     current.cancel()
 
@@ -541,12 +573,22 @@ class DockerContainerBackend(IsolationBackend):
                     # Client kill (timeout or CancelledError) can race dockerd's
                     # asynchronous create. Retry rm -f until the uniquely named
                     # container is gone; never filter by org/action prefix.
-                    incomplete = timed_out or proc.returncode is None
-                    await self._remove_containers_uninterruptible(
-                        cleanup_targets,
-                        stable_seconds=3.0 if incomplete else 0.0,
-                        wait_seconds=12.0 if incomplete else 2.0,
-                    )
+                    incomplete = timed_out or proc.returncode is None or revoked_in_flight
+                    cleanup_error: Exception | None = None
+                    try:
+                        await self._remove_containers_uninterruptible(
+                            cleanup_targets,
+                            stable_seconds=3.0 if incomplete else 0.0,
+                            wait_seconds=12.0 if incomplete else 2.0,
+                        )
+                    except Exception as exc:
+                        cleanup_error = exc
+                        logger.critical(
+                            "CONTAINER_CLEANUP_FAILED_PRESERVING_UNRESOLVED: %s for org %s (%s)",
+                            execution_id,
+                            request.organization_id,
+                            exc,
+                        )
 
                     # Ensure the docker client process is not left as a zombie.
                     if proc.returncode is None:
@@ -557,7 +599,19 @@ class DockerContainerBackend(IsolationBackend):
 
                     # Unregister AFTER container removal is confirmed, ensuring
                     # active tracking remains valid until containment is complete.
-                    await registry.unregister(execution_id)
+                    # CRITICAL INVARIANT: If removal failed or absence is unconfirmed,
+                    # DO NOT unregister! Retain in registry tracking as unresolved containment.
+                    if cleanup_error is not None:
+                        entry = registry._active.get(execution_id)
+                        if entry is not None:
+                            entry.termination_attempts += 1
+                            entry.containment_status = "unresolved"
+                            entry.last_termination_error = str(cleanup_error)
+                            async with registry._lock:
+                                registry._unresolved[execution_id] = entry
+                                registry._active.pop(execution_id, None)
+                    else:
+                        await registry.unregister(execution_id)
                     duration = time.monotonic() - start_time
 
                 max_out = limits.max_output_bytes

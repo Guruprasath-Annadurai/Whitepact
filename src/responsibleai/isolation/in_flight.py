@@ -74,7 +74,30 @@ def _check_remote_worker_active(organization_id: str | None) -> list[dict[str, A
         for f in _DISTRIBUTED_REGISTRY_DIR.glob("*.json"):
             try:
                 data = json.loads(f.read_text(encoding="utf-8"))
-            except Exception:
+            except Exception as read_exc:
+                # File is unreadable, locked, or corrupted; cannot authoritatively prove absence!
+                if organization_id is not None:
+                    prefix = f"{organization_id}_"
+                    if f.stem.startswith(prefix):
+                        file_org = organization_id
+                        file_exec = f.stem[len(prefix) :]
+                    else:
+                        continue
+                else:
+                    parts = f.stem.split("_", 1)
+                    file_org = parts[0] if len(parts) > 0 else "unknown"
+                    file_exec = parts[1] if len(parts) > 1 else f.stem
+
+                unresolved_remote.append(
+                    {
+                        "execution_id": file_exec,
+                        "organization_id": file_org,
+                        "action_id": "unknown",
+                        "pid": None,
+                        "created_at": time.time(),
+                        "error": f"Tracking file inaccessible: {read_exc}",
+                    }
+                )
                 continue
             if organization_id is not None and data.get("organization_id") != organization_id:
                 continue
@@ -97,6 +120,16 @@ def _check_remote_worker_active(organization_id: str | None) -> list[dict[str, A
                         pass
     except Exception as exc:
         logger.debug("Failed to scan distributed registry: %s", exc)
+        unresolved_remote.append(
+            {
+                "execution_id": "scan_failure",
+                "organization_id": organization_id or "unknown",
+                "action_id": "unknown",
+                "pid": None,
+                "created_at": time.time(),
+                "error": f"Distributed registry scan failure: {exc}",
+            }
+        )
     return unresolved_remote
 
 
