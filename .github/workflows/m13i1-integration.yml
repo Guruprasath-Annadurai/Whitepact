@@ -3,6 +3,11 @@ name: M13-I1 Independent Integration Review
 on:
   pull_request:
     paths:
+      - 'docs/engineering/m13i2/**'
+      - 'scripts/engineering/m13i2_*'
+      - 'tests/test_m13i2_*'
+      - 'web/**'
+      - 'src/responsibleai/dashboard/static/whitepact/**'
       - 'docs/engineering/m13i1/**'
       - 'docs/security/m13s4/**'
       - 'scripts/engineering/m13i1_*'
@@ -94,7 +99,11 @@ jobs:
         env:
           PYTHONPATH: src:.
           WHITEPACT_ENV: development
-        run: python scripts/engineering/m13i1_customer_journey.py
+        run: |
+          ruff check scripts/engineering/m13i2_customer_journey.py tests/test_m13i2_customer_journey.py
+          ruff format --check scripts/engineering/m13i2_customer_journey.py tests/test_m13i2_customer_journey.py
+          python -m pytest tests/test_m13i2_customer_journey.py -o addopts='' --tb=short -ra
+          python scripts/engineering/m13i2_customer_journey.py
 
   native-container-scope:
     runs-on: ubuntu-24.04
@@ -156,7 +165,8 @@ jobs:
           persist-credentials: false
       - name: Require signoffs on introduced non-merge commits
         env:
-          DCO_BASE: ${{ github.event.pull_request.base.sha || '5291cc6d4e750c6ec5ec0688f8bfc9e3b72a8558' }}
+          # Preserve the inherited security checkpoint gate across stacked product PRs.
+          DCO_BASE: '5291cc6d4e750c6ec5ec0688f8bfc9e3b72a8558'
         run: |
           set -euo pipefail
           missing=0
