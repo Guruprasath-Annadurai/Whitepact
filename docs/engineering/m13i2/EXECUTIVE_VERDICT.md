@@ -10,4 +10,6 @@ Implemented product checkpoints include an on-demand advisory root/consent recor
 
 Organization metadata is now a validated live read; rename remains disabled pending an atomic backend workspace precondition. The newly published ATLAS PR #212 was independently reviewed: local origin mismatch resolved in a real run, 38 existing assertions passed, but two production-origin configuration invariants failed and capability/cascade guarantees remain unqualified. Its implementation is not imported. See the handoff report and separate signed failing-test checkpoint.
 
+Final product source `6e2363cfbaa12a62ef94f04313ea16a8eb6c1b39` completed **26 exact-head CI checks:23passed/3failed/zero pending**. Original/extended/native security, product browser, SDK/package/MCP/framework and infrastructure scopes passed. Actual customer, inherited lint and DCO failed. This documentation-only receipt follows that measured source commit; the draft PR records the document commit's separate exact-head evidence. **M13 is not complete.**
+
 See the companion customer, frontend, SDK, security, CI and blocker reports for measured results. The exact final reviewed HEAD/tree and CI run URLs belong in the PR and `EXACT_HEAD_CI_MATRIX.md`; a document cannot embed its own commit hash without changing that hash.
