@@ -10,4 +10,4 @@
 | P1 PR #212 capabilities/disablement | Effective authority and transactional qualification incomplete | TITAN-1 / TITAN-2 | Application integration blocked |
 | P1 historical DCO / security lint | Protected unsigned ancestor; security-owned lint failures | Original owner / TITAN-2 | No waiver, history rewrite or forged attestation |
 
-Fix commits are the Forge signed checkpoint containing these changes; draft PR receipt supplies the exact hash. Remaining risk: metadata endpoints without tenant envelopes cannot prove selected-organization binding from payload alone. Full route inventory, fresh SDK/CI/browser/Linux/security acceptance are not yet completed. M14/M21 remain unauthorized.
+Fix commits are the Forge signed checkpoints containing these changes; draft PR receipt supplies exact hashes. API-key records include org_id and now require a matching selected session tenant; shared domain endpoints still lack a consistent tenant envelope. Full route inventory, fresh SDK/CI/browser/Linux/security acceptance are not yet completed. M14/M21 remain unauthorized.

@@ -4,7 +4,7 @@
 |---|---|---|
 | Signup, local email, login, onboarding | REAL AND VERIFIED | Prior I3 actual HTTP/browser prefix; repeat on Forge pending |
 | Shared domain reads | READ-ONLY | Forge cancellation, workspace isolation, malformed payload regressions |
-| API-key inventory | READ-ONLY | Forge metadata validation; cookie-scoped endpoint lacks tenant envelope |
+| API-key inventory | READ-ONLY | Forge metadata validation and per-record org_id check against selected session |
 | API-key create/rotate/revoke | REAL BUT UNQUALIFIED | Existing UI fixture tests; full customer authority qualification outstanding |
 | Agents, root and consent records | READ-ONLY | Existing typed readers; no effective-authority inference |
 | Organization rename | BLOCKED | Missing expected-organization/version write precondition |

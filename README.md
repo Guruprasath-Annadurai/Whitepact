@@ -11,7 +11,15 @@
   <a href="https://www.bestpractices.dev/projects/14112"><img src="https://www.bestpractices.dev/projects/14112/baseline" alt="OpenSSF Baseline"/></a>
 </p>
 
-<p align="center"><strong>WhitePact — an independent runtime authority, governance, and assurance layer for autonomous systems: a five-way governance decision engine (ALLOW / ALLOW_WITH_REDACTION / REQUIRE_APPROVAL / DENY / QUARANTINE), trust scoring, bias detection, guardrails, hallucination detection, compliance mapping (NIST AI RMF / EU AI Act / ISO 42001), cost intelligence, drift monitoring, a public Trust Index / leaderboard / AI Incident Database, and an MCP server (30 tools, 20 resources) with LangChain, LangGraph, and Google ADK trust-gate integrations.</strong></p>
+<p align="center"><strong>WhitePact — Independent runtime authorization and enforcement for AI agents.</strong></p>
+
+The open-source core includes policy decisions, approval workflows, evidence records,
+SDKs and MCP interfaces. Advisory trust scores and compliance mappings are not
+security certifications. Hosted and enterprise subscriptions are planned offerings;
+their presence in console code does not establish service availability.
+
+**M13 remains open. GLOBAL PRODUCTION NO-GO.** The full customer authority chain
+is not independently qualified. See [Forge qualification and blockers](docs/engineering/m13-forge/EXECUTIVE_VERDICT.md).
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────┐
@@ -120,7 +128,7 @@ Demonstrates the core deterministic doctrine:
 with canonical SHA-256 evidence chain verification.
 
 > [!NOTE]
-> FastStart V1 is a lightweight local demonstration of deterministic gateway policy evaluation and evidence hashing. Step 4 is a synthetic approval demonstration without human participants or isolated container dispatch. Governed execution with OS-level container isolation, epoch-bound execution permits, and durable multi-tenant replication is qualified in the integration test suite.
+> FastStart V1 is a lightweight local demonstration of deterministic gateway policy evaluation and evidence hashing. Step 4 is a synthetic approval demonstration without human participants or isolated container dispatch. Passing isolated integration regressions does not qualify a real customer's root authorization, consent, delegation, execution or revocation journey. Those mandatory acceptance gates remain open.
 
 ---
 

@@ -7,15 +7,22 @@ import { Button } from "../../components/Button";
 import { api, messageFrom } from "../../lib/api";
 import type { LoadState } from "../../lib/contracts";
 import { readKeyInventory, type KeyRecord } from "../../lib/apiKeyInventory";
+import { useOutletContext } from "react-router-dom";
+import type { WebSession } from "../dashboard/DashboardShell";
 
 type CreatedKey = KeyRecord & { api_key: string };
 type Confirmation = { kind: "rotate" | "revoke"; key: KeyRecord };
 
 export function ApiKeysPage() {
+  const session = useOutletContext<WebSession | undefined>();
+  return <KeyWorkspace key={`${session?.organization?.id ?? "unavailable"}:${session?.user.email ?? "unavailable"}`} organizationId={session?.organization?.id} />;
+}
+
+function KeyWorkspace({ organizationId }: { organizationId?: string }) {
   const [keys,setKeys]=useState<KeyRecord[]>([]); const [state,setState]=useState<LoadState>("loading"); const [creating,setCreating]=useState(false); const [created,setCreated]=useState<CreatedKey|null>(null); const [confirm,setConfirm]=useState<Confirmation|null>(null); const [busy,setBusy]=useState(""); const [error,setError]=useState(""); const [notice,setNotice]=useState(""); const [copyState,setCopyState]=useState<"idle"|"copied"|"failed">("idle");
   const [form,setForm]=useState({name:"",environment:"test",scopes:["governance:read"],expires_in_days:90});
   const request = useRef<AbortController | null>(null);
-  const load=useCallback(async()=>{request.current?.abort();const controller=new AbortController();request.current=controller;setKeys([]);setState("loading");setError("");try{const value=readKeyInventory(await api<unknown>("/api/v1/web/api-keys",{signal:controller.signal}));if(controller.signal.aborted)return;setKeys(value);setState(value.length?"success":"empty");}catch(cause){if(!controller.signal.aborted){setError(messageFrom(cause,"API keys could not be loaded"));setState("error");}}},[]);
+  const load=useCallback(async()=>{request.current?.abort();const controller=new AbortController();request.current=controller;setKeys([]);setState("loading");setError("");try{const value=readKeyInventory(await api<unknown>("/api/v1/web/api-keys",{signal:controller.signal}),organizationId);if(controller.signal.aborted)return;setKeys(value);setState(value.length?"success":"empty");}catch(cause){if(!controller.signal.aborted){setError(messageFrom(cause,"API keys could not be loaded"));setState("error");}}},[organizationId]);
   useEffect(()=>{void load();return()=>request.current?.abort();},[load]);
   const closeCreate=useCallback(()=>setCreating(false),[]); const closeReveal=useCallback(()=>{setCreated(null);setCopyState("idle");},[]); const closeConfirm=useCallback(()=>setConfirm(null),[]);
   async function create(event:FormEvent){event.preventDefault();setBusy("create");setError("");setNotice("");const expires_at=new Date(Date.now()+form.expires_in_days*86_400_000).toISOString();try{const key=await api<CreatedKey>("/api/v1/web/api-keys",{method:"POST",body:JSON.stringify({name:form.name,environment:form.environment,scopes:form.scopes,expires_at})});setCreated(key);setCreating(false);setNotice("API key created. Copy the secret before closing the dialog.");await load();}catch(cause){setError(messageFrom(cause,"Key creation failed"));}finally{setBusy("");}}
