@@ -3,7 +3,7 @@
 """Receipt integrity tests; these are not customer journey acceptance."""
 
 import pytest
-from scripts.engineering.m13_apex_customer_journey import validate_evidence
+from scripts.engineering.m13_apex_customer_journey import PHASES, validate_evidence
 
 
 def receipt():
@@ -11,8 +11,8 @@ def receipt():
         "authority_seeded": False,
         "acceptance": "BLOCKED",
         "stages": [
-            {"phase": f"stage_{index}", "status": "PASS" if index < 7 else "NOT_EXECUTED"}
-            for index in range(24)
+            {"phase": phase, "status": "PASS" if index < 7 else "NOT_EXECUTED"}
+            for index, phase in enumerate(PHASES)
         ],
     }
 
@@ -41,6 +41,6 @@ def test_success_after_missing_prerequisite_is_rejected():
 
 def test_duplicate_stages_are_rejected():
     evidence = receipt()
-    evidence["stages"][23] = evidence["stages"][0]
+    evidence["stages"][24] = evidence["stages"][0]
     with pytest.raises(ValueError, match="distinct"):
         validate_evidence(evidence)

@@ -24,13 +24,41 @@ from tests.pg_test_url import isolated_pg_url
 import responsibleai.dashboard.app as dashboard
 from responsibleai.db.migrate import _migration_env, _run_alembic
 
+PHASES = (
+    "signup",
+    "email_verification",
+    "password_login",
+    "organization_onboarding",
+    "passkey_enrollment",
+    "passkey_assertion_verification",
+    "secure_elevated_session",
+    "legitimate_identity_qualification",
+    "explicit_customer_consent",
+    "root_initiation",
+    "root_proof_of_possession",
+    "root_activation",
+    "application_registration",
+    "agent_registration",
+    "capability_delegation",
+    "policy_assignment",
+    "judgment",
+    "human_approval",
+    "execution_grant",
+    "controlled_execution",
+    "evidence_verification",
+    "revocation",
+    "post_revocation_execution_attempt",
+    "post_revocation_denial",
+    "logout_session_invalidation",
+)
+
 
 def validate_evidence(result: dict) -> None:
     """Reject incomplete or falsely successful browser receipts."""
     stages = result.get("stages", [])
     phases = [stage.get("phase") for stage in stages]
-    if len(phases) != 24 or len(set(phases)) != 24:
-        raise ValueError("Customer receipt requires 24 distinct stages")
+    if phases != list(PHASES):
+        raise ValueError("Customer receipt requires the exact 25 distinct stages in order")
     if result.get("authority_seeded") is not False:
         raise ValueError("Seeded authority is not customer acceptance")
     statuses = [stage.get("status") for stage in stages]
@@ -101,6 +129,7 @@ async def attempt() -> dict:
                     async with serve(dashboard.app) as origin:
                         config = {
                             "origin": origin,
+                            "phases": PHASES,
                             "receiptUrl": f"{mailbox}/receipt",
                             "receiptSecret": receipt_secret,
                             "credentials": {
