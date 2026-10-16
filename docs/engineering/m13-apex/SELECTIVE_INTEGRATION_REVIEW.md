@@ -44,3 +44,31 @@ independent evidence, but nonempty rollback loses security state. Full independe
 security-sensitive acceptance and source review remain required before selecting
 those hunks. Original immutable tests/manifests remain APEX versions. This product
 selection does not qualify the unintegrated TITAN kernel or complete checkpointA.
+
+## Qualified transport selection: APEX-MCP-02
+
+Source TITAN-2 commit6b604bf12ac07508c5b584b85ed48df8a983e5af; detached review.
+Owner-authored new SSE/PostgreSQL/runtime suites14PASS/0SKIP,97.41seconds;
+preserved transport/authentication/revocation subset76PASS/0SKIP,136.29seconds.
+These are scoped assertions, not complete external runtime qualification.
+
+Independent real-TCP SSE test opens an actual session with actual fixture keys,
+initializes through the emitted endpoint, and posts harmless pings. No manual
+transport-owner dictionaries are seeded. Original APEX accepts an unauthenticated
+ping202 instead of401 (reproduced FAIL). Candidate rejects absent/invalid401,
+cross-tenant403, sibling-credential403 and revoked401; owner credential remains
+functional202 with real SSE reply. Same test PASSes on candidate,4.28seconds.
+Fixture protocol authorization does not qualify customer root authority.
+
+Select only `src/responsibleai/mcp/server.py`; it exactly matches owner blob
+5c712437505e9711854bf08e03c89a69e43a5f2b. Prior APEX server blob exactly matched
+owner parent, so no conflict or obsolete source restoration. APEX `tools.py`
+advisory/external-boundary metadata is preserved. Integrated source subset
+85PASS/0SKIP,143.91seconds. Full MCP scope is added to both independent Python CI
+jobs with explicit zero-skip enforcement; final results recorded in PR receipt.
+
+SDK support floor tightened consistently to mcp>=1.29.1,<2 in core/optional/dev
+requirements, matching independently exercised session-owner APIs. Older SDKs
+are not advertised as qualified. The upper major-version boundary is preserved.
+No nonce, in-flight or container-backend changes from TITAN-2 are selected here;
+they remain separately reviewed owner work. Root FK and rollback blockers remain.

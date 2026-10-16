@@ -10,6 +10,8 @@ on:
       - 'tests/js/m13-apex-*'
       - 'src/responsibleai/trust_fabric/directory.py'
       - 'src/responsibleai/mcp/tools.py'
+      - 'src/responsibleai/mcp/server.py'
+      - 'pyproject.toml'
       - 'docs/engineering/m13-forge/**'
       - 'scripts/engineering/m13_forge_*'
       - 'tests/test_m13_forge_*'

@@ -120,3 +120,16 @@ cross-worktree fixture resolved a relative scripts directory against harness CWD
 fixed to resolve relative to the selected candidate ini. No production migration
 logic changed. Protected originals and manifest unchanged. Owner policy handoff:
 https://github.com/Guruprasath-Annadurai/Whitepact/pull/215#issuecomment-6217172171.
+
+## APEX-MCP-02 — actual SSE post credential binding
+
+P0 / starting state real SSE unauthenticated ping accepted202. Independent
+reproducer `tests/test_m13_apex_sse_binding.py` FAILs old APEX; PASSes detached
+TITAN-2 6b604bf12ac07508c5b584b85ed48df8a983e5af. Selected server blob exactly
+matches reviewed owner. Changed `src/responsibleai/mcp/server.py`, `pyproject.toml`
+(supported floor1.29.1), both candidate CI triggers and full-MCP regression step.
+Integrated subset85PASS/0SKIP; new owner suite14PASS and preserved76PASS reported
+separately. Source review accepted for transport scope; no other runtime/kernel
+fix selected. Full519-case exact-head Python matrix pending next signed checkpoint.
+Remaining blocker: complete root/authority acceptance still fails principal FK;
+this transport hardening enables no new privileged customer workflow.

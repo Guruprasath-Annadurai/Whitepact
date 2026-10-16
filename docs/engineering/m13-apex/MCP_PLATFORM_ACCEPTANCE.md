@@ -25,3 +25,12 @@ Full consequential customer execution, independent multi-host runtime enforcemen
 provider accounts and external directory discoverability remain unqualified.
 See AI_PLATFORM_COMPATIBILITY.md for current provider-specific BLOCKED/NOT_TESTED
 statuses; historical hosted receipt labels are not current-head qualification.
+
+APEX-MCP-02: actual unauthenticated SSE post accepted202 was independently
+reproduced. Selected TITAN-2 server fix denies missing/invalid/foreign/sibling/
+revoked credentials while preserving the session owner's real reply. Source
+blob5c712437505e9711854bf08e03c89a69e43a5f2b matches reviewed6b604bf1 exactly.
+Integrated real-TCP/auth/transport/metadata subset85PASS/0SKIP. Core/optional/dev
+SDK floor now1.29.1; older SDK versions are not qualified. Full519-case matrix
+(518existing plus real SSE test) required on both Python CI jobs, not yet claimed
+until final receipts. See SELECTIVE_INTEGRATION_REVIEW.md.

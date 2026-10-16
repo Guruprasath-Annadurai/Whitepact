@@ -207,3 +207,12 @@ corrected by resolving the relative migration scripts against the selected ini's
 directory. No application migration logic or original immutable test was edited.
 Supply-chain owner handoff:
 https://github.com/Guruprasath-Annadurai/Whitepact/pull/215#issuecomment-6217172171.
+
+Further selective integration APEX-MCP-02: new TITAN-2 6b604bf1 adds actual SSE
+session credential binding. Independent real-TCP test reproduces unauthenticated
+ping202 on old APEX and verifies owner-only messaging plus missing/invalid/foreign/
+sibling/revoked denial on candidate. Selected server blob is byte-identical to
+reviewed owner; integrated subset85PASS/0SKIP. SDK floor1.29.1 matches qualified
+APIs; full519 MCP cases are required on both independent Python CI jobs. Other
+TITAN-2 nonce/runtime/container changes remain unintegrated. See selective review;
+final exact-head CI receipts must qualify this new checkpoint separately.
