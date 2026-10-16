@@ -29,6 +29,7 @@ from responsibleai.db.migrate import _find_alembic_ini, _migration_env, _run_ale
 from responsibleai.db.web_identity_repository import WebIdentityRepository
 from responsibleai.enterprise.authority.errors import (
     BOOTSTRAP_TOKEN_REPLAY,
+    IDENTITY_ASSURANCE_REQUIRED,
     PASSKEY_STEP_UP_REQUIRED,
     PROOF_OF_POSSESSION_INVALID,
     ROOT_ALREADY_EXISTS,
@@ -48,6 +49,13 @@ from responsibleai.enterprise.errors import (
 )
 from responsibleai.enterprise.service import Actor, EnterpriseIAM
 from responsibleai.rbac.models import GovernanceStatus, Role
+from responsibleai.trust_fabric.directory import normalize_identifier
+from responsibleai.trust_fabric.enums import (
+    IdentifierType,
+    IdentifierVerificationState,
+    PrincipalState,
+    PrincipalType,
+)
 from tests.pg_test_url import isolated_pg_url
 
 
@@ -1065,3 +1073,426 @@ async def test_root_bootstrap_transaction_rollback_preserves_clean_state():
                 )
             ).first()
             assert r_cnt is None, "Trust root must NOT exist after rolled-back transaction"
+
+
+@pytest.mark.asyncio
+async def test_root_bootstrap_identifier_recycling_after_revocation():
+    """Verify that a revoked identifier in an organization can be cleanly recycled by a new principal."""
+    async for url in isolated_pg_url("wp_titan_ident_recycle"):
+        ini = _find_alembic_ini()
+        assert ini is not None
+        await _run_alembic(ini, _migration_env(url), "upgrade", "head")
+        engine = create_engine(url)
+
+        web_repo = WebIdentityRepository(engine)
+        iam = EnterpriseIAM(engine)
+        svc = CustomerAuthorityService(engine)
+
+        suffix = uuid.uuid4().hex[:8]
+        shared_email = f"shared.{suffix}@example.com"
+        old_uid, old_token = await web_repo.register("Old Owner", shared_email, "Password123!@#")
+        await web_repo.verify_email(old_token)
+
+        org = await iam.create_workspace(
+            actor_user_id=old_uid,
+            name=f"Recycle Org {suffix}",
+            slug=f"recycle-org-{suffix}",
+            kind="ORGANIZATION",
+        )
+        org_id = org["id"] if isinstance(org, dict) else org.id
+
+        now_iso = datetime.now(UTC).isoformat()
+        # Seed an old principal and revoking their identifier
+        async with engine.raw.begin() as conn:
+            await conn.execute(
+                insert(trust_fabric_principals).values(
+                    id=old_uid,
+                    org_id=org_id,
+                    principal_type=PrincipalType.HUMAN.value,
+                    display_name="Old Owner",
+                    lifecycle_state=PrincipalState.REVOKED.value,
+                    created_at=now_iso,
+                    updated_at=now_iso,
+                )
+            )
+            await conn.execute(
+                insert(trust_fabric_identifiers).values(
+                    id=f"wp_ident_old_{uuid.uuid4().hex[:8]}",
+                    principal_id=old_uid,
+                    org_id=org_id,
+                    identifier_type=IdentifierType.EMAIL.value,
+                    raw_value=shared_email,
+                    normalized_value=normalize_identifier(IdentifierType.EMAIL, shared_email),
+                    is_primary=1,
+                    verification_state=IdentifierVerificationState.REVOKED.value,
+                    verified_at=now_iso,
+                    expires_at=None,
+                    revoked_at=now_iso,
+                    source_id="historical",
+                    created_at=now_iso,
+                )
+            )
+            # Deprovision old account's email address to simulate account retirement
+            await conn.execute(
+                update(web_users)
+                .where(web_users.c.id == old_uid)
+                .values(email=f"retired.{old_uid}@example.com")
+            )
+
+        # New legitimate owner with recycled identifier
+        new_uid, new_token = await web_repo.register("New Owner", shared_email, "Password123!@#")
+        await web_repo.verify_email(new_token)
+        # Add new owner to organization
+        async with engine.raw.begin() as conn:
+            await conn.execute(
+                insert(web_memberships).values(
+                    id=f"wp_mem_{uuid.uuid4().hex[:8]}",
+                    org_id=org_id,
+                    user_id=new_uid,
+                    role=Role.OWNER.value,
+                    status="ACTIVE",
+                    created_at=now_iso,
+                    updated_at=now_iso,
+                )
+            )
+
+        actor_new = Actor(
+            actor_type="USER",
+            actor_id=new_uid,
+            user_id=new_uid,
+            org_id=org_id,
+            role=Role.OWNER,
+            membership_status="ACTIVE",
+        )
+
+        init_res = await svc.initiate_root_bootstrap(
+            actor_new, org_id=org_id, require_identity_assurance=True
+        )
+        priv, pub_hex, _ = _gen_ed25519()
+        pop_sig = _b64url(
+            priv.sign(
+                f"WP_ROOT_POP:{org_id}:{init_res['nonce']}:{hashlib.sha256(init_res['token'].encode()).hexdigest()}".encode()
+            )
+        )
+
+        res = await svc.complete_root_bootstrap(
+            actor_new,
+            org_id=org_id,
+            token=init_res["token"],
+            nonce=init_res["nonce"],
+            root_public_key=pub_hex,
+            root_signature=pop_sig,
+            scope_description="Recycled Root",
+            purpose="Recycled testing",
+            allowed_action_types=["test.recycled"],
+            allowed_targets=["test:recycled"],
+        )
+        assert res["status"] == "BOOTSTRAPPED"
+
+        # Verify old revoked identifier remained unchanged and new identifier belongs to new_uid
+        async with engine.raw.connect() as conn:
+            rows = (
+                await conn.execute(
+                    select(
+                        trust_fabric_identifiers.c.id,
+                        trust_fabric_identifiers.c.principal_id,
+                        trust_fabric_identifiers.c.revoked_at,
+                    ).where(
+                        and_(
+                            trust_fabric_identifiers.c.org_id == org_id,
+                            trust_fabric_identifiers.c.normalized_value
+                            == normalize_identifier(IdentifierType.EMAIL, shared_email),
+                        )
+                    )
+                )
+            ).all()
+            assert len(rows) == 2
+            principals = {r.principal_id for r in rows}
+            assert principals == {old_uid, new_uid}
+
+
+@pytest.mark.asyncio
+async def test_root_bootstrap_unverified_email_does_not_imply_external_identity_proofing():
+    """Verify principal activation never constitutes implicit external identity proofing or false KYC."""
+    async for url in isolated_pg_url("wp_titan_unverified_proof"):
+        ini = _find_alembic_ini()
+        assert ini is not None
+        await _run_alembic(ini, _migration_env(url), "upgrade", "head")
+        engine = create_engine(url)
+
+        web_repo = WebIdentityRepository(engine)
+        iam = EnterpriseIAM(engine)
+        svc = CustomerAuthorityService(engine)
+
+        suffix = uuid.uuid4().hex[:8]
+        raw_email = f"unverified.{suffix}@example.com"
+        # User registers but DOES NOT verify email (email_verified_at is NULL)
+        uid, _ = await web_repo.register("Unverified User", raw_email, "Password123!@#")
+
+        org = await iam.create_workspace(
+            actor_user_id=uid,
+            name=f"Unverified Org {suffix}",
+            slug=f"unverified-org-{suffix}",
+            kind="ORGANIZATION",
+        )
+        org_id = org["id"] if isinstance(org, dict) else org.id
+
+        actor = Actor(
+            actor_type="USER",
+            actor_id=uid,
+            user_id=uid,
+            org_id=org_id,
+            role=Role.OWNER,
+            membership_status="ACTIVE",
+        )
+
+        init_res = await svc.initiate_root_bootstrap(
+            actor, org_id=org_id, require_identity_assurance=False
+        )
+        priv, pub_hex, _ = _gen_ed25519()
+        pop_sig = _b64url(
+            priv.sign(
+                f"WP_ROOT_POP:{org_id}:{init_res['nonce']}:{hashlib.sha256(init_res['token'].encode()).hexdigest()}".encode()
+            )
+        )
+
+        res = await svc.complete_root_bootstrap(
+            actor,
+            org_id=org_id,
+            token=init_res["token"],
+            nonce=init_res["nonce"],
+            root_public_key=pub_hex,
+            root_signature=pop_sig,
+            scope_description="Unverified email scope",
+            purpose="Assurance test",
+            allowed_action_types=["test.act"],
+            allowed_targets=["test:target"],
+        )
+        assert res["status"] == "BOOTSTRAPPED"
+
+        async with engine.raw.connect() as conn:
+            # 1. Identifier MUST be UNVERIFIED and verified_at MUST be None
+            ident = (
+                await conn.execute(
+                    select(
+                        trust_fabric_identifiers.c.verification_state,
+                        trust_fabric_identifiers.c.verified_at,
+                    ).where(trust_fabric_identifiers.c.principal_id == uid)
+                )
+            ).first()
+            assert ident is not None
+            assert ident.verification_state == IdentifierVerificationState.UNVERIFIED.value
+            assert ident.verified_at is None
+
+            # 2. User account verification status remains UNVERIFIED (no fabricated KYC)
+            u_state = (
+                await conn.execute(
+                    select(web_users.c.verification_status, web_users.c.email_verified_at).where(
+                        web_users.c.id == uid
+                    )
+                )
+            ).first()
+            assert u_state is not None
+            assert u_state.verification_status == "UNVERIFIED"
+            assert u_state.email_verified_at is None
+
+
+@pytest.mark.asyncio
+async def test_root_bootstrap_forged_or_stale_identity_qualifications_rejected():
+    """Verify forged caller identity claims or stale account states are strictly rejected."""
+    async for url in isolated_pg_url("wp_titan_forged_ident"):
+        ini = _find_alembic_ini()
+        assert ini is not None
+        await _run_alembic(ini, _migration_env(url), "upgrade", "head")
+        engine = create_engine(url)
+
+        web_repo = WebIdentityRepository(engine)
+        iam = EnterpriseIAM(engine)
+        svc = CustomerAuthorityService(engine)
+
+        suffix = uuid.uuid4().hex[:8]
+        uid, _ = await web_repo.register(
+            "Spoofing User", f"spoof.{suffix}@example.com", "Password123!@#"
+        )
+
+        org = await iam.create_workspace(
+            actor_user_id=uid,
+            name=f"Spoof Org {suffix}",
+            slug=f"spoof-org-{suffix}",
+            kind="ORGANIZATION",
+        )
+        org_id = org["id"] if isinstance(org, dict) else org.id
+
+        # Caller claims forged elevated assurance in actor headers
+        forged_actor = Actor(
+            actor_type="USER",
+            actor_id=uid,
+            user_id=uid,
+            org_id=org_id,
+            role=Role.OWNER,
+            membership_status="ACTIVE",
+        )
+
+        # Authoritative database check catches unverified status and raises IDENTITY_ASSURANCE_REQUIRED
+        with pytest.raises(EnterpriseError) as exc:
+            await svc.initiate_root_bootstrap(
+                forged_actor, org_id=org_id, require_identity_assurance=True
+            )
+        assert exc.value.code == IDENTITY_ASSURANCE_REQUIRED
+
+
+@pytest.mark.asyncio
+async def test_root_bootstrap_pending_principal_promotion():
+    """Verify pre-existing PENDING_VERIFICATION principal is elevated to ACTIVE upon root completion."""
+    async for url in isolated_pg_url("wp_titan_pending_promo"):
+        ini = _find_alembic_ini()
+        assert ini is not None
+        await _run_alembic(ini, _migration_env(url), "upgrade", "head")
+        engine = create_engine(url)
+
+        web_repo = WebIdentityRepository(engine)
+        iam = EnterpriseIAM(engine)
+        svc = CustomerAuthorityService(engine)
+
+        suffix = uuid.uuid4().hex[:8]
+        email = f"pending.{suffix}@example.com"
+        uid, token = await web_repo.register("Pending Owner", email, "Password123!@#")
+        await web_repo.verify_email(token)
+
+        org = await iam.create_workspace(
+            actor_user_id=uid,
+            name=f"Pending Org {suffix}",
+            slug=f"pending-org-{suffix}",
+            kind="ORGANIZATION",
+        )
+        org_id = org["id"] if isinstance(org, dict) else org.id
+
+        now_iso = datetime.now(UTC).isoformat()
+        # Pre-seed principal in PENDING_VERIFICATION state
+        async with engine.raw.begin() as conn:
+            await conn.execute(
+                insert(trust_fabric_principals).values(
+                    id=uid,
+                    org_id=org_id,
+                    principal_type=PrincipalType.HUMAN.value,
+                    display_name="Pending Owner",
+                    lifecycle_state=PrincipalState.PENDING_VERIFICATION.value,
+                    created_at=now_iso,
+                    updated_at=now_iso,
+                )
+            )
+
+        actor = Actor(
+            actor_type="USER",
+            actor_id=uid,
+            user_id=uid,
+            org_id=org_id,
+            role=Role.OWNER,
+            membership_status="ACTIVE",
+        )
+
+        init_res = await svc.initiate_root_bootstrap(
+            actor, org_id=org_id, require_identity_assurance=True
+        )
+        priv, pub_hex, _ = _gen_ed25519()
+        pop_sig = _b64url(
+            priv.sign(
+                f"WP_ROOT_POP:{org_id}:{init_res['nonce']}:{hashlib.sha256(init_res['token'].encode()).hexdigest()}".encode()
+            )
+        )
+
+        res = await svc.complete_root_bootstrap(
+            actor,
+            org_id=org_id,
+            token=init_res["token"],
+            nonce=init_res["nonce"],
+            root_public_key=pub_hex,
+            root_signature=pop_sig,
+            scope_description="Pending promotion",
+            purpose="Pending promotion test",
+            allowed_action_types=["test.promo"],
+            allowed_targets=["test:promo"],
+        )
+        assert res["status"] == "BOOTSTRAPPED"
+
+        # Verify principal promoted to ACTIVE
+        async with engine.raw.connect() as conn:
+            p_state = await conn.scalar(
+                select(trust_fabric_principals.c.lifecycle_state).where(
+                    trust_fabric_principals.c.id == uid
+                )
+            )
+            assert p_state == PrincipalState.ACTIVE.value
+
+
+@pytest.mark.asyncio
+async def test_root_bootstrap_unicode_domain_idna_consistency_and_collision():
+    """Verify Unicode domains normalize via canonical IDNA and collisions across Unicode/Punycode are prevented."""
+    async for url in isolated_pg_url("wp_titan_idna_coll"):
+        ini = _find_alembic_ini()
+        assert ini is not None
+        await _run_alembic(ini, _migration_env(url), "upgrade", "head")
+        engine = create_engine(url)
+
+        web_repo = WebIdentityRepository(engine)
+        iam = EnterpriseIAM(engine)
+        svc = CustomerAuthorityService(engine)
+
+        suffix = uuid.uuid4().hex[:8]
+        unicode_email = f"admin-{suffix}@münchen-ag.example"
+        punycode_email = f"admin-{suffix}@xn--mnchen-ag-q9a.example"
+
+        uid, token = await web_repo.register("Munich Owner", unicode_email, "Password123!@#")
+        await web_repo.verify_email(token)
+
+        org = await iam.create_workspace(
+            actor_user_id=uid,
+            name=f"Munich Org {suffix}",
+            slug=f"munich-org-{suffix}",
+            kind="ORGANIZATION",
+        )
+        org_id = org["id"] if isinstance(org, dict) else org.id
+
+        actor = Actor(
+            actor_type="USER",
+            actor_id=uid,
+            user_id=uid,
+            org_id=org_id,
+            role=Role.OWNER,
+            membership_status="ACTIVE",
+        )
+
+        init_res = await svc.initiate_root_bootstrap(
+            actor, org_id=org_id, require_identity_assurance=True
+        )
+        priv, pub_hex, _ = _gen_ed25519()
+        pop_sig = _b64url(
+            priv.sign(
+                f"WP_ROOT_POP:{org_id}:{init_res['nonce']}:{hashlib.sha256(init_res['token'].encode()).hexdigest()}".encode()
+            )
+        )
+
+        res = await svc.complete_root_bootstrap(
+            actor,
+            org_id=org_id,
+            token=init_res["token"],
+            nonce=init_res["nonce"],
+            root_public_key=pub_hex,
+            root_signature=pop_sig,
+            scope_description="IDNA test",
+            purpose="IDNA test",
+            allowed_action_types=["test.idna"],
+            allowed_targets=["test:idna"],
+        )
+        assert res["status"] == "BOOTSTRAPPED"
+
+        # Verify normalized value in database matches canonical normalize_identifier
+        async with engine.raw.connect() as conn:
+            norm_val = await conn.scalar(
+                select(trust_fabric_identifiers.c.normalized_value).where(
+                    trust_fabric_identifiers.c.principal_id == uid
+                )
+            )
+            expected_norm = normalize_identifier(IdentifierType.EMAIL, unicode_email)
+            assert norm_val == expected_norm
+            assert norm_val == punycode_email.lower()

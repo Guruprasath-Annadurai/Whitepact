@@ -244,18 +244,26 @@ class DockerContainerBackend(IsolationBackend):
                 except Exception:
                     pass
                 exists = False
+                confirmed_absent = False
                 try:
                     check = subprocess.run(  # noqa: S603
                         [self.docker_cmd, "inspect", target],
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL,
+                        capture_output=True,
+                        text=True,
                         timeout=5,
                         check=False,
                     )
-                    exists = check.returncode == 0
+                    if check.returncode == 0:
+                        exists = True
+                    else:
+                        err = (check.stderr or "").lower()
+                        if "no such container" in err or "no such object" in err:
+                            confirmed_absent = True
+                        else:
+                            exists = True
                 except Exception:
-                    exists = False
-                if exists:
+                    exists = True
+                if exists or not confirmed_absent:
                     gone_since[target] = None
                     remaining = True
                     continue
@@ -270,6 +278,8 @@ class DockerContainerBackend(IsolationBackend):
             if not remaining:
                 return
             time.sleep(0.2)
+        if any(gone_since[t] is None for t in targets):
+            raise RuntimeError(f"containment unconfirmed: {targets}")
 
     async def _remove_containers_uninterruptible(
         self,

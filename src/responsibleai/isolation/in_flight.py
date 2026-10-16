@@ -71,6 +71,9 @@ def _check_remote_worker_active(organization_id: str | None) -> list[dict[str, A
         return unresolved_remote
     current_pid = os.getpid()
     try:
+        # Eagerly probe directory access to surface scan permission errors
+        with os.scandir(_DISTRIBUTED_REGISTRY_DIR):
+            pass
         for f in _DISTRIBUTED_REGISTRY_DIR.glob("*.json"):
             try:
                 data = json.loads(f.read_text(encoding="utf-8"))
@@ -83,8 +86,10 @@ def _check_remote_worker_active(organization_id: str | None) -> list[dict[str, A
                 try:
                     os.kill(pid, 0)
                     is_alive = True
-                except (ProcessLookupError, PermissionError):
+                except ProcessLookupError:
                     is_alive = False
+                except PermissionError:
+                    is_alive = True
                 if is_alive:
                     unresolved_remote.append(data)
                 else:
@@ -92,6 +97,11 @@ def _check_remote_worker_active(organization_id: str | None) -> list[dict[str, A
                         f.unlink()
                     except Exception:
                         pass
+    except (PermissionError, OSError) as exc:
+        logger.debug("Failed to scan distributed registry: %s", exc)
+        return [
+            {"execution_id": "unconfirmed_remote_scan_failure", "status": "UNRESOLVED_SCAN_FAILURE"}
+        ]
     except Exception as exc:
         logger.debug("Failed to scan distributed registry: %s", exc)
     return unresolved_remote

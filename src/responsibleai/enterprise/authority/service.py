@@ -107,7 +107,13 @@ from responsibleai.governance.root_authority import (
     build_root_authority_record,
 )
 from responsibleai.rbac.models import GovernanceStatus, Role
-from responsibleai.trust_fabric.enums import PrincipalState, PrincipalType
+from responsibleai.trust_fabric.directory import normalize_identifier
+from responsibleai.trust_fabric.enums import (
+    IdentifierType,
+    IdentifierVerificationState,
+    PrincipalState,
+    PrincipalType,
+)
 from responsibleai.trust_fabric.models import compute_digest
 
 
@@ -916,6 +922,7 @@ class CustomerAuthorityService:
                         web_users.c.email,
                         web_users.c.disabled,
                         web_users.c.verification_status,
+                        web_users.c.email_verified_at,
                     ).where(web_users.c.id == actor.user_id)
                 )
             ).first()
@@ -1067,9 +1074,11 @@ class CustomerAuthorityService:
                 ).strip()
                 meta = {
                     "origin": "customer_root_bootstrap",
-                    "verified_email": u_row.email,
+                    "email": u_row.email,
                     "established_at": now_iso,
                 }
+                if u_row.email_verified_at:
+                    meta["verified_email"] = u_row.email
                 await conn.execute(
                     trust_fabric_principals.insert().values(
                         id=actor.user_id,
@@ -1098,39 +1107,63 @@ class CustomerAuthorityService:
                 )
 
             if u_row.email:
-                norm_email = u_row.email.strip().lower()
+                norm_email = normalize_identifier(IdentifierType.EMAIL, u_row.email)
                 chk_ident = (
                     await conn.execute(
-                        select(trust_fabric_identifiers.c.principal_id).where(
+                        select(
+                            trust_fabric_identifiers.c.id,
+                            trust_fabric_identifiers.c.principal_id,
+                            trust_fabric_identifiers.c.verification_state,
+                        ).where(
                             and_(
                                 trust_fabric_identifiers.c.org_id == org_id,
-                                trust_fabric_identifiers.c.identifier_type == "EMAIL",
+                                trust_fabric_identifiers.c.identifier_type
+                                == IdentifierType.EMAIL.value,
                                 trust_fabric_identifiers.c.normalized_value == norm_email,
                                 trust_fabric_identifiers.c.revoked_at.is_(None),
                             )
                         )
                     )
                 ).first()
-                if chk_ident and chk_ident[0] != actor.user_id:
+                if chk_ident and chk_ident.principal_id != actor.user_id:
                     raise unauthorized_caller(
-                        f"Identifier EMAIL:{norm_email!r} is already claimed by principal {chk_ident[0]!r}."
+                        f"Identifier EMAIL:{norm_email!r} is already claimed by principal {chk_ident.principal_id!r}."
                     )
+                is_email_verified = bool(u_row.email_verified_at)
+                v_state = (
+                    IdentifierVerificationState.VERIFIED.value
+                    if is_email_verified
+                    else IdentifierVerificationState.UNVERIFIED.value
+                )
+                v_at = u_row.email_verified_at if is_email_verified else None
                 if not chk_ident:
                     await conn.execute(
                         trust_fabric_identifiers.insert().values(
                             id=f"wp_ident_{uuid.uuid4().hex}",
                             principal_id=actor.user_id,
                             org_id=org_id,
-                            identifier_type="EMAIL",
+                            identifier_type=IdentifierType.EMAIL.value,
                             raw_value=u_row.email,
                             normalized_value=norm_email,
                             is_primary=1,
-                            verification_state="VERIFIED",
-                            verified_at=now_iso,
+                            verification_state=v_state,
+                            verified_at=v_at,
                             expires_at=None,
                             revoked_at=None,
                             source_id="customer_root_bootstrap",
                             created_at=now_iso,
+                        )
+                    )
+                elif (
+                    is_email_verified
+                    and chk_ident.verification_state != IdentifierVerificationState.VERIFIED.value
+                ):
+                    await conn.execute(
+                        update(trust_fabric_identifiers)
+                        .where(trust_fabric_identifiers.c.id == chk_ident.id)
+                        .values(
+                            verification_state=IdentifierVerificationState.VERIFIED.value,
+                            verified_at=v_at,
                         )
                     )
 
