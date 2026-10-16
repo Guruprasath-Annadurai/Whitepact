@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import delete, func, insert, or_, select, update
+from sqlalchemy import case, delete, func, insert, or_, select, update
 from sqlalchemy.exc import IntegrityError
 
 from responsibleai.data_governance.legal_hold import LegalHoldActiveError, LegalHoldManager
@@ -193,7 +193,14 @@ class WebIdentityRepository:
             await conn.execute(
                 update(web_users)
                 .where(web_users.c.id == row.user_id)
-                .values(email_verified_at=_iso(now), updated_at=_iso(now))
+                .values(
+                    email_verified_at=_iso(now),
+                    verification_status=case(
+                        (web_users.c.verification_status == "UNVERIFIED", "BASIC_VERIFIED"),
+                        else_=web_users.c.verification_status,
+                    ),
+                    updated_at=_iso(now),
+                )
             )
         return True
 

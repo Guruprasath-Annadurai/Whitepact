@@ -250,12 +250,18 @@ class CustomerAuthorityService:
             async with self._engine.raw.connect() as conn:
                 row = (
                     await conn.execute(
-                        select(web_users.c.verification_status).where(
-                            web_users.c.id == actor.user_id
-                        )
+                        select(
+                            web_users.c.verification_status,
+                            web_users.c.email_verified_at,
+                        ).where(web_users.c.id == actor.user_id)
                     )
                 ).first()
-                if not row or row[0] not in {"VERIFIED", "IDENTITY_VERIFIED", "BASIC_VERIFIED"}:
+                if not row:
+                    raise assurance_required()
+                status = row[0]
+                if status == "UNVERIFIED" and row[1]:
+                    status = "BASIC_VERIFIED"
+                if not status or status not in {"VERIFIED", "IDENTITY_VERIFIED", "BASIC_VERIFIED"}:
                     raise assurance_required()
 
         # Check if organization already possesses an active canonical root
