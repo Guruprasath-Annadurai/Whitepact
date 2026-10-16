@@ -3,6 +3,9 @@ name: M13-P4 Product Candidate Review
 on:
   pull_request:
     paths:
+      - 'docs/engineering/m13i3/**'
+      - 'scripts/engineering/m13i3_*'
+      - 'tests/test_m13i3_*'
       - 'docs/engineering/m13i2/**'
       - 'scripts/engineering/m13i2_*'
       - 'tests/test_m13i2_*'

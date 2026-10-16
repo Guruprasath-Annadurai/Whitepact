@@ -3,6 +3,10 @@ name: M13-I1 Independent Integration Review
 on:
   pull_request:
     paths:
+      - 'docs/engineering/m13i3/**'
+      - 'scripts/engineering/m13i3_*'
+      - 'tests/test_m13i3_*'
+      - 'tests/js/m13i3-*'
       - 'docs/engineering/m13i2/**'
       - 'scripts/engineering/m13i2_*'
       - 'tests/test_m13i2_*'
@@ -95,15 +99,35 @@ jobs:
       - run: |
           python -m pip install -r tests/requirements-m11.txt
           python -m pip install '.[dashboard,postgres,mcp]' alembic
-      - name: Attempt actual fresh-customer journey; BLOCKED remains a failed gate
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+      - name: Install real Chromium ceremony runtime
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: /tmp/whitepact-m13i3-chromium
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npx playwright install --with-deps chromium
+          node --check tests/js/m13i3-real-webauthn.mjs
+      - name: Attempt actual fresh-customer browser journey; BLOCKED remains a failed gate
         env:
           PYTHONPATH: src:.
           WHITEPACT_ENV: development
+          PLAYWRIGHT_BROWSERS_PATH: /tmp/whitepact-m13i3-chromium
         run: |
           ruff check scripts/engineering/m13i2_customer_journey.py tests/test_m13i2_customer_journey.py
           ruff format --check scripts/engineering/m13i2_customer_journey.py tests/test_m13i2_customer_journey.py
-          python -m pytest tests/test_m13i2_customer_journey.py -o addopts='' --tb=short -ra
-          python scripts/engineering/m13i2_customer_journey.py
+          ruff check scripts/engineering/m13i3_browser_journey.py tests/test_m13i3_browser_evidence.py
+          ruff format --check scripts/engineering/m13i3_browser_journey.py tests/test_m13i3_browser_evidence.py
+          python -m pytest tests/test_m13i2_customer_journey.py tests/test_m13i3_browser_evidence.py -o addopts='' --tb=short -ra
+          python scripts/engineering/m13i3_browser_journey.py --report /tmp/m13i3-browser-evidence.json
+      - name: Preserve redacted actual browser evidence even when blocked
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: m13i3-actual-browser-evidence
+          path: /tmp/m13i3-browser-evidence.json
+          if-no-files-found: error
 
   native-container-scope:
     runs-on: ubuntu-24.04
