@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Guruprasath Annadurai
 // SPDX-License-Identifier: MIT
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { AlertTriangle, ArrowRight, Building2, CreditCard, FileCheck2, RotateCw, ShieldCheck, Users, X } from "lucide-react";
 import { Link, useOutletContext, useParams } from "react-router-dom";
 import { AccessibleDialog } from "../../components/AccessibleDialog";
@@ -24,23 +24,34 @@ const supported = {
 export function DomainPage({ domainKey }: { domainKey?: keyof typeof supported }) {
   const { domain = "" } = useParams();
   const key = domainKey ?? domain as keyof typeof supported;
+  const session = useOutletContext<WebSession>();
+  return <DomainSection key={`${key}:${session.organization?.id ?? "unavailable"}:${session.user.email}`} sectionKey={key} session={session} />;
+}
+
+function DomainSection({ sectionKey: key, session }: { sectionKey: keyof typeof supported; session: WebSession }) {
   const config = supported[key];
   const [result, setResult] = useState<DomainResponse>({ items: [], source: "loading" });
   const [state, setState] = useState<LoadState>("loading");
   const [error, setError] = useState("");
-  const session = useOutletContext<WebSession>();
+  const request = useRef<AbortController | null>(null);
 
   const load = useCallback(async () => {
     if (!config || key === "organization") return;
+    request.current?.abort();
+    const controller = new AbortController();
+    request.current = controller;
+    setResult({ items: [], source: "loading" }); setError(""); setState("loading");
     try {
       const value = key === "evidence"
-        ? await api<EvidenceListResponse>("/api/v1/web/evidence?limit=50").then((payload) => ({ items: payload.evidence, source: `bounded evidence list (limit ${payload.limit})` }))
-        : await api<DomainResponse>(`/api/v1/web/dashboard/${key}`);
+        ? await api<EvidenceListResponse>("/api/v1/web/evidence?limit=50", { signal: controller.signal }).then((payload) => ({ items: payload.evidence, source: `bounded evidence list (limit ${payload.limit})` }))
+        : await api<DomainResponse>(`/api/v1/web/dashboard/${key}`, { signal: controller.signal });
+      if (controller.signal.aborted) return;
+      if (!value || !Array.isArray(value.items) || typeof value.source !== "string" || value.items.some((item) => !item || typeof item !== "object" || Array.isArray(item))) throw new Error("The section response could not be confirmed. Retry the read.");
       setResult(value); setError("");
       setState(value.items.length ? "success" : "empty");
-    } catch (cause) { setError(messageFrom(cause, "Could not load this section")); setState("error"); }
+    } catch (cause) { if (!controller.signal.aborted) { setError(messageFrom(cause, "Could not load this section")); setState("error"); } }
   }, [config, key]);
-  useEffect(() => { const task = window.setTimeout(() => void load(), 0); return () => window.clearTimeout(task); }, [load]);
+  useEffect(() => { const task = window.setTimeout(() => void load(), 0); return () => { window.clearTimeout(task); request.current?.abort(); }; }, [load]);
   if (!config) return null;
   if (key === "organization") return <OrganizationSettingsPage key={`${session.organization?.id ?? "unavailable"}:${session.user.email}`} session={session} />;
   const Icon = config.icon;
