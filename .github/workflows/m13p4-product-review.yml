@@ -3,6 +3,12 @@ name: M13-P4 Product Candidate Review
 on:
   pull_request:
     paths:
+      - 'docs/engineering/m13-apex/**'
+      - 'scripts/engineering/m13_apex_*'
+      - 'tests/test_m13_apex_*'
+      - 'tests/js/m13-apex-*'
+      - 'src/responsibleai/trust_fabric/directory.py'
+      - 'src/responsibleai/mcp/tools.py'
       - 'docs/engineering/m13-forge/**'
       - 'scripts/engineering/m13_forge_*'
       - 'tests/test_m13_forge_*'
@@ -88,6 +94,9 @@ jobs:
           ruff check tests/test_m13p4_*.py tests/test_mcp_wave1_compatibility.py scripts/engineering/m13p4_security_acceptance.py
           ruff format --check tests/test_m13p4_*.py tests/test_mcp_wave1_compatibility.py scripts/engineering/m13p4_security_acceptance.py
           git diff --check
+          ruff check scripts/engineering/m13_apex_customer_journey.py tests/test_m13_apex_*.py
+          ruff format --check scripts/engineering/m13_apex_customer_journey.py tests/test_m13_apex_*.py
+          python -m pytest tests/test_m13_apex_directory.py tests/test_principal_directory.py tests/test_m13_apex_mcp_metadata.py tests/test_mcp_directory_conformance.py tests/test_m13_apex_journey_evidence.py -o addopts='' --tb=short -q
           ruff check scripts/engineering/m13_forge_browser_journey.py tests/test_m13_forge_*.py
           ruff format --check scripts/engineering/m13_forge_browser_journey.py tests/test_m13_forge_*.py
           python -m pytest tests/test_m13_forge_browser_evidence.py tests/test_m13_forge_summary_serialization.py tests/test_m13i3_browser_evidence.py -o addopts='' --tb=short -q
