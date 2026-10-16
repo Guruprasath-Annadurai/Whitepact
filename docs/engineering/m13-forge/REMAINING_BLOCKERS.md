@@ -4,6 +4,7 @@
 |---|---|---|---|
 | P1 `web/src/features/dashboard/DomainPage.tsx` | Delayed previous workspace read can replace current view | Codex | Fixed in Forge: keyed workspace state + cancellation; `forge-domain-reads.test.tsx` |
 | P2 `web/src/features/api-keys/ApiKeysPage.tsx` | Malformed scopes crash list; unchecked metadata retained | Codex | Fixed in Forge: explicit metadata projection; `forge-key-inventory.test.tsx` |
+| P1 `sdk/typescript/src/governance.ts` | CI getAttestation hanging body exceeded SDK deadline | Codex | Explicit abort race for headers/body; 24 focused deadline tests pass; original HTTP regression unchanged |
 | P1 I3 actual ceremony | Product RP/origin mismatch blocks registration | TITAN-1 | Historical reproducible blocker, not repaired here |
 | P1 PR #212 first passkey | Password session cannot satisfy ADD_PASSKEY assurance | TITAN-1 | Prior actual browser 403; independent fresh owner fix required |
 | P1 organization PATCH | Cookie-selected tenant lacks expected-org/version precondition | Backend owner | Rename remains disabled |

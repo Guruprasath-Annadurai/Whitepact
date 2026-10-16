@@ -99,22 +99,29 @@ export class GovernanceRuntimeClient {
     if (options.signal?.aborted) { cancel(); throw controller.signal.reason; }
     options.signal?.addEventListener("abort", cancel, { once: true });
     const timer = setTimeout(() => controller.abort(new DOMException("Request deadline exceeded; mutation outcome may be unknown", "AbortError")), this.timeout);
+    // Cancellation must settle the public call even when a transport/body reader
+    // does not settle on abort. Keep the deadline across headers and full body.
+    let rejectAborted!: () => void;
+    const aborted = new Promise<never>((_resolve, reject) => {
+      rejectAborted = () => reject(controller.signal.reason);
+      controller.signal.addEventListener("abort", rejectAborted, { once: true });
+    });
     try {
-      const res = await fetch(this.url(path), {
+      const res = await Promise.race([fetch(this.url(path), {
         method,
         headers: this.headers(),
         body: payload === undefined ? undefined : JSON.stringify(payload),
         signal: controller.signal,
         redirect: "error",
-      });
+      }), aborted]);
       if (!res.ok) {
-        const text = await res.text();
+        const text = await Promise.race([res.text(), aborted]);
         const detail = this.apiKey ? text.split(this.apiKey).join("[REDACTED]") : text;
         throw new GovernanceRequestError(res.status, detail.slice(0, 200));
       }
       let body: unknown;
       try {
-        body = await res.json();
+        body = await Promise.race([res.json(), aborted]);
       } catch {
         if (controller.signal.aborted) throw controller.signal.reason;
         throw new GovernanceRequestError(res.status, "response is not JSON");
@@ -133,6 +140,7 @@ export class GovernanceRuntimeClient {
       throw error;
     } finally {
       clearTimeout(timer);
+      controller.signal.removeEventListener("abort", rejectAborted);
       options.signal?.removeEventListener("abort", cancel);
     }
   }
