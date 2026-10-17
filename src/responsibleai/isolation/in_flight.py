@@ -220,28 +220,6 @@ class InFlightExecutionRegistry:
         terminate_callback: Callable[[], Any] | None = None,
         admission_epoch: int = 0,
     ) -> InFlightExecution:
-        # Check late registration: if this tenant has already bumped beyond admission_epoch, abort!
-        if self.is_revoked(organization_id, admission_epoch):
-            logger.warning(
-                "late_registration_rejected: %s for org: %s (admission_epoch=%d, revoked_epoch=%d)",
-                execution_id,
-                organization_id,
-                admission_epoch,
-                self._latest_revoked_epoch.get(organization_id, -1),
-            )
-            if terminate_callback is not None:
-                try:
-                    res = terminate_callback()
-                    if asyncio.iscoroutine(res):
-                        await res
-                except Exception:
-                    pass
-            if task is not None and not task.done():
-                task.cancel()
-            raise PermissionError(
-                f"Execution authorization for tenant '{organization_id}' has been revoked in-flight."
-            )
-
         entry = InFlightExecution(
             execution_id=execution_id,
             organization_id=organization_id,
@@ -253,8 +231,46 @@ class InFlightExecutionRegistry:
             admission_epoch=admission_epoch,
         )
         async with self._lock:
-            self._active[execution_id] = entry
-        _record_cross_worker_registration(entry)
+            rejected = self.is_revoked(organization_id, admission_epoch)
+            if rejected:
+                # A process can already exist when admission is rejected. Track it
+                # before awaiting termination; discard only after confirmation.
+                entry.termination_attempts = 1
+                entry.containment_status = "unresolved"
+                self._unresolved[execution_id] = entry
+            else:
+                self._active[execution_id] = entry
+            _record_cross_worker_registration(entry)
+
+        if rejected:
+            logger.warning(
+                "late_registration_rejected: %s for org: %s (admission_epoch=%d, revoked_epoch=%d)",
+                execution_id,
+                organization_id,
+                admission_epoch,
+                self._latest_revoked_epoch.get(organization_id, -1),
+            )
+            confirmed = terminate_callback is None and task is None
+            if terminate_callback is not None:
+                try:
+                    res = terminate_callback()
+                    if asyncio.iscoroutine(res):
+                        res = await res
+                    confirmed = res is True
+                    if not confirmed:
+                        entry.last_termination_error = "Rejected execution termination unconfirmed"
+                except Exception as exc:
+                    entry.last_termination_error = str(exc)
+            if confirmed:
+                async with self._lock:
+                    self._unresolved.pop(execution_id, None)
+                    _remove_cross_worker_registration(organization_id, execution_id)
+            if task is not None and task is not asyncio.current_task() and not task.done():
+                task.cancel()
+            raise PermissionError(
+                f"Execution authorization for tenant '{organization_id}' has been revoked in-flight."
+            )
+
         return entry
 
     async def unregister(self, execution_id: str, *, force: bool = False) -> bool:

@@ -308,13 +308,6 @@ class DockerContainerBackend(IsolationBackend):
         wait_seconds: float,
     ) -> None:
         """Run container removal off the event loop, guaranteed to finish even if cancelled."""
-        current = asyncio.current_task()
-        cancellation_count = 0
-        if current is not None and hasattr(current, "uncancel"):
-            while current.cancelling() > 0:
-                current.uncancel()
-                cancellation_count += 1
-
         loop = asyncio.get_running_loop()
         thread_future = loop.run_in_executor(
             None,
@@ -325,14 +318,30 @@ class DockerContainerBackend(IsolationBackend):
                 wait_seconds=wait_seconds,
             ),
         )
+        await self._await_owned_completion(thread_future)
 
-        try:
-            while not thread_future.done():
-                try:
-                    await asyncio.shield(thread_future)
-                except asyncio.CancelledError:
+    async def _await_owned_completion(self, future: asyncio.Future) -> Any:
+        """Finish an owned operation, then restore exactly the caller's cancel requests."""
+        current = asyncio.current_task()
+        cancellation_count = 0
+
+        def consume_requests() -> None:
+            nonlocal cancellation_count
+            if current is not None:
+                while current.cancelling() > 0:
+                    current.uncancel()
                     cancellation_count += 1
-            thread_future.result()
+
+        consume_requests()
+        try:
+            while not future.done():
+                try:
+                    await asyncio.shield(future)
+                except asyncio.CancelledError:
+                    # Delivery may represent requests already drained above (3.11),
+                    # or several requests coalesced into one exception. Count requests.
+                    consume_requests()
+            return future.result()
         finally:
             if current is not None:
                 for _ in range(cancellation_count):
@@ -459,8 +468,7 @@ class DockerContainerBackend(IsolationBackend):
                     is_absent = (
                         "no such container" in rm_err
                         or "no such object" in rm_err
-                        or "not found" in rm_err
-                    )
+                    ) and "plugin" not in rm_err and "daemon unavailable" not in rm_err
                     if rm_res.returncode != 0 and not is_absent:
                         raise RuntimeError(
                             f"Docker rm -f failed for {container_name} (rc={rm_res.returncode}): {rm_res.stderr.strip()}"
@@ -494,8 +502,7 @@ class DockerContainerBackend(IsolationBackend):
                         if (
                             "no such container" in insp_err
                             or "no such object" in insp_err
-                            or "not found" in insp_err
-                        ):
+                        ) and "plugin" not in insp_err and "daemon unavailable" not in insp_err:
                             return True
                         # Nonzero inspection error (daemon disconnect, permission denied, timeout)
                         # Must NOT be marked successful without authoritative proof of containment
@@ -504,7 +511,7 @@ class DockerContainerBackend(IsolationBackend):
                         )
 
                 try:
-                    await registry.register(
+                    registration = await registry.register(
                         execution_id=execution_id,
                         organization_id=request.organization_id,
                         action_id=request.action_id,
@@ -513,9 +520,6 @@ class DockerContainerBackend(IsolationBackend):
                         admission_epoch=request.admission_epoch,
                     )
                 except PermissionError as exc:
-                    current_t = asyncio.current_task()
-                    if current_t is not None and hasattr(current_t, "uncancel") and current_t.cancelling() > 0:
-                        current_t.uncancel()
                     return ExecutionOutcome(
                         action_id=request.action_id,
                         exit_code=-9,
@@ -611,28 +615,17 @@ class DockerContainerBackend(IsolationBackend):
                     # active tracking remains valid until containment is complete.
                     # CRITICAL INVARIANT: If removal failed or absence is unconfirmed,
                     # DO NOT unregister! Retain in registry tracking as unresolved containment.
-                    cancels_during_reg = 0
-                    current_reg_task = asyncio.current_task()
-                    if current_reg_task is not None and hasattr(current_reg_task, "uncancel"):
-                        while current_reg_task.cancelling() > 0:
-                            current_reg_task.uncancel()
-                            cancels_during_reg += 1
-                    try:
+                    async def finish_tracking() -> None:
                         if cleanup_error is not None:
-                            entry = registry._active.get(execution_id)
-                            if entry is not None:
-                                entry.termination_attempts += 1
-                                entry.containment_status = "unresolved"
-                                entry.last_termination_error = str(cleanup_error)
-                                async with registry._lock:
-                                    registry._unresolved[execution_id] = entry
-                                    registry._active.pop(execution_id, None)
+                            async with registry._lock:
+                                registration.termination_attempts += 1
+                                registration.containment_status = "unresolved"
+                                registration.last_termination_error = str(cleanup_error)
+                                registry._unresolved[execution_id] = registration
+                                registry._active.pop(execution_id, None)
                         else:
                             await registry.unregister(execution_id)
-                    finally:
-                        if current_reg_task is not None:
-                            for _ in range(cancels_during_reg):
-                                current_reg_task.cancel()
+                    await self._await_owned_completion(asyncio.create_task(finish_tracking()))
                     duration = time.monotonic() - start_time
 
                 max_out = limits.max_output_bytes
