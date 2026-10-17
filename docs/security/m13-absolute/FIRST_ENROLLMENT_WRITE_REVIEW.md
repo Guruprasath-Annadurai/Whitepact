@@ -49,3 +49,9 @@ Genuine browser and final committed-head CI receipts are recorded in the review
 PR. A passing owner proposal is not independent M13 acceptance. Remaining broader
 session/policy races, account recovery, cross-account tenant rotation and owner
 security contracts still require the responsible owner's qualification.
+
+First exact-head CI39033246686 stopped before tests because default shallow
+checkout lacked HEAD^ for provenance recording. Original file hashes were intact.
+Correction fetches full history; no provenance assertion or test is removed.
+Clean committed e52cb6b8 browser independently remains17PASS/1BLOCKED/7NOT_EXECUTED,
+stage17 identity-qualified credential issuance403. No synthetic authority supplied.
