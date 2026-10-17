@@ -223,44 +223,46 @@ def _worker_process_entrypoint(
 
         engine = create_engine(db_url)
         await engine.init()
+        try:
+            reg = InFlightExecutionRegistry.get_instance()
+            # Start database reconciliation watcher with 50ms polling
+            watcher = reg.start_reconciliation_watcher(engine, interval=0.05)
 
-        reg = InFlightExecutionRegistry.get_instance()
-        # Start database reconciliation watcher with 50ms polling
-        watcher = reg.start_reconciliation_watcher(engine, interval=0.05)
+            backend = LocalSubprocessBackend()
+            req = IsolatedExecutionRequest(
+                action_id=f"worker_act_{os.getpid()}",
+                organization_id=org_id,
+                action_type="test.counter.increment",
+                arguments={"sleep_seconds": 10.0},
+                profile=IsolationProfile(resources=ResourceLimits(wall_timeout_seconds=10.0)),
+                admission_epoch=0,
+            )
 
-        backend = LocalSubprocessBackend()
-        req = IsolatedExecutionRequest(
-            action_id=f"worker_act_{os.getpid()}",
-            organization_id=org_id,
-            action_type="test.counter.increment",
-            arguments={"sleep_seconds": 10.0},
-            profile=IsolationProfile(resources=ResourceLimits(wall_timeout_seconds=10.0)),
-            admission_epoch=0,
-        )
+            t_start = time.monotonic()
+            task = asyncio.create_task(backend.execute(req))
 
-        t_start = time.monotonic()
-        task = asyncio.create_task(backend.execute(req))
+            for _ in range(100):
+                if reg.count_active(org_id) > 0:
+                    break
+                await asyncio.sleep(0.05)
 
-        for _ in range(100):
-            if reg.count_active(org_id) > 0:
-                break
-            await asyncio.sleep(0.05)
+            # Notify main test process that Worker 2 is executing
+            started_event.set()
 
-        # Notify main test process that Worker 2 is executing
-        started_event.set()
+            outcome = await task
+            watcher.cancel()
+            elapsed = time.monotonic() - t_start
 
-        outcome = await task
-        watcher.cancel()
-        elapsed = time.monotonic() - t_start
-
-        result_queue.put(
-            {
-                "elapsed": elapsed,
-                "exit_code": outcome.exit_code,
-                "is_success": outcome.is_success,
-                "violation": outcome.violation,
-            }
-        )
+            result_queue.put(
+                {
+                    "elapsed": elapsed,
+                    "exit_code": outcome.exit_code,
+                    "is_success": outcome.is_success,
+                    "violation": outcome.violation,
+                }
+            )
+        finally:
+            await engine.close()
 
     asyncio.run(_run())
 
@@ -273,49 +275,53 @@ async def test_distributed_multi_worker_revocation(tmp_path) -> None:
 
     engine = create_engine(db_url)
     await engine.init()
-
-    org_repo = OrgRepository(engine)
-    epoch_repo = RevocationEpochRepository(engine)
-
-    org = await org_repo.create_org(name="Distributed Tenant", slug="dist-tenant")
-    # Initial epoch is 0
-    ep0 = await epoch_repo.current(org.id)
-    assert ep0.epoch == 0
-
-    started_event = multiprocessing.Event()
-    result_queue = multiprocessing.Queue()
-
-    # Launch separate OS worker process
-    p = multiprocessing.Process(
-        target=_worker_process_entrypoint,
-        args=(db_url, org.id, started_event, result_queue),
-    )
-    p.start()
-
     try:
-        # Wait until Worker 2 has started the 10s execution
-        await asyncio.to_thread(started_event.wait, timeout=15.0)
-        assert started_event.is_set(), "Worker 2 failed to start execution in time"
+        org_repo = OrgRepository(engine)
+        epoch_repo = RevocationEpochRepository(engine)
 
-        # Main process: bump revocation epoch in the shared database
-        await epoch_repo.bump(org.id)
-        ep1 = await epoch_repo.current(org.id)
-        assert ep1.epoch == 1
+        org = await org_repo.create_org(name="Distributed Tenant", slug="dist-tenant")
+        # Initial epoch is 0
+        ep0 = await epoch_repo.current(org.id)
+        assert ep0.epoch == 0
 
-        # Worker 2 must detect the database bump, kill the running process, and report
-        result = await asyncio.to_thread(result_queue.get, timeout=15.0)
+        started_event = multiprocessing.Event()
+        result_queue = multiprocessing.Queue()
 
-        # Must terminate in bounded latency (<2.0s) well before the 10-second timeout
-        assert result["elapsed"] < 2.0, f"Worker 2 took {result['elapsed']:.2f}s; expected < 2.0s"
-        assert result["is_success"] is False
-        assert result["exit_code"] in {-15, -9} or "revoked in-flight" in (
-            result["violation"] or ""
+        # Launch separate OS worker process
+        p = multiprocessing.Process(
+            target=_worker_process_entrypoint,
+            args=(db_url, org.id, started_event, result_queue),
         )
+        p.start()
 
+        try:
+            # Wait until Worker 2 has started the 10s execution
+            await asyncio.to_thread(started_event.wait, timeout=15.0)
+            assert started_event.is_set(), "Worker 2 failed to start execution in time"
+
+            # Main process: bump revocation epoch in the shared database
+            await epoch_repo.bump(org.id)
+            ep1 = await epoch_repo.current(org.id)
+            assert ep1.epoch == 1
+
+            # Worker 2 must detect the database bump, kill the running process, and report
+            result = await asyncio.to_thread(result_queue.get, timeout=15.0)
+
+            # Must terminate in bounded latency (<2.0s) well before the 10-second timeout
+            assert result["elapsed"] < 2.0, (
+                f"Worker 2 took {result['elapsed']:.2f}s; expected < 2.0s"
+            )
+            assert result["is_success"] is False
+            assert result["exit_code"] in {-15, -9} or "revoked in-flight" in (
+                result["violation"] or ""
+            )
+
+        finally:
+            p.join(timeout=2.0)
+            if p.is_alive():
+                p.terminate()
     finally:
-        p.join(timeout=2.0)
-        if p.is_alive():
-            p.terminate()
+        await engine.close()
 
 
 @pytest.mark.asyncio

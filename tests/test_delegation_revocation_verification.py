@@ -14,16 +14,14 @@ Proves:
 from __future__ import annotations
 
 import asyncio
-from datetime import UTC, datetime, timedelta
 
 import pytest
-from sqlalchemy import select
 
 from responsibleai.db.delegation_repository import (
     DelegationEscalationError,
     DelegationRepository,
 )
-from responsibleai.db.engine import create_engine, governance_delegations, organizations
+from responsibleai.db.engine import create_engine, organizations
 from responsibleai.db.revocation_epoch_repository import RevocationEpochRepository
 
 

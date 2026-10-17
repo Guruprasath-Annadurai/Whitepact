@@ -24,11 +24,15 @@ def application_not_found(msg: str = "Application not found.") -> EnterpriseErro
     return EnterpriseError(APPLICATION_NOT_FOUND, msg, http_status=404)
 
 
-def application_registration_invalid(msg: str = "Application parameters are invalid.") -> EnterpriseError:
+def application_registration_invalid(
+    msg: str = "Application parameters are invalid.",
+) -> EnterpriseError:
     return EnterpriseError(APPLICATION_REGISTRATION_INVALID, msg, http_status=400)
 
 
-def root_already_exists(msg: str = "Organization already has an active Root of Authority.") -> EnterpriseError:
+def root_already_exists(
+    msg: str = "Organization already has an active Root of Authority.",
+) -> EnterpriseError:
     return EnterpriseError(ROOT_ALREADY_EXISTS, msg, http_status=409)
 
 
@@ -44,11 +48,15 @@ def bootstrap_replay(msg: str = "Bootstrap token has already been consumed.") ->
     return EnterpriseError(BOOTSTRAP_TOKEN_REPLAY, msg, http_status=409)
 
 
-def consent_invalid(msg: str = "Explicit scoped consent parameters are required and cannot be empty.") -> EnterpriseError:
+def consent_invalid(
+    msg: str = "Explicit scoped consent parameters are required and cannot be empty.",
+) -> EnterpriseError:
     return EnterpriseError(CONSENT_PARAMETERS_INVALID, msg, http_status=400)
 
 
-def unauthorized_caller(msg: str = "Only a verified organization owner can perform root authority bootstrap.") -> EnterpriseError:
+def unauthorized_caller(
+    msg: str = "Only a verified organization owner can perform root authority bootstrap.",
+) -> EnterpriseError:
     return EnterpriseError(UNAUTHORIZED_BOOTSTRAP_CALLER, msg, http_status=403)
 
 
@@ -60,7 +68,9 @@ def agent_not_found(msg: str = "Agent not found.") -> EnterpriseError:
     return EnterpriseError(AGENT_NOT_FOUND, msg, http_status=404)
 
 
-def assurance_required(msg: str = "Customer identity verification required before establishing root authority.") -> EnterpriseError:
+def assurance_required(
+    msg: str = "Customer identity verification required before establishing root authority.",
+) -> EnterpriseError:
     return EnterpriseError(IDENTITY_ASSURANCE_REQUIRED, msg, http_status=403)
 
 
@@ -80,7 +90,9 @@ RECOVERY_ALREADY_EXECUTED = "RECOVERY_ALREADY_EXECUTED"
 RECOVERY_DIGEST_MISMATCH = "RECOVERY_DIGEST_MISMATCH"
 
 
-def passkey_step_up_required(msg: str = "Phishing-resistant passkey step-up required.") -> EnterpriseError:
+def passkey_step_up_required(
+    msg: str = "Phishing-resistant passkey step-up required.",
+) -> EnterpriseError:
     return EnterpriseError(PASSKEY_STEP_UP_REQUIRED, msg, http_status=403)
 
 
@@ -92,15 +104,21 @@ def webauthn_challenge_expired(msg: str = "WebAuthn challenge has expired.") -> 
     return EnterpriseError(WEBAUTHN_CHALLENGE_EXPIRED, msg, http_status=403)
 
 
-def webauthn_challenge_replay(msg: str = "WebAuthn challenge has already been consumed.") -> EnterpriseError:
+def webauthn_challenge_replay(
+    msg: str = "WebAuthn challenge has already been consumed.",
+) -> EnterpriseError:
     return EnterpriseError(WEBAUTHN_CHALLENGE_REPLAY, msg, http_status=409)
 
 
-def proof_of_possession_invalid(msg: str = "Proof of possession signature is invalid.") -> EnterpriseError:
+def proof_of_possession_invalid(
+    msg: str = "Proof of possession signature is invalid.",
+) -> EnterpriseError:
     return EnterpriseError(PROOF_OF_POSSESSION_INVALID, msg, http_status=403)
 
 
-def containment_forbidden(msg: str = "Emergency containment operation not permitted.") -> EnterpriseError:
+def containment_forbidden(
+    msg: str = "Emergency containment operation not permitted.",
+) -> EnterpriseError:
     return EnterpriseError(CONTAINMENT_FORBIDDEN, msg, http_status=403)
 
 
@@ -112,15 +130,21 @@ def recovery_request_not_found(msg: str = "Recovery request not found.") -> Ente
     return EnterpriseError(RECOVERY_REQUEST_NOT_FOUND, msg, http_status=404)
 
 
-def quorum_not_met(msg: str = "Required recovery quorum has not been satisfied.") -> EnterpriseError:
+def quorum_not_met(
+    msg: str = "Required recovery quorum has not been satisfied.",
+) -> EnterpriseError:
     return EnterpriseError(QUORUM_NOT_MET, msg, http_status=409)
 
 
-def self_approval_blocked(msg: str = "Requester cannot vote to approve their own recovery request.") -> EnterpriseError:
+def self_approval_blocked(
+    msg: str = "Requester cannot vote to approve their own recovery request.",
+) -> EnterpriseError:
     return EnterpriseError(SELF_APPROVAL_BLOCKED, msg, http_status=403)
 
 
-def already_voted(msg: str = "Administrator has already cast a vote on this recovery request.") -> EnterpriseError:
+def already_voted(
+    msg: str = "Administrator has already cast a vote on this recovery request.",
+) -> EnterpriseError:
     return EnterpriseError(ALREADY_VOTED, msg, http_status=409)
 
 
@@ -128,10 +152,13 @@ def recovery_expired(msg: str = "Recovery request has expired.") -> EnterpriseEr
     return EnterpriseError(RECOVERY_EXPIRED, msg, http_status=403)
 
 
-def recovery_already_executed(msg: str = "Recovery request has already been executed.") -> EnterpriseError:
+def recovery_already_executed(
+    msg: str = "Recovery request has already been executed.",
+) -> EnterpriseError:
     return EnterpriseError(RECOVERY_ALREADY_EXECUTED, msg, http_status=409)
 
 
-def recovery_digest_mismatch(msg: str = "Action digest does not match the proposed recovery parameters.") -> EnterpriseError:
+def recovery_digest_mismatch(
+    msg: str = "Action digest does not match the proposed recovery parameters.",
+) -> EnterpriseError:
     return EnterpriseError(RECOVERY_DIGEST_MISMATCH, msg, http_status=400)
-

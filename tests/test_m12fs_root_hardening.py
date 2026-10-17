@@ -12,12 +12,10 @@ Verifies:
 
 from __future__ import annotations
 
-import asyncio
 import hashlib
-import json
-import secrets
 import uuid
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 import pytest
 from cryptography.hazmat.primitives.asymmetric import ec, ed25519
@@ -26,39 +24,25 @@ from cryptography.hazmat.primitives.serialization import (
     PublicFormat,
 )
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import insert, select, update
+from sqlalchemy import select, update
 
 from responsibleai.dashboard.app import app, limiter, settings
 from responsibleai.db.engine import (
     authority_containment_records,
-    authority_recovery_requests,
-    authority_recovery_votes,
     authority_step_up_challenges,
-    governance_consent_proofs,
-    governance_delegations,
-    governance_root_authority_records,
     passkey_credentials,
-    trust_fabric_bootstrap_records,
     trust_fabric_principals,
-    trust_fabric_trust_roots,
     web_memberships,
-    web_users,
 )
 from responsibleai.db.revocation_epoch_repository import RevocationEpochRepository
 from responsibleai.db.web_identity_repository import WebIdentityRepository
 from responsibleai.enterprise.authority.errors import (
     ALREADY_VOTED,
-    BOOTSTRAP_TOKEN_EXPIRED,
-    BOOTSTRAP_TOKEN_REPLAY,
-    CONTAINMENT_FORBIDDEN,
-    CONTAINMENT_INVALID_TARGET,
     PASSKEY_STEP_UP_REQUIRED,
     PROOF_OF_POSSESSION_INVALID,
     QUORUM_NOT_MET,
     RECOVERY_ALREADY_EXECUTED,
     RECOVERY_DIGEST_MISMATCH,
-    RECOVERY_EXPIRED,
-    RECOVERY_REQUEST_NOT_FOUND,
     SELF_APPROVAL_BLOCKED,
     UNAUTHORIZED_BOOTSTRAP_CALLER,
     WEBAUTHN_ASSERTION_INVALID,
@@ -70,12 +54,11 @@ from responsibleai.enterprise.authority.service import (
     compute_canonical_operation_digest,
     verify_root_proof_of_possession,
 )
-from responsibleai.enterprise.runtime import get_enterprise_engine
+from responsibleai.enterprise.runtime import configure_enterprise, get_enterprise_engine
 from responsibleai.enterprise.security.webauthn import b64url_decode, b64url_encode
-from responsibleai.enterprise.runtime import configure_enterprise
 from responsibleai.enterprise.service import Actor, EnterpriseIAM
 from responsibleai.rbac.models import Role
-from tests.webauthn_fakes import assertion_blob, client_data
+from tests.webauthn_fakes import assertion_blob
 
 
 @pytest.fixture(autouse=True)
@@ -171,7 +154,9 @@ def _register_fake_passkey(user_id: str, rp_id: str = "localhost"):
     public_key = private_key.public_key()
     numbers = public_key.public_numbers()
     uncompressed = b"\x04" + numbers.x.to_bytes(32, "big") + numbers.y.to_bytes(32, "big")
-    cred_id = hashlib.sha256(numbers.x.to_bytes(32, "big") + numbers.y.to_bytes(32, "big")).digest()[:16]
+    cred_id = hashlib.sha256(
+        numbers.x.to_bytes(32, "big") + numbers.y.to_bytes(32, "big")
+    ).digest()[:16]
     cred_id_b64 = b64url_encode(cred_id)
     pub_b64 = b64url_encode(uncompressed)
     return private_key, cred_id_b64, pub_b64
@@ -239,15 +224,14 @@ async def _create_containment_assertion(
 # 1. WebAuthn Step-Up Assurance Tests (Founder Decision A)
 # ==============================================================================
 
+
 @pytest.mark.asyncio
 async def test_bootstrap_requires_stepup_when_configured():
     actor, user_id, org_id, _, _ = await _create_test_owner()
     engine = get_enterprise_engine()
     svc = CustomerAuthorityService(engine)
 
-    init_res = await svc.initiate_root_bootstrap(
-        actor, org_id=org_id, require_passkey_stepup=True
-    )
+    init_res = await svc.initiate_root_bootstrap(actor, org_id=org_id, require_passkey_stepup=True)
     assert init_res["require_passkey_stepup"] is True
 
     # Attempting complete_root_bootstrap without passkey assertion must fail closed
@@ -293,9 +277,7 @@ async def test_bootstrap_with_valid_passkey_stepup_succeeds():
         )
 
     # 2. Initiate bootstrap with step-up required
-    init_res = await svc.initiate_root_bootstrap(
-        actor, org_id=org_id, require_passkey_stepup=True
-    )
+    init_res = await svc.initiate_root_bootstrap(actor, org_id=org_id, require_passkey_stepup=True)
 
     root_key = "test_ed25519_root_public_key"
     token_hash = hashlib.sha256(init_res["token"].encode("utf-8")).hexdigest()
@@ -381,9 +363,7 @@ async def test_stepup_rejects_replayed_challenge():
             )
         )
 
-    init_res = await svc.initiate_root_bootstrap(
-        actor, org_id=org_id, require_passkey_stepup=True
-    )
+    init_res = await svc.initiate_root_bootstrap(actor, org_id=org_id, require_passkey_stepup=True)
     token_hash = hashlib.sha256(init_res["token"].encode("utf-8")).hexdigest()
     op_digest = compute_canonical_operation_digest(
         "COMPLETE_ROOT_BOOTSTRAP",
@@ -466,7 +446,11 @@ async def test_stepup_rejects_expired_challenge():
 
     op_digest = "test_digest_123"
     ch_res = await svc.create_authority_stepup_challenge(
-        actor, org_id=org_id, action="EMERGENCY_CONTAINMENT", operation_digest=op_digest, ttl_seconds=300
+        actor,
+        org_id=org_id,
+        action="EMERGENCY_CONTAINMENT",
+        operation_digest=op_digest,
+        ttl_seconds=300,
     )
 
     # Fast forward challenge expiration in DB
@@ -564,6 +548,7 @@ async def test_stepup_rejects_digest_mismatch():
 # 2. Root Key Provenance & Proof-of-Possession (PoP) Tests
 # ==============================================================================
 
+
 @pytest.mark.asyncio
 async def test_root_proof_of_possession_valid_and_forged():
     actor, user_id, org_id, _, _ = await _create_test_owner()
@@ -581,7 +566,7 @@ async def test_root_proof_of_possession_valid_and_forged():
     nonce = init_res["nonce"]
 
     # Valid PoP message signature
-    message = f"WP_ROOT_POP:{org_id}:{nonce}:{token_hash}".encode("utf-8")
+    message = f"WP_ROOT_POP:{org_id}:{nonce}:{token_hash}".encode()
     valid_sig = b64url_encode(ed_priv.sign(message))
 
     # Test verify_root_proof_of_possession directly
@@ -594,7 +579,7 @@ async def test_root_proof_of_possession_valid_and_forged():
     assert exc_info.value.code == PROOF_OF_POSSESSION_INVALID
 
     # Adversarial: Signature over tampered nonce
-    tampered_msg = f"WP_ROOT_POP:{org_id}:tampered_nonce:{token_hash}".encode("utf-8")
+    tampered_msg = f"WP_ROOT_POP:{org_id}:tampered_nonce:{token_hash}".encode()
     tampered_sig = b64url_encode(ed_priv.sign(tampered_msg))
     with pytest.raises(Exception) as exc_info2:
         verify_root_proof_of_possession(org_id, nonce, token_hash, pub_hex, tampered_sig)
@@ -620,6 +605,7 @@ async def test_root_proof_of_possession_valid_and_forged():
 # ==============================================================================
 # 3. Read-Only Deterministic Status Reconciliation Tests
 # ==============================================================================
+
 
 @pytest.mark.asyncio
 async def test_reconcile_bootstrap_status_deterministic():
@@ -669,6 +655,7 @@ async def test_reconcile_bootstrap_status_deterministic():
 # ==============================================================================
 # 4. Emergency Containment & Kill-Switch Tests (Founder Decision B)
 # ==============================================================================
+
 
 @pytest.mark.asyncio
 async def test_emergency_agent_containment_quarantines_and_bumps_epoch():
@@ -815,6 +802,7 @@ async def test_containment_rejects_unauthorized_caller():
 # ==============================================================================
 # 5. M-of-N Quorum Recovery Tests (Founder Decision B)
 # ==============================================================================
+
 
 @pytest.mark.asyncio
 async def test_quorum_recovery_full_lifecycle_2_of_3():

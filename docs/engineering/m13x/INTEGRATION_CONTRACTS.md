@@ -158,3 +158,15 @@ const reader = customerApplicationReader(session);
 const applications: ApplicationInfo[] = await reader.applications();
 const capabilities: CapabilityInfo[] = await reader.capabilities(undefined, agentId);
 ```
+
+---
+
+## 5. Operation TITAN Security Updates
+
+1. **Provenance Identifiers**: When `status == "AUTHORIZED"`, capability entries return `root_id`, `delegation_id`, and `consent_id` identifying the backing root of trust and delegation chain.
+2. **Organization Rename Preconditions**:
+   - `expected_organization_id`: Returns `409 Conflict` (`code: "WORKSPACE_CONTEXT_CONFLICT"`) if differing from active session cookie.
+   - `expected_name`: Returns `409 Conflict` (`code: "ORGANIZATION_STATE_CONFLICT"`) if the name was modified concurrently.
+3. **Application Disablement Rollback & Serialization**:
+   - Disabling an application atomically invalidates in-flight execution permits on PostgreSQL across workers (`StaleRevocationEpochError`) and serializes against concurrent `register_agent`.
+

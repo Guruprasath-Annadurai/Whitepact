@@ -30,17 +30,17 @@ from responsibleai.db.engine import (
     passkey_credentials,
 )
 from responsibleai.db.migrate import _find_alembic_ini, _migration_env, _run_alembic
+from responsibleai.db.web_identity_repository import WebIdentityRepository
 from responsibleai.enterprise.authority.service import (
     CustomerAuthorityService,
     compute_canonical_operation_digest,
 )
 from responsibleai.enterprise.errors import EnterpriseError
+from responsibleai.enterprise.runtime import configure_enterprise
 from responsibleai.enterprise.security.webauthn import b64url_decode, b64url_encode
 from responsibleai.enterprise.service import Actor, EnterpriseIAM
-from responsibleai.rbac.models import Role
-from responsibleai.enterprise.runtime import configure_enterprise
-from responsibleai.db.web_identity_repository import WebIdentityRepository
 from responsibleai.isolation.in_flight import InFlightExecutionRegistry
+from responsibleai.rbac.models import Role
 from tests.pg_test_url import isolated_pg_url
 from tests.webauthn_fakes import assertion_blob
 
@@ -50,7 +50,9 @@ def _register_fake_passkey(user_id: str):
     public_key = private_key.public_key()
     numbers = public_key.public_numbers()
     uncompressed = b"\x04" + numbers.x.to_bytes(32, "big") + numbers.y.to_bytes(32, "big")
-    cred_id = hashlib.sha256(numbers.x.to_bytes(32, "big") + numbers.y.to_bytes(32, "big")).digest()[:16]
+    cred_id = hashlib.sha256(
+        numbers.x.to_bytes(32, "big") + numbers.y.to_bytes(32, "big")
+    ).digest()[:16]
     cred_id_b64 = b64url_encode(cred_id)
     pub_b64 = b64url_encode(uncompressed)
     return private_key, cred_id_b64, pub_b64
@@ -66,7 +68,9 @@ async def _setup_postgres_workspace(url: str):
     web_repo = WebIdentityRepository(engine)
     iam = EnterpriseIAM(engine)
 
-    user_id, token = await web_repo.register("Postgres Owner", "pg_owner@whitepact.test", "ComplexPass123!@#")
+    user_id, token = await web_repo.register(
+        "Postgres Owner", "pg_owner@whitepact.test", "ComplexPass123!@#"
+    )
     await web_repo.verify_email(token)
     org = await iam.create_workspace(
         actor_user_id=user_id,
@@ -174,7 +178,9 @@ async def test_real_postgres_migration_lifecycle():
                     "SELECT array_agg(tablename) FROM pg_tables WHERE schemaname = 'public'"
                 )
             )
-            assert not (required & tables_after_down), f"Tables remained after downgrade: {required & tables_after_down}"
+            assert not (required & tables_after_down), (
+                f"Tables remained after downgrade: {required & tables_after_down}"
+            )
 
             # 3. Re-upgrade to head
             await _run_alembic(ini, env, "upgrade", "head")

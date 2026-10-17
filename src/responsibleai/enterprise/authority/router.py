@@ -8,14 +8,16 @@ from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from responsibleai.enterprise.authority.service import CustomerAuthorityService
 from responsibleai.enterprise.errors import EnterpriseError
 from responsibleai.enterprise.router import _error_response, _request_id, _web_actor
 from responsibleai.enterprise.runtime import get_enterprise_engine
 
-router = APIRouter(prefix="/api/enterprise/organizations/{org_id}/authority", tags=["customer-authority"])
+router = APIRouter(
+    prefix="/api/enterprise/organizations/{org_id}/authority", tags=["customer-authority"]
+)
 
 
 class InitiateBootstrapBody(BaseModel):
@@ -90,11 +92,20 @@ class DisableApplicationBody(BaseModel):
 
 
 class RegisterAgentBody(BaseModel):
-    name: str = Field(min_length=1, max_length=200)
+    name: str | None = Field(default=None, max_length=200)
+    display_name: str | None = Field(default=None, max_length=200)
     description: str = Field(default="", max_length=1000)
     framework: str = Field(default="custom", max_length=100)
     purpose: str | None = Field(default=None, max_length=255)
     application_id: str | None = Field(default=None, max_length=64)
+
+    @model_validator(mode="after")
+    def _ensure_name(self) -> RegisterAgentBody:
+        val = (self.name or self.display_name or "").strip()
+        if not val:
+            raise ValueError("Either 'name' or 'display_name' must be a non-empty string.")
+        self.name = val
+        return self
 
 
 class DelegateToAgentBody(BaseModel):
@@ -166,7 +177,9 @@ async def reconcile_bootstrap(org_id: str, token: str, nonce: str, request: Requ
 
 
 @router.post("/webauthn/challenge")
-async def create_stepup_challenge(org_id: str, request: Request, body: CreateStepUpChallengeBody) -> Any:
+async def create_stepup_challenge(
+    org_id: str, request: Request, body: CreateStepUpChallengeBody
+) -> Any:
     try:
         actor = await _web_actor(request)
         return await _svc().create_authority_stepup_challenge(
@@ -175,6 +188,7 @@ async def create_stepup_challenge(org_id: str, request: Request, body: CreateSte
             action=body.action,
             operation_digest=body.operation_digest,
             ttl_seconds=body.ttl_seconds,
+            request=request,
         )
     except EnterpriseError as exc:
         return _error_response(exc, _request_id(request))
@@ -190,7 +204,9 @@ async def get_authority_status(org_id: str, request: Request) -> Any:
 
 
 @router.post("/root/{root_id}/revoke")
-async def revoke_root_authority(org_id: str, root_id: str, request: Request, body: RevokeRootBody) -> Any:
+async def revoke_root_authority(
+    org_id: str, root_id: str, request: Request, body: RevokeRootBody
+) -> Any:
     try:
         actor = await _web_actor(request)
         return await _svc().revoke_root_authority(
@@ -238,10 +254,14 @@ async def get_application(org_id: str, app_id: str, request: Request) -> Any:
 
 
 @router.post("/applications/{app_id}/disable")
-async def disable_application(org_id: str, app_id: str, request: Request, body: DisableApplicationBody) -> Any:
+async def disable_application(
+    org_id: str, app_id: str, request: Request, body: DisableApplicationBody
+) -> Any:
     try:
         actor = await _web_actor(request)
-        return await _svc().disable_application(actor, org_id=org_id, app_id=app_id, reason=body.reason)
+        return await _svc().disable_application(
+            actor, org_id=org_id, app_id=app_id, reason=body.reason
+        )
     except EnterpriseError as exc:
         return _error_response(exc, _request_id(request))
 
@@ -253,7 +273,7 @@ async def register_agent(org_id: str, request: Request, body: RegisterAgentBody)
         return await _svc().register_agent(
             actor,
             org_id=org_id,
-            name=body.name,
+            name=body.name or "",
             description=body.description,
             framework=body.framework,
             purpose=body.purpose,
@@ -327,13 +347,17 @@ async def list_capabilities(org_id: str, request: Request) -> Any:
 async def list_agent_capabilities(org_id: str, agent_id: str, request: Request) -> Any:
     try:
         actor = await _web_actor(request)
-        return {"capabilities": await _svc().list_capabilities(actor, org_id=org_id, agent_id=agent_id)}
+        return {
+            "capabilities": await _svc().list_capabilities(actor, org_id=org_id, agent_id=agent_id)
+        }
     except EnterpriseError as exc:
         return _error_response(exc, _request_id(request))
 
 
 @router.post("/containment/emergency")
-async def emergency_containment(org_id: str, request: Request, body: EmergencyContainmentBody) -> Any:
+async def emergency_containment(
+    org_id: str, request: Request, body: EmergencyContainmentBody
+) -> Any:
     try:
         actor = await _web_actor(request)
         return await _svc().execute_emergency_containment(
@@ -350,7 +374,9 @@ async def emergency_containment(org_id: str, request: Request, body: EmergencyCo
 
 
 @router.post("/recovery/requests")
-async def create_recovery_request(org_id: str, request: Request, body: CreateRecoveryRequestBody) -> Any:
+async def create_recovery_request(
+    org_id: str, request: Request, body: CreateRecoveryRequestBody
+) -> Any:
     try:
         actor = await _web_actor(request)
         return await _svc().create_recovery_request(
@@ -425,4 +451,3 @@ async def execute_recovery_request(
         )
     except EnterpriseError as exc:
         return _error_response(exc, _request_id(request))
-

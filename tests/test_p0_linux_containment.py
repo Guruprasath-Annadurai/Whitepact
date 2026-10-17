@@ -18,23 +18,15 @@ Directly validates:
 from __future__ import annotations
 
 import asyncio
-import os
-import signal
-import subprocess
 import time
 import uuid
-from typing import Any
-from unittest.mock import MagicMock
 
 import pytest
 
-from responsibleai.isolation.container_backend import DockerContainerBackend
 from responsibleai.isolation.in_flight import InFlightExecutionRegistry
 from responsibleai.isolation.models import (
-    ExecutionOutcome,
     IsolatedExecutionRequest,
     IsolationProfile,
-    NetworkPolicy,
     ResourceLimits,
 )
 from responsibleai.isolation.subprocess_backend import LocalSubprocessBackend
@@ -56,13 +48,6 @@ async def test_01_sigterm_resistant_subprocess_escalates_to_sigkill() -> None:
 
     org_id = f"org_sigterm_{uuid.uuid4().hex[:8]}"
     action_id = f"act_sigterm_{uuid.uuid4().hex[:8]}"
-
-    # Tool code that traps and ignores SIGTERM, running for 10s
-    resistant_code = (
-        "import signal, time\n"
-        "signal.signal(signal.SIGTERM, signal.SIG_IGN)\n"
-        "time.sleep(10.0)\n"
-    )
 
     req = IsolatedExecutionRequest(
         action_id=action_id,
@@ -201,7 +186,9 @@ async def test_05_container_daemon_disconnection_treated_as_unresolved(monkeypat
     # Simulate Docker backend termination callback encountering daemon disconnect
     def _disconnected_docker_rm():
         # subprocess returns non-zero with daemon connection error
-        raise RuntimeError("Docker rm -f failed: Cannot connect to the Docker daemon at unix:///var/run/docker.sock")
+        raise RuntimeError(
+            "Docker rm -f failed: Cannot connect to the Docker daemon at unix:///var/run/docker.sock"
+        )
 
     await registry.register(
         execution_id=exec_id,
@@ -232,7 +219,9 @@ async def test_06_docker_inspection_failures_fail_closed() -> None:
 
     def _failing_inspect_callback():
         # Inspection failed with unexpected error code
-        raise RuntimeError("Docker inspect failed authoritatively confirming containment: permission denied")
+        raise RuntimeError(
+            "Docker inspect failed authoritatively confirming containment: permission denied"
+        )
 
     await registry.register(
         execution_id=exec_id,
