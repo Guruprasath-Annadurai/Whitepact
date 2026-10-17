@@ -17,6 +17,7 @@ Enforces:
 from __future__ import annotations
 
 import asyncio
+import functools
 import json
 import logging
 import os
@@ -229,6 +230,13 @@ class DockerContainerBackend(IsolationBackend):
         not run this on the asyncio event loop.
         """
         deadline = time.monotonic() + wait_seconds
+
+        def command_timeout(maximum: float) -> float:
+            budget = deadline - time.monotonic()
+            if budget <= 0:
+                raise TimeoutError("Container cleanup deadline exhausted")
+            return min(maximum, budget)
+
         gone_since: dict[str, float | None] = {target: None for target in targets}
         while time.monotonic() < deadline:
             remaining = False
@@ -238,24 +246,41 @@ class DockerContainerBackend(IsolationBackend):
                         [self.docker_cmd, "rm", "-f", target],
                         stdout=subprocess.DEVNULL,
                         stderr=subprocess.DEVNULL,
-                        timeout=10,
+                        timeout=command_timeout(10),
                         check=False,
                     )
                 except Exception:
                     pass
-                exists = False
+                is_absent = False
                 try:
                     check = subprocess.run(  # noqa: S603
                         [self.docker_cmd, "inspect", target],
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL,
-                        timeout=5,
+                        capture_output=True,
+                        text=True,
+                        timeout=command_timeout(5),
                         check=False,
                     )
-                    exists = check.returncode == 0
+                    if check.returncode != 0:
+                        err = check.stderr.lower()
+                        # Authoritative absence detection:
+                        # Docker inspect returns "Error: No such container: <name>" or
+                        # "Error: No such object: <name>". Never match broad "not found",
+                        # which matches daemon/plugin errors like "authorization plugin not found".
+                        has_no_such = "no such container" in err or "no such object" in err
+                        is_plugin_or_daemon_err = "plugin" in err or "daemon unavailable" in err
+                        if has_no_such and not is_plugin_or_daemon_err:
+                            is_absent = True
+                        else:
+                            # Nonzero inspect with daemon error, plugin error, or disconnection: absence unconfirmed!
+                            is_absent = False
+                    else:
+                        # Container still exists in dockerd
+                        is_absent = False
                 except Exception:
-                    exists = False
-                if exists:
+                    # Timeout or inspection execution error: cannot establish absence!
+                    is_absent = False
+
+                if not is_absent:
                     gone_since[target] = None
                     remaining = True
                     continue
@@ -269,7 +294,18 @@ class DockerContainerBackend(IsolationBackend):
                     remaining = True
             if not remaining:
                 return
-            time.sleep(0.2)
+            time.sleep(max(0, min(0.2, deadline - time.monotonic())))
+
+        # If deadline expires and any target was not confirmed absent, fail closed!
+        unconfirmed = [
+            t
+            for t, g in gone_since.items()
+            if g is None or (stable_seconds > 0 and (time.monotonic() - g < stable_seconds))
+        ]
+        if unconfirmed:
+            raise RuntimeError(
+                f"Container containment unconfirmed after {wait_seconds}s for targets: {unconfirmed}"
+            )
 
     async def _remove_containers_uninterruptible(
         self,
@@ -278,25 +314,44 @@ class DockerContainerBackend(IsolationBackend):
         stable_seconds: float,
         wait_seconds: float,
     ) -> None:
-        """Run container removal off the event loop, even if this task is cancelled."""
+        """Run container removal off the event loop, guaranteed to finish even if cancelled."""
+        loop = asyncio.get_running_loop()
+        thread_future = loop.run_in_executor(
+            None,
+            functools.partial(
+                self._remove_containers,
+                targets,
+                stable_seconds=stable_seconds,
+                wait_seconds=wait_seconds,
+            ),
+        )
+        await self._await_owned_completion(thread_future)
+
+    async def _await_owned_completion(self, future: asyncio.Future) -> Any:
+        """Finish an owned operation, then restore exactly the caller's cancel requests."""
         current = asyncio.current_task()
-        restored = 0
-        if current is not None and hasattr(current, "uncancel"):
-            while current.cancelling() > 0:
-                current.uncancel()
-                restored += 1
+        cancellation_count = 0
+
+        def consume_requests() -> None:
+            nonlocal cancellation_count
+            if current is not None:
+                while current.cancelling() > 0:
+                    current.uncancel()
+                    cancellation_count += 1
+
+        consume_requests()
         try:
-            await asyncio.shield(
-                asyncio.to_thread(
-                    self._remove_containers,
-                    targets,
-                    stable_seconds=stable_seconds,
-                    wait_seconds=wait_seconds,
-                )
-            )
+            while not future.done():
+                try:
+                    await asyncio.shield(future)
+                except asyncio.CancelledError:
+                    # Delivery may represent requests already drained above (3.11),
+                    # or several requests coalesced into one exception. Count requests.
+                    consume_requests()
+            return future.result()
         finally:
-            for _ in range(restored):
-                if current is not None:
+            if current is not None:
+                for _ in range(cancellation_count):
                     current.cancel()
 
     async def execute(self, request: IsolatedExecutionRequest) -> ExecutionOutcome:
@@ -420,8 +475,7 @@ class DockerContainerBackend(IsolationBackend):
                     is_absent = (
                         "no such container" in rm_err
                         or "no such object" in rm_err
-                        or "not found" in rm_err
-                    )
+                    ) and "plugin" not in rm_err and "daemon unavailable" not in rm_err
                     if rm_res.returncode != 0 and not is_absent:
                         raise RuntimeError(
                             f"Docker rm -f failed for {container_name} (rc={rm_res.returncode}): {rm_res.stderr.strip()}"
@@ -455,8 +509,7 @@ class DockerContainerBackend(IsolationBackend):
                         if (
                             "no such container" in insp_err
                             or "no such object" in insp_err
-                            or "not found" in insp_err
-                        ):
+                        ) and "plugin" not in insp_err and "daemon unavailable" not in insp_err:
                             return True
                         # Nonzero inspection error (daemon disconnect, permission denied, timeout)
                         # Must NOT be marked successful without authoritative proof of containment
@@ -465,7 +518,7 @@ class DockerContainerBackend(IsolationBackend):
                         )
 
                 try:
-                    await registry.register(
+                    registration = await registry.register(
                         execution_id=execution_id,
                         organization_id=request.organization_id,
                         action_id=request.action_id,
@@ -516,8 +569,6 @@ class DockerContainerBackend(IsolationBackend):
                     except Exception:
                         pass
                 finally:
-                    await registry.unregister(execution_id)
-                    duration = time.monotonic() - start_time
                     # Guarantee container removal for ALL exit paths including
                     # asyncio.CancelledError, TimeoutError, and unexpected exceptions.
                     #
@@ -543,12 +594,22 @@ class DockerContainerBackend(IsolationBackend):
                     # Client kill (timeout or CancelledError) can race dockerd's
                     # asynchronous create. Retry rm -f until the uniquely named
                     # container is gone; never filter by org/action prefix.
-                    incomplete = timed_out or proc.returncode is None
-                    await self._remove_containers_uninterruptible(
-                        cleanup_targets,
-                        stable_seconds=3.0 if incomplete else 0.0,
-                        wait_seconds=12.0 if incomplete else 2.0,
-                    )
+                    incomplete = timed_out or proc.returncode is None or revoked_in_flight
+                    cleanup_error: Exception | None = None
+                    try:
+                        await self._remove_containers_uninterruptible(
+                            cleanup_targets,
+                            stable_seconds=3.0 if incomplete else 0.0,
+                            wait_seconds=12.0 if incomplete else 2.0,
+                        )
+                    except Exception as exc:
+                        cleanup_error = exc
+                        logger.critical(
+                            "CONTAINER_CLEANUP_FAILED_PRESERVING_UNRESOLVED: %s for org %s (%s)",
+                            execution_id,
+                            request.organization_id,
+                            exc,
+                        )
 
                     # Ensure the docker client process is not left as a zombie.
                     if proc.returncode is None:
@@ -556,6 +617,33 @@ class DockerContainerBackend(IsolationBackend):
                             proc.kill()
                         except Exception:
                             pass
+
+                    # Unregister AFTER container removal is confirmed, ensuring
+                    # active tracking remains valid until containment is complete.
+                    # CRITICAL INVARIANT: If removal failed or absence is unconfirmed,
+                    # DO NOT unregister! Retain in registry tracking as unresolved containment.
+                    async def finish_tracking() -> None:
+                        if cleanup_error is not None:
+                            async with registry._lock:
+                                registration.termination_attempts += 1
+                                registration.containment_status = "unresolved"
+                                registration.last_termination_error = str(cleanup_error)
+                                registry._unresolved[execution_id] = registration
+                                registry._active.pop(execution_id, None)
+                                from responsibleai.isolation.in_flight import (
+                                    _record_cross_worker_registration,
+                                )
+
+                                try:
+                                    _record_cross_worker_registration(registration)
+                                except Exception:
+                                    logger.critical(
+                                        "UNRESOLVED_TRACKING_PERSISTENCE_FAILED: %s", execution_id
+                                    )
+                        else:
+                            await registry.unregister(execution_id)
+                    await self._await_owned_completion(asyncio.create_task(finish_tracking()))
+                    duration = time.monotonic() - start_time
 
                 max_out = limits.max_output_bytes
                 stdout_str = stdout_data[:max_out].decode("utf-8", errors="replace")

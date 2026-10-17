@@ -41,7 +41,7 @@ def pytest_configure(config):
 _QUALIFICATION_SKIPS: list[dict[str, str]] = []
 
 
-def pytest_runtest_logreport(report: pytest.TestReport) -> None:
+def _record_qualification_skip(report: pytest.TestReport | pytest.CollectReport) -> None:
     """Record skips when WHITEPACT_QUALIFICATION_SKIP_LOG is set.
 
     A skip is not a pass. The log is the release qualification record of
@@ -58,6 +58,15 @@ def pytest_runtest_logreport(report: pytest.TestReport) -> None:
     elif longrepr is not None:
         reason = str(longrepr)
     _QUALIFICATION_SKIPS.append({"nodeid": report.nodeid, "reason": reason})
+
+
+def pytest_runtest_logreport(report: pytest.TestReport) -> None:
+    _record_qualification_skip(report)
+
+
+def pytest_collectreport(report: pytest.CollectReport) -> None:
+    """Module-level importorskip is a qualification skip, even without a test report."""
+    _record_qualification_skip(report)
 
 
 def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:

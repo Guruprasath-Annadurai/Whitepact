@@ -1,0 +1,27 @@
+{
+  "implementation": {
+    "commit": "9de2d5cc17671b2731aab8eaa1b388d9b4fa67cb",
+    "tree": "3ea1c180680340e6556e84e65623650db50c11e4",
+    "clean": true
+  },
+  "customer_authority": false,
+  "postgres_version": "16.15 (Debian 16.15-1.pgdg13+2)",
+  "upgrade": {
+    "status": "PASS",
+    "sequence": [
+      "0063",
+      "0064",
+      "0065"
+    ],
+    "tenants": 2,
+    "existing_rows_preserved": true,
+    "non_null_defaults": true
+  },
+  "downgrade_roundtrip": {
+    "status": "BLOCKED",
+    "ordinary_rows_preserved": true,
+    "security_flag_preserved": false,
+    "reason": "0065_DOWNGRADE_DROPS_PASSKEY_REQUIREMENT; DO_NOT_QUALIFY_NONEMPTY_DOWNGRADE"
+  },
+  "production": "GLOBAL PRODUCTION NO-GO"
+}

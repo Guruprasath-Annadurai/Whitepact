@@ -50,9 +50,11 @@ from responsibleai.trust_fabric.models import (
 def normalize_identifier(identifier_type: IdentifierType, value: str) -> str:
     """Canonicalize an identifier value based on its type."""
     val = unicodedata.normalize("NFKC", value.strip())
+    if not val:
+        raise ValueError("Identifier must not be empty")
     if identifier_type == IdentifierType.EMAIL:
         val = val.lower()
-        if "@" not in val or val.startswith("@") or val.endswith("@"):
+        if val.count("@") != 1 or val.startswith("@") or val.endswith("@"):
             raise ValueError(f"Invalid email address: {value!r}")
         local_part, domain_part = val.split("@", 1)
         domain_part = domain_part.encode("idna").decode("ascii")
@@ -63,17 +65,29 @@ def normalize_identifier(identifier_type: IdentifierType, value: str) -> str:
             val = val.split("://", 1)[1]
         if "/" in val:
             val = val.split("/", 1)[0]
+        if not val:
+            raise ValueError("Domain identifier must not be empty")
         return val.encode("idna").decode("ascii")
     elif identifier_type == IdentifierType.PHONE:
         # Normalize to E.164 digits with leading +
         digits = re.sub(r"[^\d+]", "", val)
         if not digits.startswith("+"):
             digits = f"+{digits}"
+        if not re.fullmatch(r"\+[0-9]{1,15}", digits):
+            raise ValueError("Phone identifier requires a leading plus and up to 15 digits")
         return digits
     elif identifier_type == IdentifierType.REGISTRATION_NUMBER:
         return val.upper()
     else:
         return val
+
+
+def _read_metadata(raw: str | None) -> dict[str, Any]:
+    """Restore descriptive metadata without interpreting it as authority."""
+    value = json.loads(raw) if raw is not None else {}
+    if not isinstance(value, dict):
+        raise ValueError("Principal metadata must be a JSON object")
+    return value
 
 
 class PrincipalDirectory:
@@ -141,7 +155,7 @@ class PrincipalDirectory:
                 lifecycle_state=PrincipalState(row["lifecycle_state"]),
                 created_at=row["created_at"],
                 updated_at=row["updated_at"],
-                metadata={},
+                metadata=_read_metadata(row["metadata_json"]),
             )
 
     async def attach_identifier(
@@ -286,7 +300,7 @@ class PrincipalDirectory:
                 lifecycle_state=PrincipalState(data["lifecycle_state"]),
                 created_at=data["created_at"],
                 updated_at=data["updated_at"],
-                metadata={},
+                metadata=_read_metadata(data["metadata_json"]),
             )
 
     async def delete_principal(self, principal_id: str, *, org_id: str) -> None:
@@ -357,7 +371,7 @@ class PrincipalDirectory:
                     lifecycle_state=PrincipalState(r["lifecycle_state"]),
                     created_at=r["created_at"],
                     updated_at=r["updated_at"],
-                    metadata={},
+                    metadata=_read_metadata(r["metadata_json"]),
                 )
                 for r in [dict(r._mapping) for r in rows]
             ]
