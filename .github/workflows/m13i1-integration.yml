@@ -116,7 +116,7 @@ jobs:
           PYTHONPATH: src:.
           WHITEPACT_QUALIFICATION_SKIP_LOG: /tmp/m13apex-root-email-skips.json
         run: |
-          python -m pytest scripts/engineering/reproducers/test_m13_corrective_authority.py scripts/engineering/reproducers/test_m13_dual_titan_root.py -k 'unverified or completion' -o addopts='' --tb=short -ra
+          python -m pytest -p tests.conftest scripts/engineering/reproducers/test_m13_corrective_authority.py scripts/engineering/reproducers/test_m13_dual_titan_root.py -k 'unverified or completion' -o addopts='' --tb=short -ra
           python -c 'import json; r=json.load(open("/tmp/m13apex-root-email-skips.json")); assert r["exit_status"] == 0 and r["skip_count"] == 0, r'
       - name: WebAuthn product origin binding and unchanged identity security
         if: ${{ !cancelled() }}

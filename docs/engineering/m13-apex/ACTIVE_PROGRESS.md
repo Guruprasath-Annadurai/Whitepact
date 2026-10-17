@@ -3,6 +3,14 @@
 M13 OPEN. GLOBAL PRODUCTION NO-GO. No M14/M21 or additional spending.
 ## Dual-TITAN independent continuation — 17 October 2026
 
+380f86a3 finalCI: product/CodeQL/static-dependency-scanPASS; native15PASS.
+PerPython209extended/519MCP/4PG/6root/83identityPASS; original35PASS/1FAIL.
+Root step alsoFAIL after tests due missing strict skip-receipt hook whenpytest
+onlycollects scripts/. Corrective workflow explicitly loads tests.conftest;
+no gate weakening. DCOFAIL,Ruff100FAIL,Gitleaks6FAIL,customer5/1/19BLOCKED.
+Older0064 app starts on0065 mandatoryrow1: supplementalstartup compatibility
+counterexample handedownerPR215/6232871022; authenticated execution NOTtested.
+
 Signed969c97ae published; product/CodeQLPASS; independent/native evidence in
 progress, inheritedgatesFAIL. New owner lifecycle19PASS andfirst-passkey step-up
 invariant1PASS. Independent email/membership/org completion matrix owner3PASS;

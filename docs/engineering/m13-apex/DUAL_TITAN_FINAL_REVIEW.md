@@ -5,6 +5,39 @@ not milestone acceptance. No merge, deployment, spend, publication or M14.
 
 ## Persisted owner continuation
 
+Committed source checkpoint `380f86a3fa11a7481dbe87eb31c2907bf6b7d51b`, tree
+`23e52cea1f54eedf3fbc7ce6461bbc07af70ef98`, parent969c97ae completed CI:
+product39025319973 PASS, CodeQL39025316274 PASS, static/dependency
+scan39025470073 PASS, Gitleaks39025318439 FAIL(six historical findings).
+Independent39025320012 FAIL: each Python has35PASS/1FAIL original assertions,
+209 extended PASS,519 MCP PASS,4 PostgreSQL PASS,6 root denial cases PASS,
+83 identity/origin PASS. Native Linux15PASS/zero skips(111.61s).
+
+The new root step nonetheless FAILED after its six passing tests because
+script-directory tests do not automatically load tests/conftest.py and its
+strict skip-receipt hook. Missing `/tmp/m13apex-root-email-skips.json` is a CI
+integration error, not a passing gate. Follow-up explicitly loads the existing
+plugin with `-p tests.conftest`; no assertion or zero-skip requirement is removed.
+Both failed380 jobs and earlier969 job results remain recorded.
+
+380 clean actual browser artifact confirms5PASS/1BLOCKED/19NOT_EXECUTED.
+Fresh installed consumers at380:24PASS(18.01s),22PASS(18.06s), external
+Python-wheel/TypeScript-ESM-and-CommonJS/Go3PASS(101.66s). No skipped cases.
+OpenSSF pinned-action/license/trust policy scripts all PASS. Public Scorecard
+publication is NOT_EXECUTED: its workflow publishes publicly and only runs on
+default-branch events/schedule; this task does not authorize that publication.
+Ruff remains100 findings across13 files; protected original tests include lint
+findings, so unchanged-evidence and mandatory lint requirements need formal
+maintainer disposition, not exclusions or alterations to protected tests.
+
+Additional older-binary compatibility probe: clean historical0064 source9fc9f94
+starts and serves/login HTTP200 against0065 with requirement1 and auto_migrate
+disabled. This is a development startup counterexample; authenticated execution
+was NOT tested. Supplemental probe SHA256fab81b6eaab6c8ead4381fe595e336b80c21f709475a4eb2fb669c1f390d1288
+and full reproducible source are preserved in owner handoff PR215 comment6232871022
+and PR216 comment6232871304. Downgrade refusal remains correct but is insufficient
+proof of incompatible-runtime startup rejection. No production bypass claimed.
+
 Following signed checkpoint `969c97ae975c6dc271b8d139318a9a91bb2a6f08`
 (tree `99e7c46ffba92e242edebe73faef0202dc9bffa9`, parent `1bd70571`),
 independently ran TITAN-1's full root lifecycle/closure suite: **19 PASS in
