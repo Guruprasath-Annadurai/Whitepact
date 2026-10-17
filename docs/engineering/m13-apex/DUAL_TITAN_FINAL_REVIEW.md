@@ -3,6 +3,41 @@
 M13 OPEN. GLOBAL PRODUCTION NO-GO. This is a partial qualification checkpoint,
 not milestone acceptance. No merge, deployment, spend, publication or M14.
 
+## Persisted owner continuation
+
+Following signed checkpoint `969c97ae975c6dc271b8d139318a9a91bb2a6f08`
+(tree `99e7c46ffba92e242edebe73faef0202dc9bffa9`, parent `1bd70571`),
+independently ran TITAN-1's full root lifecycle/closure suite: **19 PASS in
+206.22s**. Its first-passkey invariant case: **1 PASS in 11.66s**. That case
+qualifies step-up admission with test SQL states; it does not independently
+qualify all registration-time races or replace genuine browser receipts.
+
+Added separate persisted completion regressions: actual mailbox verification
+and initiation, then explicit SQL revocation of email qualification, membership,
+or organization state before valid Ed25519 completion. These are defensive
+service tests, not synthetic customer-journey success. Owner2819: **3 PASS in
+40.90s**. Integrated969: **2 FAIL / 1 PASS in 33.91s**; membership and organization
+changes reach the missing canonical-principal FK instead of a proper denial.
+No unauthorized grant was demonstrated on APEX by those failures.
+
+Selected only owner organization/membership denial checks, shared at initiation
+and completion. No canonical-principal activation or passkey relaxation. Fresh
+integrated bootstrap/origin/receipt/root checks: **31 PASS in 88.42s**, zero skips.
+The first email-only iteration passed28; its initial compatibility setup failure
+and correction are recorded below. New tests retain original reproducer files.
+
+At969 exact-head product CI PASS and CodeQL PASS; native Linux job PASS.
+Independent security matrix is still running as this continuation is recorded.
+Gitleaks FAIL: same six historical fingerprints. DCO and Ruff FAIL. Exact969
+clean browser artifact confirms **5 PASS / 1 BLOCKED / 19 NOT_EXECUTED**, enrollment
+403. Do not label the earlier integrated column below as the newer uncommitted
+implementation. New final-head CI must run after this continuation is committed.
+
+Installed-package framework consumers on the969 application implementation:
+24 PASS in18.39s and CrewAI/LlamaIndex22 PASS in18.45s. Initial sandbox-only
+attempts had24/22 socket-bind setup errors; excluded, then rerun with authorized
+local HTTP access. No external paid model calls or package publication.
+
 ## Source provenance and selection
 
 Started from clean APEX `1bd70571f417226f2e247903817988c4c5410f16`, tree

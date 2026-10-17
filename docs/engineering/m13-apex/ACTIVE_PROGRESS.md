@@ -3,6 +3,14 @@
 M13 OPEN. GLOBAL PRODUCTION NO-GO. No M14/M21 or additional spending.
 ## Dual-TITAN independent continuation — 17 October 2026
 
+Signed969c97ae published; product/CodeQLPASS; independent/native evidence in
+progress, inheritedgatesFAIL. New owner lifecycle19PASS andfirst-passkey step-up
+invariant1PASS. Independent email/membership/org completion matrix owner3PASS;
+integrated2FAIL/1PASS (FK instead of authorization denial). Selected persisted
+owner organization/membership checks only; fresh integrated31PASS/zero skips.
+No canonical principal activation, passkey relaxation or whole runtime import.
+969 clean browserCI5/1/19; owner2819 genuine17/1/7. Final candidateCI stillrequired.
+
 Fetched actual2819be09/622b02d6 from canonical remote; isolated review worktrees.
 Original unverified authority RED9fb→GREEN2819; cleanup-error cancellation
 REDd649→GREEN622. New independent exact-count tests2FAIL on622 (two requests

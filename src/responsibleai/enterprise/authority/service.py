@@ -83,6 +83,9 @@ from responsibleai.enterprise.errors import (
     BREAK_GLASS_DENIED,
     CROSS_TENANT,
     FORBIDDEN,
+    MEMBERSHIP_REVOKED,
+    ORG_DISABLED,
+    ORG_SUSPENDED,
     WEBAUTHN_INVALID,
     forbidden,
 )
@@ -176,6 +179,34 @@ class CustomerAuthorityService:
             if actor.role not in {Role.OWNER, Role.ADMIN}:
                 raise unauthorized_caller("This operation requires Organization Owner or Admin role.")
 
+    async def _require_persisted_active_owner(self, conn: Any, actor: Actor, org_id: str) -> None:
+        """Revalidate the owner contract selected from TITAN-1 at each root boundary."""
+        org = (
+            await conn.execute(
+                select(organizations.c.governance_status, organizations.c.deactivated_at).where(
+                    organizations.c.id == org_id
+                )
+            )
+        ).first()
+        if not org:
+            raise forbidden(FORBIDDEN, "Organization not found.")
+        if org.governance_status == "DISABLED" or org.deactivated_at:
+            raise forbidden(ORG_DISABLED, "Organization is disabled.")
+        if org.governance_status == "SUSPENDED":
+            raise forbidden(ORG_SUSPENDED, "Organization is suspended.")
+        member = (
+            await conn.execute(
+                select(web_memberships.c.role, web_memberships.c.status).where(
+                    web_memberships.c.org_id == org_id,
+                    web_memberships.c.user_id == actor.user_id,
+                )
+            )
+        ).first()
+        if not member or member.status != "ACTIVE":
+            raise forbidden(MEMBERSHIP_REVOKED, "Caller membership is revoked or inactive.")
+        if member.role != Role.OWNER.value:
+            raise unauthorized_caller("This operation requires verified Organization Owner role.")
+
     async def initiate_root_bootstrap(
         self,
         actor: Actor,
@@ -193,6 +224,7 @@ class CustomerAuthorityService:
 
         # Confirmed email is mandatory even when the optional assurance flag is false.
         async with self._engine.raw.connect() as conn:
+            await self._require_persisted_active_owner(conn, actor, org_id)
             user = (
                 await conn.execute(select(web_users).where(web_users.c.id == actor.user_id))
             ).first()
@@ -702,6 +734,7 @@ class CustomerAuthorityService:
             # 1. Lock tenant revocation epoch to serialize concurrent ceremony attempts
             await lock_epoch(conn, org_id)
 
+            await self._require_persisted_active_owner(conn, actor, org_id)
             # Recheck persisted email qualification at the authority write boundary.
             user = (
                 await conn.execute(select(web_users).where(web_users.c.id == actor.user_id))
