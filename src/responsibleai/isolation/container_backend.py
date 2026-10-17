@@ -230,6 +230,13 @@ class DockerContainerBackend(IsolationBackend):
         not run this on the asyncio event loop.
         """
         deadline = time.monotonic() + wait_seconds
+
+        def command_timeout(maximum: float) -> float:
+            budget = deadline - time.monotonic()
+            if budget <= 0:
+                raise TimeoutError("Container cleanup deadline exhausted")
+            return min(maximum, budget)
+
         gone_since: dict[str, float | None] = {target: None for target in targets}
         while time.monotonic() < deadline:
             remaining = False
@@ -239,7 +246,7 @@ class DockerContainerBackend(IsolationBackend):
                         [self.docker_cmd, "rm", "-f", target],
                         stdout=subprocess.DEVNULL,
                         stderr=subprocess.DEVNULL,
-                        timeout=10,
+                        timeout=command_timeout(10),
                         check=False,
                     )
                 except Exception:
@@ -250,7 +257,7 @@ class DockerContainerBackend(IsolationBackend):
                         [self.docker_cmd, "inspect", target],
                         capture_output=True,
                         text=True,
-                        timeout=5,
+                        timeout=command_timeout(5),
                         check=False,
                     )
                     if check.returncode != 0:
@@ -287,7 +294,7 @@ class DockerContainerBackend(IsolationBackend):
                     remaining = True
             if not remaining:
                 return
-            time.sleep(0.2)
+            time.sleep(max(0, min(0.2, deadline - time.monotonic())))
 
         # If deadline expires and any target was not confirmed absent, fail closed!
         unconfirmed = [

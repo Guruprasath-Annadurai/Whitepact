@@ -4,11 +4,14 @@
 
 import json
 import os
+import sys
+import time
 from unittest.mock import patch
 
 import pytest
 
 import responsibleai.isolation.in_flight as tracking
+from responsibleai.isolation.container_backend import DockerContainerBackend
 
 
 @pytest.fixture(autouse=True)
@@ -57,3 +60,14 @@ def test_unresolved_record_survives_same_process_registry_restart(tmp_path):
     registry = tracking.InFlightExecutionRegistry.get_instance()
     assert registry.has_unresolved("tenant")
     assert not registry.has_unresolved("other-tenant")
+
+
+def test_unresponsive_cli_respects_cleanup_budget(tmp_path):
+    executable = tmp_path / "unresponsive-docker"
+    executable.write_text(f"#!{sys.executable}\nimport time\ntime.sleep(1)\n")
+    executable.chmod(0o700)
+    backend = DockerContainerBackend(docker_cmd=str(executable))
+    start = time.monotonic()
+    with pytest.raises(RuntimeError, match="containment unconfirmed"):
+        backend._remove_containers(["owned-container"], stable_seconds=0, wait_seconds=0.2)
+    assert time.monotonic() - start < 0.8

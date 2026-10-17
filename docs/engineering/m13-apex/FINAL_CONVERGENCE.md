@@ -79,9 +79,25 @@ provider onboarding. No fabricated attestations or seeded approvals/grants.
 
 ## Evidence status
 
-Local delegation/revocation neighbors19 PASS. Source Ruff PASS. Identity/root,
-PostgreSQL and genuine-browser runs are in progress; only committed exact-head
+Local delegation/revocation neighbors19 PASS. Source Ruff PASS. Actual PostgreSQL
+migration/startup matrix5 PASS. Additional real unresponsive CLI counterexample
+demonstrated that per-command10s/5s limits exceeded the total cleanup budget;
+each CLI timeout and retry sleep now respect the remaining total deadline.
+New focused tracking/cancellation/cleanup scope17 PASS. Original historical
+dead-worker-deletion assertion remains unchanged and RED.
+Initial a887 runtime unit CI collection exposed an omitted owner test dependency;
+the unchanged test_container_cleanup_race_adversarial.py is now included.
+The new native matrix also challenges actual directory write denial and container
+termination. Identity/root and genuine-browser qualification continue; only committed exact-head
 receipts qualify final acceptance. Dedicated workflows retain original immutable
 hash checks and run both supported Python versions and actual native Linux/Docker.
 Historical Ruff/DCO/Gitleaks/migration assertion failures remain mandatory failures;
 prior branch test success cannot substitute for integrated-head validation.
+
+Dependency alerts independently inspected through the repository API: candidate
+already pins source-map-js1.2.2, Mako1.4.3 and multidict6.9.1, meeting the first
+patched versions reported by the three corresponding default-branch alerts.
+Those default-branch alerts are not declared closed by a development branch.
+Optional NLTK3.10.3 remains affected with no patched version reported; preserve
+the existing opt-in/reachability disposition and require maintainer acceptance
+or upstream fix. No alert is dismissed or scanner suppressed.

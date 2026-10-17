@@ -145,3 +145,25 @@ async def test_actual_worker_exit_does_not_clear_running_container(tmp_path):
         ids = docker("ps", "-aq", "--filter", f"name={name}").splitlines()
         if ids:
             docker("rm", "-f", *ids)
+
+
+@pytest.mark.asyncio
+async def test_actual_tracking_directory_write_denial_terminates_owned_container():
+    directory = tracking._ensure_distributed_dir()
+    directory.chmod(0o500)
+    org = f"abs-write-{uuid.uuid4().hex}"
+    try:
+        request = IsolatedExecutionRequest(
+            action_id="native-write-denial", organization_id=org, action_type="test.harmless",
+            arguments={}, profile=IsolationProfile(resources=ResourceLimits(wall_timeout_seconds=30)),
+            workspace_files={"runner.py": "import time\ntime.sleep(60)\n"},
+        )
+        outcome = await asyncio.wait_for(DockerContainerBackend().execute(request), timeout=25)
+        assert not outcome.is_success
+        assert outcome.violation
+        assert docker("ps", "-aq", "--filter", f"name=wp_iso_{org}_") == ""
+    finally:
+        directory.chmod(0o700)
+        ids = docker("ps", "-aq", "--filter", f"name=wp_iso_{org}_").splitlines()
+        if ids:
+            docker("rm", "-f", *ids)
