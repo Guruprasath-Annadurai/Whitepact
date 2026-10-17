@@ -60,6 +60,53 @@ async def test_nonmandatory_historical_row_survives_supported_roundtrip() -> Non
 
 
 @pytest.mark.asyncio
+async def test_failed_ddl_preserves_revision_and_nonmandatory_data() -> None:
+    """A dependent view forces PostgreSQL DDL failure after the security check."""
+    async with aclosing(isolated_pg_url("wp_apex_downgrade_ddl")) as databases:
+        async for database in databases:
+            ini = _find_alembic_ini()
+            assert ini is not None
+            env = _migration_env(database)
+            await _run_alembic(ini, env, "upgrade", "head")
+            connection = await asyncpg.connect(database)
+            try:
+                await connection.execute(
+                    "INSERT INTO organizations(id,name,slug,created_at) VALUES('ddl','ddl','ddl','2026-01-01')"
+                )
+                await connection.execute(
+                    "INSERT INTO trust_fabric_bootstrap_records(id,org_id,token_hash,expires_at,nonce,created_at,require_passkey_stepup) VALUES('ddl','ddl','hash','2099-01-01','nonce','2026-01-01',0)"
+                )
+                await connection.execute(
+                    "CREATE VIEW qualification_passkey_dependency AS SELECT require_passkey_stepup FROM trust_fabric_bootstrap_records"
+                )
+                with pytest.raises(MigrationError, match="depend"):
+                    await _run_alembic(ini, env, "downgrade", "0064")
+                assert (
+                    await connection.fetchval("SELECT version_num FROM alembic_version") == "0065"
+                )
+                assert (
+                    await connection.fetchval(
+                        "SELECT require_passkey_stepup FROM trust_fabric_bootstrap_records WHERE id='ddl'"
+                    )
+                    == 0
+                )
+                await connection.execute("DROP VIEW qualification_passkey_dependency")
+                await _run_alembic(ini, env, "downgrade", "0064")
+                await _run_alembic(ini, env, "upgrade", "0065")
+                assert (
+                    await connection.fetchval("SELECT version_num FROM alembic_version") == "0065"
+                )
+                assert (
+                    await connection.fetchval(
+                        "SELECT require_passkey_stepup FROM trust_fabric_bootstrap_records WHERE id='ddl'"
+                    )
+                    == 0
+                )
+            finally:
+                await connection.close()
+
+
+@pytest.mark.asyncio
 async def test_concurrent_mandatory_writer_is_seen_before_downgrade() -> None:
     async with aclosing(isolated_pg_url("wp_apex_downgrade_writer")) as databases:
         async for database in databases:

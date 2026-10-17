@@ -191,15 +191,23 @@ class CustomerAuthorityService:
         """
         self._verify_tenant_and_role(actor, org_id, require_owner=True)
 
-        if require_identity_assurance:
-            async with self._engine.raw.connect() as conn:
-                row = (
-                    await conn.execute(
-                        select(web_users.c.verification_status).where(web_users.c.id == actor.user_id)
-                    )
-                ).first()
-                if not row or row[0] not in {"VERIFIED", "IDENTITY_VERIFIED", "BASIC_VERIFIED"}:
-                    raise assurance_required()
+        # Confirmed email is mandatory even when the optional assurance flag is false.
+        async with self._engine.raw.connect() as conn:
+            user = (
+                await conn.execute(select(web_users).where(web_users.c.id == actor.user_id))
+            ).first()
+            status = user.verification_status if user else None
+            if user and status == "UNVERIFIED" and user.email_verified_at:
+                status = "BASIC_VERIFIED"
+            if (
+                not user
+                or user.disabled
+                or not user.email_verified_at
+                or status not in {"VERIFIED", "IDENTITY_VERIFIED", "BASIC_VERIFIED"}
+            ):
+                raise assurance_required(
+                    "Account email verification is required to initiate root authority."
+                )
 
         # Check if organization already possesses an active canonical root
         async with self._engine.raw.connect() as conn:
@@ -693,6 +701,23 @@ class CustomerAuthorityService:
         async with self._engine.raw.begin() as conn:
             # 1. Lock tenant revocation epoch to serialize concurrent ceremony attempts
             await lock_epoch(conn, org_id)
+
+            # Recheck persisted email qualification at the authority write boundary.
+            user = (
+                await conn.execute(select(web_users).where(web_users.c.id == actor.user_id))
+            ).first()
+            status = user.verification_status if user else None
+            if user and status == "UNVERIFIED" and user.email_verified_at:
+                status = "BASIC_VERIFIED"
+            if (
+                not user
+                or user.disabled
+                or not user.email_verified_at
+                or status not in {"VERIFIED", "IDENTITY_VERIFIED", "BASIC_VERIFIED"}
+            ):
+                raise assurance_required(
+                    "Account email verification is required to complete root authority bootstrap."
+                )
 
             # 2. Check no active canonical root already exists (anti-race)
             existing_canon = (

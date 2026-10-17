@@ -1,6 +1,20 @@
 # APEX active engineering ledger
 
 M13 OPEN. GLOBAL PRODUCTION NO-GO. No M14/M21 or additional spending.
+## Dual-TITAN independent continuation — 17 October 2026
+
+Fetched actual2819be09/622b02d6 from canonical remote; isolated review worktrees.
+Original unverified authority RED9fb→GREEN2819; cleanup-error cancellation
+REDd649→GREEN622. New independent exact-count tests2FAIL on622 (two requests
+become four), including actual execute with Docker transport mocked. Owner
+runtime suite10PASS/1FAIL: unresolved next admission returns CancelledError,
+not expected denial outcome. Whole container changes withheld. Migration source
+matches current APEX guard; ownerPG5PASS, integratedPG4PASS including failedDDL
+rollback. Original migration evidence unchanged. Owner genuine journey17/1/7,
+still credential403 at stage17. Selected denial-only persisted email checks;
+no principal activation or enrollment policy imported. Full detail and all25
+stages in DUAL_TITAN_FINAL_REVIEW.md. Current-head CI pending; no acceptance.
+
 ## Customer authority product continuation — 17 October 2026
 
 Origin checkpoint `ba946528`: product/CodeQL/native PASS; MCP519, extended209

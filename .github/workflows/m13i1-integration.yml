@@ -12,6 +12,8 @@ on:
       - 'src/responsibleai/isolation/in_flight.py'
       - 'src/responsibleai/isolation/container_backend.py'
       - 'src/responsibleai/enterprise/security/router.py'
+      - 'src/responsibleai/enterprise/authority/service.py'
+      - 'scripts/engineering/reproducers/test_m13_dual_titan_*.py'
       - 'tests/test_inflight_liveness_adversarial.py'
       - 'migrations/versions/0065_bootstrap_require_passkey_stepup.py'
       - 'scripts/engineering/reproducers/test_m13_corrective_authority.py'
@@ -108,6 +110,14 @@ jobs:
         run: |
           python -m pytest tests/test_m13_apex_migration_guard.py -o addopts='' --tb=short -ra
           python -c 'import json; r=json.load(open("/tmp/m13apex-migration-skips.json")); assert r["exit_status"] == 0 and r["skip_count"] == 0, r'
+      - name: Mandatory root email denial with omitted and explicit assurance flags
+        if: ${{ !cancelled() }}
+        env:
+          PYTHONPATH: src:.
+          WHITEPACT_QUALIFICATION_SKIP_LOG: /tmp/m13apex-root-email-skips.json
+        run: |
+          python -m pytest scripts/engineering/reproducers/test_m13_corrective_authority.py scripts/engineering/reproducers/test_m13_dual_titan_root.py -k unverified -o addopts='' --tb=short -ra
+          python -c 'import json; r=json.load(open("/tmp/m13apex-root-email-skips.json")); assert r["exit_status"] == 0 and r["skip_count"] == 0, r'
       - name: WebAuthn product origin binding and unchanged identity security
         if: ${{ !cancelled() }}
         env:
