@@ -26,6 +26,7 @@ from unittest.mock import patch
 import pytest
 
 from responsibleai.isolation.container_backend import DockerContainerBackend
+from responsibleai.isolation.filesystem import EphemeralWorkspace
 from responsibleai.isolation.in_flight import InFlightExecutionRegistry
 from responsibleai.isolation.models import (
     IsolatedExecutionRequest,
@@ -58,56 +59,51 @@ def _make_dummy_request(
     )
 
 
+class MockProc:
+    def __init__(self, output: bytes = b'{"status": "success", "result": 42}'):
+        self.returncode = 0
+        self.pid = 12345
+        self._output = output
+
+    async def communicate(self, input=None):
+        return (self._output, b"")
+
+    def kill(self):
+        pass
+
+    async def wait(self):
+        return 0
+
+
 @pytest.mark.asyncio
 async def test_container_removal_failure_preserves_unresolved_containment() -> None:
-    """When docker rm -f fails, execution must NOT be unregistered; must be marked unresolved."""
+    """When docker rm -f fails during execute(), execution is naturally preserved in unresolved."""
     backend = DockerContainerBackend()
     registry = InFlightExecutionRegistry.get_instance()
     org_id = f"org_{uuid.uuid4().hex[:8]}"
-    exec_id = f"exec_{uuid.uuid4().hex[:8]}"
+    action_id = f"act_{uuid.uuid4().hex[:8]}"
+    request = _make_dummy_request(org_id, action_id)
 
     # Mock _remove_containers to raise RuntimeError simulating rm failure
     def _failing_remove(targets, *, stable_seconds, wait_seconds):
         raise RuntimeError("docker rm -f failed: permission denied or container locked")
 
-    with patch.object(backend, "_remove_containers", side_effect=_failing_remove):
-        # Register the execution as if it was running
-        await registry.register(
-            execution_id=exec_id,
-            organization_id=org_id,
-            action_id="act_fail_rm",
-        )
-        assert registry.count_active(org_id) == 1
+    with patch.object(backend, "is_available", return_value=True), \
+         patch("responsibleai.isolation.container_backend.grant_container_read"), \
+         patch.object(EphemeralWorkspace, "prepare_for_container"), \
+         patch("asyncio.create_subprocess_exec", return_value=MockProc()), \
+         patch.object(backend, "_remove_containers", side_effect=_failing_remove):
+        outcome = await backend.execute(request)
+        assert outcome.is_success is True
 
-        # Simulate execution finally block attempting cleanup
-        cleanup_err = None
-        try:
-            await backend._remove_containers_uninterruptible(
-                [f"wp_test_{exec_id}"],
-                stable_seconds=0.0,
-                wait_seconds=2.0,
-            )
-        except Exception as exc:
-            cleanup_err = exc
-
-        assert cleanup_err is not None
-        assert "docker rm -f failed" in str(cleanup_err)
-
-        # Invariant enforcement: on cleanup error, entry is preserved in unresolved, NOT unregistered
-        entry = registry._active.get(exec_id)
-        if entry is not None:
-            entry.termination_attempts += 1
-            entry.containment_status = "unresolved"
-            entry.last_termination_error = str(cleanup_err)
-            async with registry._lock:
-                registry._unresolved[exec_id] = entry
-                registry._active.pop(exec_id, None)
-
+        # Production execute() naturally transitioned the execution to unresolved
+        assert registry.count_active(org_id) == 0
         assert registry.has_unresolved(org_id) is True
         assert registry.count_unresolved(org_id) == 1
         unresolved = registry.get_unresolved_containments(org_id)
         assert len(unresolved) == 1
         assert "docker rm -f failed" in (unresolved[0].last_termination_error or "")
+        assert unresolved[0].containment_status == "unresolved"
 
 
 @pytest.mark.asyncio
@@ -214,35 +210,61 @@ async def test_concurrent_cleanup_attempts_do_not_falsely_drop_tracking() -> Non
 @pytest.mark.asyncio
 async def test_fail_closed_denial_when_unresolved_containment_active() -> None:
     """When an execution fails containment, subsequent actions for that tenant fail closed."""
+    backend = DockerContainerBackend()
     registry = InFlightExecutionRegistry.get_instance()
     org_id = f"org_{uuid.uuid4().hex[:8]}"
-    exec_id_1 = f"exec_leak_{uuid.uuid4().hex[:8]}"
-    exec_id_2 = f"exec_subsequent_{uuid.uuid4().hex[:8]}"
+    req1 = _make_dummy_request(org_id, f"act_leak_{uuid.uuid4().hex[:8]}")
+    req2 = _make_dummy_request(org_id, f"act_subsequent_{uuid.uuid4().hex[:8]}")
 
-    # Register initial execution
-    await registry.register(
-        execution_id=exec_id_1,
-        organization_id=org_id,
-        action_id="act_leak",
-    )
+    def _failing_remove(targets, *, stable_seconds, wait_seconds):
+        raise RuntimeError("dockerd disconnected during cleanup")
 
-    # Simulate cleanup failure transitioning it to unresolved
-    entry = registry._active.get(exec_id_1)
-    assert entry is not None
-    entry.termination_attempts = 1
-    entry.containment_status = "unresolved"
-    entry.last_termination_error = "dockerd disconnected during cleanup"
-    async with registry._lock:
-        registry._unresolved[exec_id_1] = entry
-        registry._active.pop(exec_id_1, None)
+    with patch.object(backend, "is_available", return_value=True), \
+         patch("responsibleai.isolation.container_backend.grant_container_read"), \
+         patch.object(EphemeralWorkspace, "prepare_for_container"), \
+         patch("asyncio.create_subprocess_exec", return_value=MockProc()), \
+         patch.object(backend, "_remove_containers", side_effect=_failing_remove):
+        # Initial execution fails cleanup during execute(), naturally transitioning to unresolved
+        await backend.execute(req1)
+        assert registry.has_unresolved(org_id) is True
 
-    assert registry.has_unresolved(org_id) is True
+        # Subsequent execution for the same tenant MUST be denied immediately fail-closed
+        exec_task2 = asyncio.create_task(backend.execute(req2))
+        outcome2 = await exec_task2
+        assert not outcome2.is_success
+        assert outcome2.exit_code == -9
+        assert "revoked in-flight" in (outcome2.violation or "")
 
-    # Subsequent registration attempt for the same tenant MUST be denied immediately
-    with pytest.raises(PermissionError, match="has been revoked in-flight"):
-        await registry.register(
-            execution_id=exec_id_2,
-            organization_id=org_id,
-            action_id="act_new",
-            admission_epoch=10,
+
+@pytest.mark.asyncio
+async def test_repeated_cancellation_during_cleanup_restores_all_cancellations() -> None:
+    """Repeated task.cancel() requests during cleanup are tracked and restored."""
+    import threading
+    backend = DockerContainerBackend()
+    started = threading.Event()
+    cleanup_calls = []
+
+    def mock_remove(targets, *, stable_seconds, wait_seconds):
+        started.set()
+        time.sleep(0.05)
+        cleanup_calls.append(targets)
+
+    async def execution_task():
+        await backend._remove_containers_uninterruptible(
+            ["wp_test_restore"], stable_seconds=0.0, wait_seconds=0.1
         )
+        await asyncio.sleep(0)
+        return "not_cancelled"
+
+    with patch.object(backend, "_remove_containers", side_effect=mock_remove):
+        task = asyncio.create_task(execution_task())
+        assert await asyncio.to_thread(started.wait, 3)
+        # Cancel twice to verify multi-cancellation restoration
+        task.cancel()
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+        assert task.cancelled() is True
+        assert len(cleanup_calls) == 1

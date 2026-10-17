@@ -323,3 +323,43 @@ In addition, **Migration 0065** was qualified against real PostgreSQL for histor
     }
     ```
 
+---
+
+## 9. Resolution of P0 Execution Containment & Cancellation Integrity
+
+### A. Defect: Cancellation State Lost on Shielded Cleanup Exception
+* **Location:** `src/responsibleai/isolation/container_backend.py` (`_remove_containers_uninterruptible` and `execute()` cleanup)
+* **Root Cause:**
+  * When `_remove_containers_uninterruptible` was cancelled while awaiting `asyncio.shield(thread_future)`, and `_remove_containers` in the background thread subsequently raised an unconfirmed containment exception (`RuntimeError`), the exception escaped from `shield()` before the finally block was entered or cancellation state was restored.
+  * In `execute()`, awaiting `registry._lock` or `registry.unregister` while `current_task.cancelling() > 0` caused the registry transition to be aborted halfway by `CancelledError`, risking active execution leak.
+* **RED Before:**
+  * Reproducer: `scripts/engineering/reproducers/test_m13_corrective_authority.py::test_cleanup_error_does_not_erase_requested_cancellation`
+  * Result: `FAILED (AssertionError: Cleanup error handling must not erase execution cancellation: assert task.cancelled() -> False)`
+* **Fix Applied:**
+  1. In `_remove_containers_uninterruptible()`:
+     * Pending cancellations at entry are captured into `cancellation_count` via `current.uncancel()`.
+     * `while not thread_future.done():` polls `asyncio.shield(thread_future)`, incrementing `cancellation_count += 1` on any incoming `asyncio.CancelledError`.
+     * When `thread_future.done()` is True, `thread_future.result()` is called to retrieve and raise the underlying exception.
+     * In `finally:`, all captured cancellation requests (`for _ in range(cancellation_count): current.cancel()`) are restored onto the task.
+  2. In `execute()`:
+     * Registry unregistration / unresolved containment transition is shielded from cancellation using `uncancel()` and restored in `finally:`.
+     * If `registry.register` fails with `PermissionError` (fail-closed tenant denial), the task's cancellation is uncancelled to return a clean structured `ExecutionOutcome(violation="Execution authorization revoked in-flight: ...")`.
+* **GREEN After:**
+  * `scripts/engineering/reproducers/test_m13_corrective_authority.py::test_cleanup_error_does_not_erase_requested_cancellation PASSED [100%]`
+  * `tests/test_container_cleanup_race_adversarial.py` (7/7 PASSED, 3.59s)
+
+### B. PostgreSQL Stricter Fail-Closed Downgrade Guard
+* **Location:** `migrations/versions/0065_bootstrap_require_passkey_stepup.py`
+* **Fix Applied:**
+  * Implemented Codex's stricter fail-closed guard with `LOCK TABLE trust_fabric_bootstrap_records IN ACCESS EXCLUSIVE MODE` during `downgrade()`.
+  * If any records exist with `require_passkey_stepup != 0`, raises `RuntimeError("Cannot downgrade 0065: mandatory passkey requirements exist; retain revision 0065")`, rolling back the migration transaction atomically and keeping revision at `0065`.
+  * If no mandatory records exist, safely drops the column down to `0064`.
+* **Verification:**
+  * `tests/test_m13_apex_migration_guard.py` (3/3 PASSED):
+    * `test_mandatory_passkey_downgrade_is_rejected_atomically PASSED`
+    * `test_nonmandatory_historical_row_survives_supported_roundtrip PASSED`
+    * `test_concurrent_mandatory_writer_is_seen_before_downgrade PASSED`
+  * `tests/test_postgres_0065_adversarial.py` (4/4 PASSED):
+    * `test_migration_0065_rollback_and_reupgrade PASSED`
+
+

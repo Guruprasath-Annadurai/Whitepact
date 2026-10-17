@@ -55,50 +55,18 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """Refuse a schema that cannot express an existing mandatory passkey gate."""
     bind = op.get_bind()
-    inspector = sa.inspect(bind)
-
-    # Fail-closed downgrade policy (PG-02):
-    # Check if any bootstrap records have require_passkey_stepup != 0.
-    # If mandatory passkey requirements exist, preserve them in a downgrade retention
-    # table so that a subsequent upgrade restores mandatory passkey enforcement.
-    if "trust_fabric_bootstrap_records" in inspector.get_table_names():
-        cols = [c["name"] for c in inspector.get_columns("trust_fabric_bootstrap_records")]
-        if "require_passkey_stepup" in cols:
-            has_mandatory = bind.execute(
-                sa.text(
-                    "SELECT EXISTS ("
-                    "  SELECT 1 FROM trust_fabric_bootstrap_records "
-                    "  WHERE require_passkey_stepup != 0"
-                    ")"
-                )
-            ).scalar()
-
-            if has_mandatory:
-                # Ensure the retention table exists
-                if _RETENTION_TABLE not in inspector.get_table_names():
-                    op.create_table(
-                        _RETENTION_TABLE,
-                        sa.Column("id", sa.String(64), primary_key=True),
-                        sa.Column("require_passkey_stepup", sa.Integer(), nullable=False),
-                    )
-
-                if bind.dialect.name == "sqlite":
-                    bind.execute(
-                        sa.text(
-                            f"INSERT OR REPLACE INTO {_RETENTION_TABLE} (id, require_passkey_stepup) "
-                            f"SELECT id, require_passkey_stepup FROM trust_fabric_bootstrap_records "
-                            f"WHERE require_passkey_stepup != 0"
-                        )
-                    )
-                else:
-                    bind.execute(
-                        sa.text(
-                            f"INSERT INTO {_RETENTION_TABLE} (id, require_passkey_stepup) "
-                            f"SELECT id, require_passkey_stepup FROM trust_fabric_bootstrap_records "
-                            f"WHERE require_passkey_stepup != 0 "
-                            f"ON CONFLICT (id) DO UPDATE SET require_passkey_stepup = EXCLUDED.require_passkey_stepup"
-                        )
-                    )
-
+    if bind.dialect.name == "postgresql":
+        # Serialize the check with all bootstrap writers and the following DDL.
+        bind.execute(sa.text("LOCK TABLE trust_fabric_bootstrap_records IN ACCESS EXCLUSIVE MODE"))
+    has_mandatory = bind.execute(
+        sa.text(
+            "SELECT EXISTS (SELECT 1 FROM trust_fabric_bootstrap_records WHERE require_passkey_stepup != 0)"
+        )
+    ).scalar()
+    if has_mandatory:
+        raise RuntimeError(
+            "Cannot downgrade 0065: mandatory passkey requirements exist; retain revision 0065"
+        )
     op.drop_column("trust_fabric_bootstrap_records", "require_passkey_stepup")

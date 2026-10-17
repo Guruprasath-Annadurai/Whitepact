@@ -180,7 +180,31 @@ async def test_migration_0065_rollback_and_reupgrade():
             finally:
                 await conn.close()
 
-            # Step 2: Downgrade back to 0064
+            # Step 2: Attempt downgrade with mandatory passkey requirement (1) -> Must be rejected fail-closed
+            from responsibleai.db.migrate import MigrationError
+            with pytest.raises(MigrationError, match="mandatory passkey requirements exist"):
+                await _run_downgrade(db_url, "0064")
+
+            conn = await asyncpg.connect(raw_url)
+            try:
+                # Schema must remain at 0065, column and data intact
+                rev = await conn.fetchval("SELECT version_num FROM alembic_version")
+                assert rev == "0065"
+                val = await conn.fetchval(
+                    "SELECT require_passkey_stepup FROM trust_fabric_bootstrap_records WHERE id = $1",
+                    boot_id,
+                )
+                assert val == 1
+
+                # Update row to non-mandatory requirement (0) to test supported downgrade path
+                await conn.execute(
+                    "UPDATE trust_fabric_bootstrap_records SET require_passkey_stepup = 0 WHERE id = $1",
+                    boot_id,
+                )
+            finally:
+                await conn.close()
+
+            # Step 3: Downgrade back to 0064 with non-mandatory requirement succeeds
             await _run_downgrade(db_url, "0064")
 
             conn = await asyncpg.connect(raw_url)
@@ -205,7 +229,7 @@ async def test_migration_0065_rollback_and_reupgrade():
             finally:
                 await conn.close()
 
-            # Step 3: Re-upgrade to 0065 (idempotent forward migration)
+            # Step 4: Re-upgrade to 0065 (idempotent forward migration)
             await _run_upgrade(db_url, "0065")
 
             conn = await asyncpg.connect(raw_url)
@@ -219,12 +243,12 @@ async def test_migration_0065_rollback_and_reupgrade():
                 )
                 assert has_col
 
-                # Stored mandatory passkey requirement is preserved per PG-02 security retention policy
+                # Non-mandatory row now has default 0
                 val = await conn.fetchval(
                     "SELECT require_passkey_stepup FROM trust_fabric_bootstrap_records WHERE id = $1",
                     boot_id,
                 )
-                assert val == 1
+                assert val == 0
             finally:
                 await conn.close()
 
