@@ -286,6 +286,18 @@ class IdentitySecurityService:
         ).fetchone()
         if sess_row is None:
             return False
+        now = _now()
+        for deadline in (sess_row.expires_at, sess_row.inactivity_expires_at):
+            if deadline and _iso(now) >= deadline:
+                return False
+        try:
+            persisted_auth = datetime.fromisoformat(sess_row.auth_time or sess_row.created_at)
+            if persisted_auth.tzinfo is None:
+                persisted_auth = persisted_auth.replace(tzinfo=UTC)
+            if not 0 <= (now - persisted_auth).total_seconds() <= _RECOVERY_TTL:
+                return False
+        except (TypeError, ValueError):
+            return False
 
         # Verified human identity
         user_row = (
@@ -517,15 +529,30 @@ class IdentitySecurityService:
         try:
             async with self.engine.raw.begin() as conn:
                 if is_bootstrap_candidate:
-                    try:
-                        lock_stmt = (
-                            select(web_users.c.id)
-                            .where(web_users.c.id == user_id)
-                            .with_for_update()
+                    # Hold the revocable context through the credential write. Database
+                    # lock/read errors propagate; they cannot authorize enrollment.
+                    for table, conditions in (
+                        (web_users, (web_users.c.id == user_id,)),
+                        (organizations, (organizations.c.id == session.org_id,)),
+                        (web_memberships, (
+                            web_memberships.c.org_id == session.org_id,
+                            web_memberships.c.user_id == user_id,
+                        )),
+                        (web_sessions, (web_sessions.c.session_id == session.session_id,)),
+                    ):
+                        await conn.execute(select(table).where(*conditions).with_for_update())
+                    consumed_grant = (
+                        await conn.execute(select(step_up_grants).where(
+                            step_up_grants.c.grant_hash == _hash(grant or "")
+                        ))
+                    ).fetchone()
+                    if consumed_grant is None or not await self._can_bootstrap_first_passkey(
+                        conn, session=session, grant_row=consumed_grant
+                    ):
+                        raise EnterpriseError(
+                            "AUTHENTICATION_ASSURANCE_TOO_LOW",
+                            "First-passkey enrollment qualification is no longer valid.", 403,
                         )
-                        await conn.execute(lock_stmt)
-                    except Exception:
-                        pass
                     # Re-verify zero passkeys and zero auth_replay_records under lock
                     cred_check = (
                         await conn.execute(
