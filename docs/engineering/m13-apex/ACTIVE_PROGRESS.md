@@ -3,6 +3,15 @@
 M13 OPEN. GLOBAL PRODUCTION NO-GO. No M14/M21 or additional spending.
 ## Customer authority product continuation — 17 October 2026
 
+Origin checkpoint `ba946528`: product/CodeQL/native PASS; MCP519, extended209
+and PG3 PASS per Python. New full identity-security step failed collection on
+both versions because optional SAML dependencies were not installed. No assertions
+from that step claimed PASS. Corrective CI installs the existing `sso` extra;
+tests and strict skip gate remain unchanged. Customer boundary is now enrollment
+403 AUTHENTICATION_ASSURANCE_TOO_LOW, not RP/origin mismatch. Owner stage17
+credential admission returns403 IDENTITY_VERIFICATION_REQUIRED. Exact handoff:
+PR215 comment6230267900. Mandatory historical failures remain failed.
+
 Start clean `4b6d43d4`; remote owners unchanged `9fbfc122` / `d64992f1`.
 Origin RED: nine actual issuance/storage/configuration assertions fail after
 correcting test-only Settings setup errors. GREEN: dedicated origin-aware

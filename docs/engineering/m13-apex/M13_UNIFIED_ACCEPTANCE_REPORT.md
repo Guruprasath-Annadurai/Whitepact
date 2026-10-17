@@ -4,6 +4,13 @@
 
 ## Customer authority product continuation — 17 October 2026
 
+At committed origin checkpoint `ba946528`, product and native/CodeQL pass; the
+new full identity-security step failed collection on both Python versions because
+its SAML tests import lxml/signxml. The job lacked the project's existing `sso`
+extra. No assertion results from that collection-error step count as PASS. The
+CI-only correction installs that declared extra and preserves the unchanged full
+scope and strict skip gate. A new exact-head run is required for acceptance.
+
 Starting checkpoint: `4b6d43d4168d20c6489b1462b8940966e402c239`, tree
 `4c2bb755dd37d81453047a6567ec9324aa51c41d`, parent
 `fb73369513217bc5c10979c025f504c5e16d7e3c`; clean at resumption. Remote owner
