@@ -518,6 +518,13 @@ async def lifespan(application: FastAPI):
             ) from exc
 
     _db_engine = create_engine(settings.effective_db_url)
+    from responsibleai.db.runtime_compatibility import assert_runtime_schema_compatible
+
+    try:
+        await assert_runtime_schema_compatible(_db_engine)
+    except Exception:
+        await _db_engine.close()
+        raise
     # Production: Alembic owns the schema; never metadata.create_all.
     # Non-prod SQLite: create_all remains the test/dev convenience path.
     # PostgreSQL with auto_migrate=False: migrations were applied out of band

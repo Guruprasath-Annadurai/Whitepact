@@ -83,6 +83,7 @@ def _error(exc: EnterpriseError, request: Request) -> JSONResponse:
     return JSONResponse(
         status_code=exc.http_status,
         content={
+            "code": exc.code,
             **exc.as_detail(),
             "status_code": exc.http_status,
             "request_id": getattr(request.state, "request_id", None),
@@ -301,13 +302,9 @@ def resolve_webauthn_origin_and_rp_id(
     )
 
 
-def _webauthn_svc(request: Request) -> IdentitySecurityService:
+def _svc(request: Request | None = None) -> IdentitySecurityService:
     origin, rp_id = resolve_webauthn_origin_and_rp_id(request)
     return IdentitySecurityService(get_enterprise_engine(), origin=origin, rp_id=rp_id)
-
-
-def _svc() -> IdentitySecurityService:
-    return IdentitySecurityService(get_enterprise_engine())
 
 
 async def _session(request: Request):
@@ -321,7 +318,7 @@ async def _session(request: Request):
         )
         if not csrf_cookie or csrf_cookie != header:
             raise EnterpriseError("FORBIDDEN", "CSRF validation failed.", 403)
-    return await _svc().load_session(
+    return await _svc(request).load_session(
         token if "." in token else f"{token}.{request.cookies.get('wp_csrf', '')}"
     )
 
@@ -330,8 +327,11 @@ async def _session(request: Request):
 async def passkey_register_begin(request: Request) -> Any:
     try:
         _token, _csrf, assurance = await _session(request)
-        return await _webauthn_svc(request).begin_webauthn(
-            user_id=assurance.user_id, session_id=assurance.session_id, ceremony="register"
+        return await _svc(request).begin_webauthn(
+            user_id=assurance.user_id,
+            session_id=assurance.session_id,
+            ceremony="register",
+            org_id=assurance.org_id,
         )
     except EnterpriseError as exc:
         return _error(exc, request)
@@ -341,7 +341,7 @@ async def passkey_register_begin(request: Request) -> Any:
 async def passkey_register_finish(request: Request, body: PasskeyFinishBody) -> Any:
     try:
         _token, _csrf, assurance = await _session(request)
-        return await _webauthn_svc(request).finish_passkey_registration(
+        return await _svc(request).finish_passkey_registration(
             user_id=assurance.user_id,
             session=assurance,
             client_data_b64=body.client_data_json,
@@ -357,7 +357,9 @@ async def passkey_register_finish(request: Request, body: PasskeyFinishBody) -> 
 @router.post("/passkeys/authenticate/begin")
 async def passkey_auth_begin(request: Request) -> Any:
     try:
-        return await _webauthn_svc(request).begin_webauthn(user_id=None, session_id=None, ceremony="authenticate")
+        return await _svc(request).begin_webauthn(
+            user_id=None, session_id=None, ceremony="authenticate"
+        )
     except EnterpriseError as exc:
         return _error(exc, request)
 
@@ -365,13 +367,60 @@ async def passkey_auth_begin(request: Request) -> Any:
 @router.post("/passkeys/authenticate/finish")
 async def passkey_auth_finish(request: Request, body: PasskeyFinishBody) -> Any:
     try:
-        token, _csrf, assurance = await _webauthn_svc(request).authenticate_passkey(
+        prior_token = request.cookies.get("wp_session", "")
+        prior_org_id = None
+        rotate_from = None
+        if prior_token:
+            try:
+                raw_tok = (
+                    prior_token
+                    if "." in prior_token
+                    else f"{prior_token}.{request.cookies.get('wp_csrf', '')}"
+                )
+                _, _, prior_session = await _svc(request).load_session(raw_tok)
+                prior_org_id = prior_session.org_id
+                rotate_from = prior_token.partition(".")[0]
+            except Exception:
+                pass
+
+        token, csrf, assurance = await _svc(request).authenticate_passkey(
             client_data_b64=body.client_data_json,
             authenticator_data_b64=body.authenticator_data,
             signature_b64=body.signature or "",
             credential_id=body.credential_id or "",
+            org_id=prior_org_id,
+            rotate_from=rotate_from,
         )
-        return {"status": "AUTHENTICATED", "assurance": assurance.level, "session_token": token}
+        response = JSONResponse(
+            content={
+                "status": "AUTHENTICATED",
+                "assurance": assurance.level,
+                "session_token": token,
+            }
+        )
+        from responsibleai.dashboard.app import settings
+
+        max_age = int(getattr(settings, "web_session_ttl_hours", 12)) * 3600
+        secure = bool(getattr(settings, "web_session_secure", False))
+        response.set_cookie(
+            "wp_session",
+            token,
+            max_age=max_age,
+            httponly=True,
+            secure=secure,
+            samesite="lax",
+            path="/",
+        )
+        response.set_cookie(
+            "wp_csrf",
+            csrf,
+            max_age=max_age,
+            httponly=False,
+            secure=secure,
+            samesite="strict",
+            path="/",
+        )
+        return response
     except EnterpriseError as exc:
         return _error(exc, request)
 

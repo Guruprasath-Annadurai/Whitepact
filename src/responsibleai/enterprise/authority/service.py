@@ -18,9 +18,9 @@ Constitutional Invariants:
 from __future__ import annotations
 
 import asyncio
+import fnmatch
 import hashlib
 import json
-import os
 import secrets
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -37,10 +37,14 @@ from responsibleai.db.engine import (
     authority_step_up_challenges,
     governance_consent_proofs,
     governance_delegations,
+    governance_policies,
     governance_root_authority_records,
+    org_authority_ceilings,
+    org_security_policies,
     organizations,
     passkey_credentials,
     trust_fabric_bootstrap_records,
+    trust_fabric_identifiers,
     trust_fabric_principals,
     trust_fabric_trust_roots,
     web_memberships,
@@ -55,6 +59,8 @@ from responsibleai.enterprise.audit import EnterpriseAuditLog
 from responsibleai.enterprise.authority.errors import (
     agent_not_found,
     already_voted,
+    application_not_found,
+    application_registration_invalid,
     assurance_required,
     bootstrap_expired,
     bootstrap_invalid,
@@ -100,8 +106,14 @@ from responsibleai.governance.root_authority import (
     RootType,
     build_root_authority_record,
 )
-from responsibleai.rbac.models import Role
-from responsibleai.trust_fabric.enums import PrincipalState, PrincipalType
+from responsibleai.rbac.models import GovernanceStatus, Role
+from responsibleai.trust_fabric.directory import normalize_identifier
+from responsibleai.trust_fabric.enums import (
+    IdentifierType,
+    IdentifierVerificationState,
+    PrincipalState,
+    PrincipalType,
+)
 from responsibleai.trust_fabric.models import compute_digest
 
 
@@ -111,6 +123,55 @@ def _now() -> datetime:
 
 def _iso(dt: datetime | None = None) -> str:
     return (dt or _now()).isoformat()
+
+
+def _parse_iso_dt(raw: str | datetime | None) -> datetime | None:
+    if raw is None:
+        return None
+    if isinstance(raw, datetime):
+        return raw if raw.tzinfo is not None else raw.replace(tzinfo=UTC)
+    s = str(raw).strip()
+    if not s:
+        return None
+    if s.endswith("Z"):
+        s = s[:-1] + "+00:00"
+    dt = datetime.fromisoformat(s)
+    return dt if dt.tzinfo is not None else dt.replace(tzinfo=UTC)
+
+
+def _is_temporally_valid(
+    not_before_raw: str | datetime | None,
+    expires_at_raw: str | datetime | None,
+    now_dt: datetime,
+) -> tuple[bool, bool]:
+    """Return (is_valid, is_expired) for [not_before, expires_at)."""
+    try:
+        nb = _parse_iso_dt(not_before_raw)
+        exp = _parse_iso_dt(expires_at_raw)
+    except Exception:
+        return False, False
+    if nb is not None and now_dt < nb:
+        return False, False
+    if exp is not None and now_dt >= exp:
+        return False, True
+    return True, False
+
+
+def _filter_targets_by_scope(targets: list[str], scope_patterns: list[str] | set[str]) -> list[str]:
+    patterns = list(scope_patterns)
+    if not patterns:
+        return []
+    if "*" in patterns:
+        return list(targets)
+    matched: list[str] = []
+    for t in targets:
+        if t == "*":
+            for p in patterns:
+                if p not in matched:
+                    matched.append(p)
+        elif any(t == p or fnmatch.fnmatchcase(t, p) for p in patterns):
+            matched.append(t)
+    return matched
 
 
 def compute_canonical_operation_digest(action: str, params: dict[str, Any]) -> str:
@@ -150,7 +211,9 @@ def verify_root_proof_of_possession(
         pub = Ed25519PublicKey.from_public_bytes(pub_bytes)
         pub.verify(sig_bytes, message)
     except Exception as exc:
-        raise proof_of_possession_invalid(f"Proof of possession verification failed: {exc}") from exc
+        raise proof_of_possession_invalid(
+            f"Proof of possession verification failed: {exc}"
+        ) from exc
 
 
 class CustomerAuthorityService:
@@ -162,44 +225,22 @@ class CustomerAuthorityService:
         self._delegations = DelegationRepository(engine)
         self._epochs = RevocationEpochRepository(engine)
 
-    def _verify_tenant_and_role(self, actor: Actor, org_id: str, require_owner: bool = False) -> None:
+    def _verify_tenant_and_role(
+        self, actor: Actor, org_id: str, require_owner: bool = False
+    ) -> None:
         """Enforce authenticated tenant context and role authority."""
         if actor.org_id != org_id:
             raise forbidden(CROSS_TENANT, "Cross-tenant access strictly forbidden.")
         if require_owner:
             if actor.role != Role.OWNER:
-                raise unauthorized_caller("This operation requires verified Organization Owner role.")
+                raise unauthorized_caller(
+                    "This operation requires verified Organization Owner role."
+                )
         else:
             if actor.role not in {Role.OWNER, Role.ADMIN}:
-                raise unauthorized_caller("This operation requires Organization Owner or Admin role.")
-
-    async def _require_persisted_active_owner(self, conn: Any, actor: Actor, org_id: str) -> None:
-        """Revalidate the owner contract selected from TITAN-1 at each root boundary."""
-        org = (
-            await conn.execute(
-                select(organizations.c.governance_status, organizations.c.deactivated_at).where(
-                    organizations.c.id == org_id
+                raise unauthorized_caller(
+                    "This operation requires Organization Owner or Admin role."
                 )
-            )
-        ).first()
-        if not org:
-            raise forbidden(FORBIDDEN, "Organization not found.")
-        if org.governance_status == "DISABLED" or org.deactivated_at:
-            raise forbidden(ORG_DISABLED, "Organization is disabled.")
-        if org.governance_status == "SUSPENDED":
-            raise forbidden(ORG_SUSPENDED, "Organization is suspended.")
-        member = (
-            await conn.execute(
-                select(web_memberships.c.role, web_memberships.c.status).where(
-                    web_memberships.c.org_id == org_id,
-                    web_memberships.c.user_id == actor.user_id,
-                )
-            )
-        ).first()
-        if not member or member.status != "ACTIVE":
-            raise forbidden(MEMBERSHIP_REVOKED, "Caller membership is revoked or inactive.")
-        if member.role != Role.OWNER.value:
-            raise unauthorized_caller("This operation requires verified Organization Owner role.")
 
     async def initiate_root_bootstrap(
         self,
@@ -216,27 +257,114 @@ class CustomerAuthorityService:
         """
         self._verify_tenant_and_role(actor, org_id, require_owner=True)
 
-        # Confirmed email is mandatory even when the optional assurance flag is false.
         async with self._engine.raw.connect() as conn:
-            await self._require_persisted_active_owner(conn, actor, org_id)
-            user = (
-                await conn.execute(select(web_users).where(web_users.c.id == actor.user_id))
+            # Enforce organization is active
+            org_row = (
+                await conn.execute(
+                    select(
+                        organizations.c.governance_status,
+                        organizations.c.deactivated_at,
+                    ).where(organizations.c.id == org_id)
+                )
             ).first()
-            status = user.verification_status if user else None
-            if user and status == "UNVERIFIED" and user.email_verified_at:
-                status = "BASIC_VERIFIED"
+            if not org_row:
+                raise forbidden(FORBIDDEN, f"Organization {org_id!r} not found.")
             if (
-                not user
-                or user.disabled
-                or not user.email_verified_at
-                or status not in {"VERIFIED", "IDENTITY_VERIFIED", "BASIC_VERIFIED"}
+                org_row.governance_status == GovernanceStatus.DISABLED.value
+                or org_row.deactivated_at
             ):
+                raise forbidden(ORG_DISABLED, "Organization is disabled.")
+            if org_row.governance_status == GovernanceStatus.SUSPENDED.value:
+                raise forbidden(ORG_SUSPENDED, "Organization is suspended.")
+
+            # Enforce caller membership in organization is active and owner
+            m_row = (
+                await conn.execute(
+                    select(web_memberships.c.role, web_memberships.c.status).where(
+                        and_(
+                            web_memberships.c.org_id == org_id,
+                            web_memberships.c.user_id == actor.user_id,
+                        )
+                    )
+                )
+            ).first()
+            if not m_row or m_row.status != "ACTIVE":
+                raise forbidden(MEMBERSHIP_REVOKED, "Caller membership is revoked or inactive.")
+            if m_row.role != Role.OWNER.value:
+                raise unauthorized_caller(
+                    "This operation requires verified Organization Owner role."
+                )
+
+            # 1. Enforce actor account is not disabled or suspended
+            u_row = (
+                await conn.execute(
+                    select(
+                        web_users.c.disabled,
+                        web_users.c.verification_status,
+                        web_users.c.email_verified_at,
+                    ).where(web_users.c.id == actor.user_id)
+                )
+            ).first()
+            if (
+                not u_row
+                or u_row.disabled
+                or u_row.verification_status in {"SUSPENDED", "REJECTED"}
+            ):
+                raise unauthorized_caller("User account is disabled, suspended, or rejected.")
+
+            # 2. Enforce principal is not revoked in trust fabric if registered
+            p_row = (
+                await conn.execute(
+                    select(
+                        trust_fabric_principals.c.lifecycle_state,
+                        trust_fabric_principals.c.org_id,
+                    ).where(trust_fabric_principals.c.id == actor.user_id)
+                )
+            ).first()
+            if p_row:
+                if p_row.org_id != org_id:
+                    raise unauthorized_caller(
+                        f"Principal {actor.user_id!r} is registered to tenant {p_row.org_id!r}, cannot initiate root for {org_id!r}."
+                    )
+                if p_row.lifecycle_state in {
+                    PrincipalState.REVOKED.value,
+                    PrincipalState.SUSPENDED.value,
+                    PrincipalState.DISABLED.value,
+                    PrincipalState.DELETED.value,
+                }:
+                    raise unauthorized_caller(f"Principal identity is {p_row.lifecycle_state}.")
+
+            # 3. Enforce mandatory baseline identity assurance:
+            # Establishing root authority requires at least confirmed email verification (BASIC_VERIFIED).
+            # An unverified account cannot initiate root authority under any circumstances.
+            status = u_row.verification_status
+            if status == "UNVERIFIED" and u_row.email_verified_at:
+                status = "BASIC_VERIFIED"
+            if not u_row.email_verified_at or not status or status in {"UNVERIFIED", "PENDING"}:
                 raise assurance_required(
                     "Account email verification is required to initiate root authority."
                 )
+            if status not in {"VERIFIED", "IDENTITY_VERIFIED", "BASIC_VERIFIED"}:
+                raise assurance_required(
+                    f"Account verification status {status!r} does not satisfy identity assurance requirements."
+                )
 
-        # Check if organization already possesses an active canonical root
-        async with self._engine.raw.connect() as conn:
+            # 4. Check if organization has an active pending quorum recovery request
+            pending_rec = (
+                await conn.execute(
+                    select(authority_recovery_requests.c.id).where(
+                        and_(
+                            authority_recovery_requests.c.org_id == org_id,
+                            authority_recovery_requests.c.status == "PENDING",
+                            authority_recovery_requests.c.expires_at > _iso(),
+                        )
+                    )
+                )
+            ).first()
+            if pending_rec:
+                raise root_already_exists("Organization has an active quorum recovery in progress.")
+
+            # 5. Check if organization already possesses an active canonical root
             canon_root = (
                 await conn.execute(
                     select(governance_root_authority_records.c.root_id).where(
@@ -248,7 +376,9 @@ class CustomerAuthorityService:
                 )
             ).first()
             if canon_root:
-                raise root_already_exists("Organization already has an active canonical root authority.")
+                raise root_already_exists(
+                    "Organization already has an active canonical root authority."
+                )
 
             tf_root = (
                 await conn.execute(
@@ -343,16 +473,22 @@ class CustomerAuthorityService:
         action: str,
         operation_digest: str,
         ttl_seconds: int = 300,
+        request: Any = None,
     ) -> dict[str, Any]:
         """Issue a short-lived, replay-resistant WebAuthn challenge bound to tenant, user, action, and digest."""
         self._verify_tenant_and_role(actor, org_id)
+
+        from responsibleai.enterprise.security.router import resolve_webauthn_origin_and_rp_id
+
+        origin, rp_id = resolve_webauthn_origin_and_rp_id(
+            request,
+            default_dev_origin="http://localhost:3000",
+        )
 
         raw_challenge = secrets.token_bytes(32)
         challenge_b64 = b64url_encode(raw_challenge)
         challenge_hash = hashlib.sha256(challenge_b64.encode("utf-8")).hexdigest()
 
-        rp_id = os.environ.get("WP_RP_ID", "localhost")
-        origin = os.environ.get("WP_ORIGIN", "http://localhost:3000")
         now_dt = _now()
         expires_at_dt = now_dt + timedelta(seconds=ttl_seconds)
         expires_at = _iso(expires_at_dt)
@@ -411,7 +547,9 @@ class CustomerAuthorityService:
         ).first()
 
         if not row:
-            raise webauthn_assertion_invalid("No matching pre-verified step-up authorization found.")
+            raise webauthn_assertion_invalid(
+                "No matching pre-verified step-up authorization found."
+            )
 
         authz = dict(row._mapping)
         if authz["action"] != f"PREVERIFIED:{action}":
@@ -420,13 +558,19 @@ class CustomerAuthorityService:
             )
 
         if authz["operation_digest"] != operation_digest:
-            raise webauthn_assertion_invalid("Operation digest mismatch for pre-verified step-up authorization.")
+            raise webauthn_assertion_invalid(
+                "Operation digest mismatch for pre-verified step-up authorization."
+            )
 
         if authz["consumed_at"] is not None:
-            raise webauthn_challenge_replay("Pre-verified step-up authorization has already been consumed.")
+            raise webauthn_challenge_replay(
+                "Pre-verified step-up authorization has already been consumed."
+            )
 
         if now_iso >= authz["expires_at"]:
-            raise webauthn_challenge_expired(f"Pre-verified step-up authorization expired at {authz['expires_at']}.")
+            raise webauthn_challenge_expired(
+                f"Pre-verified step-up authorization expired at {authz['expires_at']}."
+            )
 
         # Revalidate current responder authority dynamically: MUST still be ACTIVE OWNER or ADMIN
         mem = (
@@ -442,7 +586,9 @@ class CustomerAuthorityService:
             )
         ).first()
         if not mem:
-            raise unauthorized_caller("Caller membership or administrative role is no longer active.")
+            raise unauthorized_caller(
+                "Caller membership or administrative role is no longer active."
+            )
 
         # Revalidate user account status
         user_row = (
@@ -463,7 +609,9 @@ class CustomerAuthorityService:
             .values(consumed_at=now_iso)
         )
         if consume_res.rowcount != 1:
-            raise webauthn_challenge_replay("Pre-verified step-up authorization has already been consumed.")
+            raise webauthn_challenge_replay(
+                "Pre-verified step-up authorization has already been consumed."
+            )
 
         return {
             "authorization_id": authorization_id,
@@ -489,7 +637,9 @@ class CustomerAuthorityService:
 
         # Restrict Path B exclusively to emergency containment; barred for root recovery or expansion
         if action != "EMERGENCY_CONTAINMENT":
-            raise containment_forbidden(f"Pre-verified step-up authorization is strictly barred for action {action!r}.")
+            raise containment_forbidden(
+                f"Pre-verified step-up authorization is strictly barred for action {action!r}."
+            )
 
         op_digest = compute_canonical_operation_digest(action, operation)
         authz_id = f"wp_authz_{uuid.uuid4().hex}"
@@ -518,7 +668,7 @@ class CustomerAuthorityService:
                     session_id=session_id,
                     action=f"PREVERIFIED:{action}",
                     operation_digest=op_digest,
-                    rp_id="localhost",
+                    rp_id=step_up_info.get("rp_id", "localhost"),
                     origin=step_up_info.get("origin", "http://localhost:3000"),
                     raw_challenge_b64=authz_id,
                     created_at=now_iso,
@@ -580,7 +730,9 @@ class CustomerAuthorityService:
         ).first()
 
         if not ch_row:
-            raise webauthn_assertion_invalid("No matching step-up challenge found for user, org, and challenge.")
+            raise webauthn_assertion_invalid(
+                "No matching step-up challenge found for user, org, and challenge."
+            )
 
         ch = dict(ch_row._mapping)
         if ch["action"] != action:
@@ -589,7 +741,9 @@ class CustomerAuthorityService:
             )
 
         if ch["operation_digest"] != operation_digest:
-            raise webauthn_assertion_invalid("Operation digest mismatch between challenge and ceremony.")
+            raise webauthn_assertion_invalid(
+                "Operation digest mismatch between challenge and ceremony."
+            )
 
         if ch["consumed_at"] is not None:
             raise webauthn_challenge_replay("Step-up challenge has already been consumed.")
@@ -653,7 +807,9 @@ class CustomerAuthorityService:
                 previous_sign_count=previous_sign_count,
             )
         except Exception as exc:
-            raise webauthn_assertion_invalid(f"WebAuthn assertion verification failed: {exc}") from exc
+            raise webauthn_assertion_invalid(
+                f"WebAuthn assertion verification failed: {exc}"
+            ) from exc
 
         # Advance sign count
         if new_sign_count == 0 and previous_sign_count == 0:
@@ -727,23 +883,114 @@ class CustomerAuthorityService:
             # 1. Lock tenant revocation epoch to serialize concurrent ceremony attempts
             await lock_epoch(conn, org_id)
 
-            await self._require_persisted_active_owner(conn, actor, org_id)
-            # Recheck persisted email qualification at the authority write boundary.
-            user = (
-                await conn.execute(select(web_users).where(web_users.c.id == actor.user_id))
+            # Enforce organization is active
+            org_row = (
+                await conn.execute(
+                    select(
+                        organizations.c.governance_status,
+                        organizations.c.deactivated_at,
+                    ).where(organizations.c.id == org_id)
+                )
             ).first()
-            status = user.verification_status if user else None
-            if user and status == "UNVERIFIED" and user.email_verified_at:
-                status = "BASIC_VERIFIED"
+            if not org_row:
+                raise forbidden(FORBIDDEN, f"Organization {org_id!r} not found.")
             if (
-                not user
-                or user.disabled
-                or not user.email_verified_at
-                or status not in {"VERIFIED", "IDENTITY_VERIFIED", "BASIC_VERIFIED"}
+                org_row.governance_status == GovernanceStatus.DISABLED.value
+                or org_row.deactivated_at
             ):
+                raise forbidden(ORG_DISABLED, "Organization is disabled.")
+            if org_row.governance_status == GovernanceStatus.SUSPENDED.value:
+                raise forbidden(ORG_SUSPENDED, "Organization is suspended.")
+
+            # Enforce caller membership in organization is active and owner
+            m_row = (
+                await conn.execute(
+                    select(web_memberships.c.role, web_memberships.c.status).where(
+                        and_(
+                            web_memberships.c.org_id == org_id,
+                            web_memberships.c.user_id == actor.user_id,
+                        )
+                    )
+                )
+            ).first()
+            if not m_row or m_row.status != "ACTIVE":
+                raise forbidden(MEMBERSHIP_REVOKED, "Caller membership is revoked or inactive.")
+            if m_row.role != Role.OWNER.value:
+                raise unauthorized_caller(
+                    "This operation requires verified Organization Owner role."
+                )
+
+            # Enforce actor account is not disabled or suspended
+            u_row = (
+                await conn.execute(
+                    select(
+                        web_users.c.id,
+                        web_users.c.full_name,
+                        web_users.c.email,
+                        web_users.c.disabled,
+                        web_users.c.verification_status,
+                        web_users.c.email_verified_at,
+                    ).where(web_users.c.id == actor.user_id)
+                )
+            ).first()
+            if (
+                not u_row
+                or u_row.disabled
+                or u_row.verification_status in {"SUSPENDED", "REJECTED"}
+            ):
+                raise unauthorized_caller("User account is disabled, suspended, or rejected.")
+
+            # Enforce mandatory baseline identity assurance:
+            # Establishing root authority requires confirmed email verification (BASIC_VERIFIED).
+            # An unverified account cannot establish canonical root authority or mint active principals.
+            u_status = u_row.verification_status
+            if u_status == "UNVERIFIED" and u_row.email_verified_at:
+                u_status = "BASIC_VERIFIED"
+            if not u_row.email_verified_at or not u_status or u_status in {"UNVERIFIED", "PENDING"}:
                 raise assurance_required(
                     "Account email verification is required to complete root authority bootstrap."
                 )
+            if u_status not in {"VERIFIED", "IDENTITY_VERIFIED", "BASIC_VERIFIED"}:
+                raise assurance_required(
+                    f"Account verification status {u_status!r} does not satisfy root authority requirements."
+                )
+
+            # Enforce principal is not revoked in trust fabric if registered
+            p_row = (
+                await conn.execute(
+                    select(
+                        trust_fabric_principals.c.id,
+                        trust_fabric_principals.c.org_id,
+                        trust_fabric_principals.c.lifecycle_state,
+                    ).where(trust_fabric_principals.c.id == actor.user_id)
+                )
+            ).first()
+            if p_row:
+                if p_row.org_id != org_id:
+                    raise unauthorized_caller(
+                        f"Principal {actor.user_id!r} belongs to tenant {p_row.org_id!r}, cannot establish root for {org_id!r}."
+                    )
+                if p_row.lifecycle_state in {
+                    PrincipalState.REVOKED.value,
+                    PrincipalState.SUSPENDED.value,
+                    PrincipalState.DISABLED.value,
+                    PrincipalState.DELETED.value,
+                }:
+                    raise unauthorized_caller(f"Principal identity is {p_row.lifecycle_state}.")
+
+            pending_rec = (
+                await conn.execute(
+                    select(authority_recovery_requests.c.id).where(
+                        and_(
+                            authority_recovery_requests.c.org_id == org_id,
+                            authority_recovery_requests.c.status == "PENDING",
+                            authority_recovery_requests.c.expires_at > now_iso,
+                        )
+                    )
+                )
+            ).first()
+            if pending_rec:
+                raise root_already_exists("Organization has an active quorum recovery in progress.")
 
             # 2. Check no active canonical root already exists (anti-race)
             existing_canon = (
@@ -788,7 +1035,10 @@ class CustomerAuthorityService:
                 raise bootstrap_expired(f"Bootstrap ceremony expired at {rec['expires_at']}.")
 
             # Principal binding check
-            if rec.get("claimed_by_principal_id") and rec["claimed_by_principal_id"] != actor.user_id:
+            if (
+                rec.get("claimed_by_principal_id")
+                and rec["claimed_by_principal_id"] != actor.user_id
+            ):
                 raise unauthorized_caller(
                     f"Ceremony is bound to principal {rec['claimed_by_principal_id']!r}, "
                     f"cannot be claimed by {actor.user_id!r}."
@@ -838,7 +1088,108 @@ class CustomerAuthorityService:
                 .values(consumed_at=now_iso, claimed_by_principal_id=actor.user_id)
             )
 
-            # 5. Insert or update Trust Fabric Trust Root
+            # 5. Canonical Principal Enrollment & Identity Binding
+            # Bridges verified web identity into Trust Fabric before root binding.
+            if not p_row:
+                display_name = (
+                    u_row.full_name or u_row.email or f"Owner {actor.user_id[:8]}"
+                ).strip()
+                meta = {
+                    "origin": "customer_root_bootstrap",
+                    "email": u_row.email,
+                    "established_at": now_iso,
+                }
+                if u_row.email_verified_at:
+                    meta["verified_email"] = u_row.email
+                await conn.execute(
+                    trust_fabric_principals.insert().values(
+                        id=actor.user_id,
+                        org_id=org_id,
+                        principal_type=PrincipalType.HUMAN.value,
+                        display_name=display_name,
+                        lifecycle_state=PrincipalState.ACTIVE.value,
+                        created_at=now_iso,
+                        updated_at=now_iso,
+                        metadata_json=json.dumps(meta),
+                    )
+                )
+            elif p_row.lifecycle_state == PrincipalState.PENDING_VERIFICATION.value:
+                await conn.execute(
+                    update(trust_fabric_principals)
+                    .where(
+                        and_(
+                            trust_fabric_principals.c.id == actor.user_id,
+                            trust_fabric_principals.c.org_id == org_id,
+                        )
+                    )
+                    .values(
+                        lifecycle_state=PrincipalState.ACTIVE.value,
+                        updated_at=now_iso,
+                    )
+                )
+
+            if u_row.email:
+                norm_email = normalize_identifier(IdentifierType.EMAIL, u_row.email)
+                chk_ident = (
+                    await conn.execute(
+                        select(
+                            trust_fabric_identifiers.c.id,
+                            trust_fabric_identifiers.c.principal_id,
+                            trust_fabric_identifiers.c.verification_state,
+                        ).where(
+                            and_(
+                                trust_fabric_identifiers.c.org_id == org_id,
+                                trust_fabric_identifiers.c.identifier_type
+                                == IdentifierType.EMAIL.value,
+                                trust_fabric_identifiers.c.normalized_value == norm_email,
+                                trust_fabric_identifiers.c.revoked_at.is_(None),
+                            )
+                        )
+                    )
+                ).first()
+                if chk_ident and chk_ident.principal_id != actor.user_id:
+                    raise unauthorized_caller(
+                        f"Identifier EMAIL:{norm_email!r} is already claimed by principal {chk_ident.principal_id!r}."
+                    )
+                is_email_verified = bool(u_row.email_verified_at)
+                v_state = (
+                    IdentifierVerificationState.VERIFIED.value
+                    if is_email_verified
+                    else IdentifierVerificationState.UNVERIFIED.value
+                )
+                v_at = u_row.email_verified_at if is_email_verified else None
+                if not chk_ident:
+                    await conn.execute(
+                        trust_fabric_identifiers.insert().values(
+                            id=f"wp_ident_{uuid.uuid4().hex}",
+                            principal_id=actor.user_id,
+                            org_id=org_id,
+                            identifier_type=IdentifierType.EMAIL.value,
+                            raw_value=u_row.email,
+                            normalized_value=norm_email,
+                            is_primary=1,
+                            verification_state=v_state,
+                            verified_at=v_at,
+                            expires_at=None,
+                            revoked_at=None,
+                            source_id="customer_root_bootstrap",
+                            created_at=now_iso,
+                        )
+                    )
+                elif (
+                    is_email_verified
+                    and chk_ident.verification_state != IdentifierVerificationState.VERIFIED.value
+                ):
+                    await conn.execute(
+                        update(trust_fabric_identifiers)
+                        .where(trust_fabric_identifiers.c.id == chk_ident.id)
+                        .values(
+                            verification_state=IdentifierVerificationState.VERIFIED.value,
+                            verified_at=v_at,
+                        )
+                    )
+
+            # 6. Insert or update Trust Fabric Trust Root
             tf_root_id = f"wp_tfroot_{uuid.uuid4().hex}"
             tf_digest = compute_digest(
                 {
@@ -887,7 +1238,7 @@ class CustomerAuthorityService:
                     )
                 )
 
-            # 6. Bridge into Canonical Governance: Root Authority Record
+            # 7. Bridge into Canonical Governance: Root Authority Record
             canon_refs_list = list(evidence_refs or [f"bootstrap_nonce:{nonce}"])
             if step_up_info:
                 canon_refs_list.append(f"webauthn_stepup:{step_up_info['credential_id']}")
@@ -918,8 +1269,12 @@ class CustomerAuthorityService:
                     jurisdiction=canon_root_record.jurisdiction,
                     evidence_refs=json.dumps(list(canon_root_record.evidence_refs)),
                     issued_at=canon_root_record.issued_at.isoformat(),
-                    not_before=canon_root_record.not_before.isoformat() if canon_root_record.not_before else None,
-                    expires_at=canon_root_record.expires_at.isoformat() if canon_root_record.expires_at else None,
+                    not_before=canon_root_record.not_before.isoformat()
+                    if canon_root_record.not_before
+                    else None,
+                    expires_at=canon_root_record.expires_at.isoformat()
+                    if canon_root_record.expires_at
+                    else None,
                     revoked_at=None,
                     revoked_by=None,
                     revoke_reason=None,
@@ -927,7 +1282,7 @@ class CustomerAuthorityService:
                 )
             )
 
-            # 7. Bridge into Canonical Governance: Explicit Consent Proof
+            # 8. Bridge into Canonical Governance: Explicit Consent Proof
             cm_enum = ConsentMethod.SIGNED_DOCUMENT
             try:
                 cm_enum = ConsentMethod(consent_method)
@@ -961,8 +1316,12 @@ class CustomerAuthorityService:
                     allowed_targets=json.dumps(list(consent_record.allowed_targets)),
                     evidence_refs=json.dumps(list(consent_record.evidence_refs)),
                     consented_at=consent_record.consented_at.isoformat(),
-                    not_before=consent_record.not_before.isoformat() if consent_record.not_before else None,
-                    expires_at=consent_record.expires_at.isoformat() if consent_record.expires_at else None,
+                    not_before=consent_record.not_before.isoformat()
+                    if consent_record.not_before
+                    else None,
+                    expires_at=consent_record.expires_at.isoformat()
+                    if consent_record.expires_at
+                    else None,
                     revoked_at=None,
                     revoked_by=None,
                     revoke_reason=None,
@@ -970,7 +1329,7 @@ class CustomerAuthorityService:
                 )
             )
 
-            # 8. Grant Initial Root Delegation to the Customer Owner
+            # 9. Grant Initial Root Delegation to the Customer Owner
             delegation_id = str(uuid.uuid4())
             await conn.execute(
                 governance_delegations.insert().values(
@@ -988,10 +1347,10 @@ class CustomerAuthorityService:
                 )
             )
 
-            # 9. Authoritative Revocation Epoch Bump
+            # 10. Authoritative Revocation Epoch Bump
             new_epoch = await bump_epoch_on_connection(conn, org_id)
 
-            # 10. Durable Audit Evidence
+            # 11. Durable Audit Evidence
             await self._audit.record(
                 action="CUSTOMER_ROOT_AUTHORITY_BOOTSTRAPPED",
                 actor_type=actor.actor_type,
@@ -1031,6 +1390,7 @@ class CustomerAuthorityService:
         """Query the organization's current customer root authority and consent status."""
         self._verify_tenant_and_role(actor, org_id)
 
+        now_dt = _now()
         async with self._engine.raw.connect() as conn:
             root_row = (
                 await conn.execute(
@@ -1055,6 +1415,7 @@ class CustomerAuthorityService:
                             and_(
                                 governance_consent_proofs.c.organization_id == org_id,
                                 governance_consent_proofs.c.consenting_root_id == root_row.root_id,
+                                governance_consent_proofs.c.grantee_id == root_row.subject_id,
                                 governance_consent_proofs.c.revoked_at.is_(None),
                             )
                         )
@@ -1062,10 +1423,38 @@ class CustomerAuthorityService:
                         .limit(1)
                     )
                 ).first()
+                if consent_row is None:
+                    consent_row = (
+                        await conn.execute(
+                            select(governance_consent_proofs)
+                            .where(
+                                and_(
+                                    governance_consent_proofs.c.organization_id == org_id,
+                                    governance_consent_proofs.c.consenting_root_id
+                                    == root_row.root_id,
+                                    governance_consent_proofs.c.revoked_at.is_(None),
+                                )
+                            )
+                            .order_by(governance_consent_proofs.c.consented_at.asc())
+                            .limit(1)
+                        )
+                    ).first()
 
             epoch = await self._epochs.current(org_id)
 
-        has_active_authority = root_row is not None and consent_row is not None
+        root_valid = (
+            _is_temporally_valid(root_row.not_before, root_row.expires_at, now_dt)[0]
+            if root_row
+            else False
+        )
+        consent_valid = (
+            _is_temporally_valid(consent_row.not_before, consent_row.expires_at, now_dt)[0]
+            if consent_row
+            else False
+        )
+        has_active_authority = bool(
+            root_row is not None and consent_row is not None and root_valid and consent_valid
+        )
 
         return {
             "organization_id": org_id,
@@ -1188,7 +1577,10 @@ class CustomerAuthorityService:
         # 7. Terminate in-flight executions
         try:
             from responsibleai.isolation.in_flight import InFlightExecutionRegistry
-            await InFlightExecutionRegistry.get_instance().terminate_in_flight(organization_id=org_id)
+
+            await InFlightExecutionRegistry.get_instance().terminate_in_flight(
+                organization_id=org_id
+            )
         except Exception:
             pass
 
@@ -1211,6 +1603,7 @@ class CustomerAuthorityService:
         description: str = "",
         framework: str = "custom",
         purpose: str | None = None,
+        application_id: str | None = None,
     ) -> dict[str, Any]:
         """Register an AI agent within the organization.
 
@@ -1229,10 +1622,36 @@ class CustomerAuthorityService:
             "framework": framework,
             "description": description,
             "purpose": purpose,
+            "application_id": application_id,
             "created_at": now_iso,
         }
 
         async with self._engine.raw.begin() as conn:
+            # Serialize against concurrent application disablement / revocation epoch mutations
+            await lock_epoch(conn, org_id)
+
+            if application_id:
+                app_row = (
+                    await conn.execute(
+                        select(trust_fabric_principals).where(
+                            and_(
+                                trust_fabric_principals.c.id == application_id,
+                                trust_fabric_principals.c.org_id == org_id,
+                                trust_fabric_principals.c.principal_type
+                                == PrincipalType.APPLICATION.value,
+                            )
+                        )
+                    )
+                ).first()
+                if not app_row:
+                    raise application_not_found(
+                        f"Application {application_id!r} not found in organization {org_id!r}."
+                    )
+                if app_row.lifecycle_state != PrincipalState.ACTIVE.value:
+                    raise forbidden(
+                        FORBIDDEN, f"Application {application_id!r} is disabled or inactive."
+                    )
+
             await conn.execute(
                 trust_fabric_principals.insert().values(
                     id=agent_id,
@@ -1261,6 +1680,7 @@ class CustomerAuthorityService:
         return {
             "agent_id": agent_id,
             "organization_id": org_id,
+            "application_id": application_id,
             "display_name": name.strip(),
             "lifecycle_state": PrincipalState.ACTIVE.value,
             "framework": framework,
@@ -1282,8 +1702,11 @@ class CustomerAuthorityService:
         """Issue an explicit, attenuated delegation grant from an authorized principal to an agent."""
         self._verify_tenant_and_role(actor, org_id)
 
-        # 1. Verify agent exists in this tenant
-        async with self._engine.raw.connect() as conn:
+        now_dt = _now()
+        async with self._engine.raw.begin() as conn:
+            await lock_epoch(conn, org_id)
+
+            # 1. Verify agent exists in this tenant and is ACTIVE
             agent_row = (
                 await conn.execute(
                     select(trust_fabric_principals).where(
@@ -1301,48 +1724,83 @@ class CustomerAuthorityService:
             if agent_data["lifecycle_state"] != PrincipalState.ACTIVE.value:
                 raise forbidden(FORBIDDEN, f"Agent {agent_id!r} is disabled or inactive.")
 
-            # Query active root authority
+            agent_meta: dict[str, Any] = {}
+            if agent_data.get("metadata_json"):
+                try:
+                    agent_meta = json.loads(agent_data["metadata_json"])
+                except Exception:
+                    agent_meta = {}
+            parent_app_id = agent_meta.get("application_id")
+            if parent_app_id:
+                app_row = (
+                    await conn.execute(
+                        select(trust_fabric_principals).where(
+                            and_(
+                                trust_fabric_principals.c.id == parent_app_id,
+                                trust_fabric_principals.c.org_id == org_id,
+                                trust_fabric_principals.c.principal_type
+                                == PrincipalType.APPLICATION.value,
+                            )
+                        )
+                    )
+                ).first()
+                if not app_row or app_row.lifecycle_state != PrincipalState.ACTIVE.value:
+                    raise forbidden(
+                        FORBIDDEN,
+                        f"Parent application {parent_app_id!r} for agent {agent_id!r} is disabled or inactive.",
+                    )
+
+            # Query active, non-expired root authority
             root_row = (
                 await conn.execute(
-                    select(governance_root_authority_records).where(
+                    select(governance_root_authority_records)
+                    .where(
                         and_(
                             governance_root_authority_records.c.organization_id == org_id,
                             governance_root_authority_records.c.revoked_at.is_(None),
                         )
-                    ).order_by(governance_root_authority_records.c.issued_at.desc())
+                    )
+                    .order_by(governance_root_authority_records.c.issued_at.desc())
                 )
             ).first()
             if not root_row:
                 raise root_not_found("No active root authority found for organization.")
             root_data = dict(root_row._mapping)
+            root_valid, _ = _is_temporally_valid(
+                root_data.get("not_before"),
+                root_data.get("expires_at"),
+                now_dt,
+            )
+            if not root_valid:
+                raise root_not_found("Organization root authority is expired or not yet valid.")
 
-        # 2. Grant delegation with attenuation verification from actor
-        delegation = await self._delegations.grant(
-            org_id=org_id,
-            to_identity_id=agent_id,
-            from_identity_id=actor.user_id,
-            granted_action_types=frozenset(granted_action_types),
-            constraints={"allowed_targets": sorted(allowed_targets)},
-            purpose=purpose,
-            granted_by=actor.user_id or "system",
-            expires_at=expires_at,
-        )
+            # 2. Grant delegation with attenuation verification from actor on the same transaction
+            delegation = await self._delegations._grant_on_conn(
+                conn,
+                org_id=org_id,
+                to_identity_id=agent_id,
+                from_identity_id=actor.user_id,
+                granted_action_types=frozenset(granted_action_types),
+                constraints={"allowed_targets": sorted(allowed_targets)},
+                purpose=purpose,
+                granted_by=actor.user_id or "system",
+                expires_at=expires_at,
+            )
 
-        # 3. Create explicit attenuated consent proof for the agent bound to root authority
-        agent_consent = build_consent_proof(
-            subject_id=actor.user_id or root_data["subject_id"],
-            consenting_root_id=root_data["root_id"],
-            grantee_id=agent_id,
-            scope_description=f"Explicit delegated consent for agent {agent_id}",
-            purpose=purpose,
-            consent_method=ConsentMethod.SIGNED_DOCUMENT,
-            allowed_action_types=tuple(sorted(granted_action_types)),
-            allowed_targets=tuple(sorted(allowed_targets)),
-            evidence_refs=(f"delegation_grant:{delegation.delegation_id}",),
-            expires_at=expires_at or (_now() + timedelta(days=90)),
-        )
+            # 3. Create explicit attenuated consent proof for the agent bound to root authority
+            agent_consent = build_consent_proof(
+                subject_id=actor.user_id or root_data["subject_id"],
+                consenting_root_id=root_data["root_id"],
+                grantee_id=agent_id,
+                scope_description=f"Explicit delegated consent for agent {agent_id}",
+                purpose=purpose,
+                consent_method=ConsentMethod.SIGNED_DOCUMENT,
+                allowed_action_types=tuple(sorted(granted_action_types)),
+                allowed_targets=tuple(sorted(allowed_targets)),
+                evidence_refs=(f"delegation_grant:{delegation.delegation_id}",),
+                expires_at=expires_at or (now_dt + timedelta(days=90)),
+            )
 
-        async with self._engine.raw.begin() as conn:
             await conn.execute(
                 governance_consent_proofs.insert().values(
                     consent_id=agent_consent.consent_id,
@@ -1357,8 +1815,12 @@ class CustomerAuthorityService:
                     allowed_targets=json.dumps(list(agent_consent.allowed_targets)),
                     evidence_refs=json.dumps(list(agent_consent.evidence_refs)),
                     consented_at=agent_consent.consented_at.isoformat(),
-                    not_before=agent_consent.not_before.isoformat() if agent_consent.not_before else None,
-                    expires_at=agent_consent.expires_at.isoformat() if agent_consent.expires_at else None,
+                    not_before=agent_consent.not_before.isoformat()
+                    if agent_consent.not_before
+                    else None,
+                    expires_at=agent_consent.expires_at.isoformat()
+                    if agent_consent.expires_at
+                    else None,
                     revoked_at=None,
                     revoked_by=None,
                     revoke_reason=None,
@@ -1402,11 +1864,13 @@ class CustomerAuthorityService:
         agent_id: str,
         reason: str = "Disabled by administrator",
     ) -> dict[str, Any]:
-        """Disable an agent and revoke all its active delegations transitively."""
+        """Disable an agent and revoke all its active delegations transitively in a single transaction."""
         self._verify_tenant_and_role(actor, org_id)
 
         now_iso = _iso()
         async with self._engine.raw.begin() as conn:
+            new_epoch = await bump_epoch_on_connection(conn, org_id)
+
             # Update agent lifecycle state
             res = await conn.execute(
                 update(trust_fabric_principals)
@@ -1438,12 +1902,16 @@ class CustomerAuthorityService:
                 )
             )
 
-        # Revoke all delegations for this agent branch (cascades and bumps epoch)
-        revoked_delegations = await self._delegations.revoke_branch(
-            org_id, agent_id, revoked_by=actor.user_id or "admin", reason=reason
-        )
+            # Revoke all delegations for this agent branch on the same connection
+            revoked_delegations = await self._delegations.revoke_branches_on_conn(
+                conn,
+                org_id,
+                [agent_id],
+                revoked_by=actor.user_id or "admin",
+                reason=reason,
+                bump_epoch=False,
+            )
 
-        async with self._engine.raw.begin() as conn:
             await self._audit.record(
                 action="AGENT_DISABLED",
                 actor_type=actor.actor_type,
@@ -1453,7 +1921,11 @@ class CustomerAuthorityService:
                 target_id=agent_id,
                 result="SUCCESS",
                 conn=conn,
-                metadata={"reason": reason, "revoked_delegations": revoked_delegations},
+                metadata={
+                    "reason": reason,
+                    "revoked_delegations": revoked_delegations,
+                    "revocation_epoch": new_epoch,
+                },
             )
 
         return {
@@ -1461,6 +1933,7 @@ class CustomerAuthorityService:
             "agent_id": agent_id,
             "organization_id": org_id,
             "revoked_delegations": revoked_delegations,
+            "revocation_epoch": new_epoch,
         }
 
     async def list_agents(self, actor: Actor, *, org_id: str) -> list[dict[str, Any]]:
@@ -1473,7 +1946,8 @@ class CustomerAuthorityService:
                     select(trust_fabric_principals).where(
                         and_(
                             trust_fabric_principals.c.org_id == org_id,
-                            trust_fabric_principals.c.principal_type == PrincipalType.AI_AGENT.value,
+                            trust_fabric_principals.c.principal_type
+                            == PrincipalType.AI_AGENT.value,
                         )
                     )
                 )
@@ -1482,7 +1956,9 @@ class CustomerAuthorityService:
             result = []
             for row in rows:
                 data = dict(row._mapping)
-                delegation = await self._delegations.get_active_delegation(org_id, data["id"])
+                delegation = await self._delegations._get_active_delegation_on_conn(
+                    conn, org_id, data["id"]
+                )
                 meta = {}
                 if data.get("metadata_json"):
                     try:
@@ -1498,10 +1974,822 @@ class CustomerAuthorityService:
                         "has_active_delegation": delegation is not None and delegation.is_active(),
                         "delegation_id": delegation.delegation_id if delegation else None,
                         "framework": meta.get("framework", "custom"),
+                        "application_id": meta.get("application_id"),
                         "created_at": data["created_at"],
                     }
                 )
             return result
+
+    # ── Application Inventory & Tenant Ownership ──────────────────────────────
+
+    async def register_application(
+        self,
+        actor: Actor,
+        *,
+        org_id: str,
+        name: str,
+        description: str = "",
+        environment: str = "production",
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Register a tenant-scoped application within the organization.
+
+        INVARIANT: Registration does NOT grant execution authority. The application is
+        admitted to the inventory with explicit lifecycle states, but cannot act or execute
+        outside independently enforced authority.
+        """
+        self._verify_tenant_and_role(actor, org_id)
+
+        if not name or not name.strip():
+            raise application_registration_invalid("Application name cannot be empty.")
+
+        app_id = f"app_{uuid.uuid4().hex[:12]}"
+        now_iso = _iso()
+        meta = {
+            "registered_by": actor.user_id,
+            "owner_user_id": actor.user_id,
+            "environment": environment,
+            "description": description.strip(),
+            "custom_metadata": metadata or {},
+            "created_at": now_iso,
+        }
+
+        async with self._engine.raw.begin() as conn:
+            await conn.execute(
+                trust_fabric_principals.insert().values(
+                    id=app_id,
+                    org_id=org_id,
+                    principal_type=PrincipalType.APPLICATION.value,
+                    display_name=name.strip(),
+                    lifecycle_state=PrincipalState.ACTIVE.value,
+                    metadata_json=json.dumps(meta),
+                    created_at=now_iso,
+                    updated_at=now_iso,
+                )
+            )
+
+            await self._audit.record(
+                action="APPLICATION_REGISTERED",
+                actor_type=actor.actor_type,
+                actor_id=actor.actor_id,
+                org_id=org_id,
+                target_type="application",
+                target_id=app_id,
+                result="SUCCESS",
+                conn=conn,
+                metadata=meta,
+            )
+
+        return {
+            "application_id": app_id,
+            "organization_id": org_id,
+            "name": name.strip(),
+            "description": description.strip(),
+            "lifecycle_state": PrincipalState.ACTIVE.value,
+            "environment": environment,
+            "owner_user_id": actor.user_id,
+            "has_execution_authority": False,
+            "created_at": now_iso,
+        }
+
+    async def list_applications(self, actor: Actor, *, org_id: str) -> list[dict[str, Any]]:
+        """List registered applications in the organization with agent counts and lifecycle states."""
+        self._verify_tenant_and_role(actor, org_id)
+
+        async with self._engine.raw.connect() as conn:
+            app_rows = (
+                await conn.execute(
+                    select(trust_fabric_principals)
+                    .where(
+                        and_(
+                            trust_fabric_principals.c.org_id == org_id,
+                            trust_fabric_principals.c.principal_type
+                            == PrincipalType.APPLICATION.value,
+                        )
+                    )
+                    .order_by(trust_fabric_principals.c.created_at.desc())
+                )
+            ).fetchall()
+
+            agent_rows = (
+                await conn.execute(
+                    select(trust_fabric_principals).where(
+                        and_(
+                            trust_fabric_principals.c.org_id == org_id,
+                            trust_fabric_principals.c.principal_type
+                            == PrincipalType.AI_AGENT.value,
+                        )
+                    )
+                )
+            ).fetchall()
+
+            agent_counts: dict[str, int] = {}
+            for a_row in agent_rows:
+                a_data = dict(a_row._mapping)
+                if a_data.get("metadata_json"):
+                    try:
+                        m = json.loads(a_data["metadata_json"])
+                        app_ref = m.get("application_id")
+                        if app_ref:
+                            agent_counts[app_ref] = agent_counts.get(app_ref, 0) + 1
+                    except Exception:
+                        pass
+
+            result = []
+            for row in app_rows:
+                data = dict(row._mapping)
+                meta = {}
+                if data.get("metadata_json"):
+                    try:
+                        meta = json.loads(data["metadata_json"])
+                    except Exception:
+                        pass
+                result.append(
+                    {
+                        "application_id": data["id"],
+                        "organization_id": org_id,
+                        "name": data["display_name"],
+                        "description": meta.get("description", ""),
+                        "environment": meta.get("environment", "production"),
+                        "owner_user_id": meta.get("owner_user_id"),
+                        "lifecycle_state": data["lifecycle_state"],
+                        "has_execution_authority": False,
+                        "agent_count": agent_counts.get(data["id"], 0),
+                        "created_at": data["created_at"],
+                    }
+                )
+            return result
+
+    async def get_application(self, actor: Actor, *, org_id: str, app_id: str) -> dict[str, Any]:
+        """Get application details and its associated agents within the organization."""
+        self._verify_tenant_and_role(actor, org_id)
+
+        async with self._engine.raw.connect() as conn:
+            app_row = (
+                await conn.execute(
+                    select(trust_fabric_principals).where(
+                        and_(
+                            trust_fabric_principals.c.id == app_id,
+                            trust_fabric_principals.c.org_id == org_id,
+                            trust_fabric_principals.c.principal_type
+                            == PrincipalType.APPLICATION.value,
+                        )
+                    )
+                )
+            ).first()
+            if not app_row:
+                raise application_not_found(
+                    f"Application {app_id!r} not found in organization {org_id!r}."
+                )
+
+            data = dict(app_row._mapping)
+            meta = {}
+            if data.get("metadata_json"):
+                try:
+                    meta = json.loads(data["metadata_json"])
+                except Exception:
+                    pass
+
+            agent_rows = (
+                await conn.execute(
+                    select(trust_fabric_principals).where(
+                        and_(
+                            trust_fabric_principals.c.org_id == org_id,
+                            trust_fabric_principals.c.principal_type
+                            == PrincipalType.AI_AGENT.value,
+                        )
+                    )
+                )
+            ).fetchall()
+
+            agents = []
+            for a_row in agent_rows:
+                a_data = dict(a_row._mapping)
+                if a_data.get("metadata_json"):
+                    try:
+                        m = json.loads(a_data["metadata_json"])
+                        if m.get("application_id") == app_id:
+                            delegation = await self._delegations._get_active_delegation_on_conn(
+                                conn, org_id, a_data["id"]
+                            )
+                            agents.append(
+                                {
+                                    "agent_id": a_data["id"],
+                                    "display_name": a_data["display_name"],
+                                    "lifecycle_state": a_data["lifecycle_state"],
+                                    "has_active_delegation": delegation is not None
+                                    and delegation.is_active(),
+                                    "framework": m.get("framework", "custom"),
+                                    "created_at": a_data["created_at"],
+                                }
+                            )
+                    except Exception:
+                        pass
+
+            return {
+                "application_id": data["id"],
+                "organization_id": org_id,
+                "name": data["display_name"],
+                "description": meta.get("description", ""),
+                "environment": meta.get("environment", "production"),
+                "owner_user_id": meta.get("owner_user_id"),
+                "lifecycle_state": data["lifecycle_state"],
+                "has_execution_authority": False,
+                "agents": agents,
+                "created_at": data["created_at"],
+                "updated_at": data["updated_at"],
+            }
+
+    async def disable_application(
+        self,
+        actor: Actor,
+        *,
+        org_id: str,
+        app_id: str,
+        reason: str = "Disabled by administrator",
+    ) -> dict[str, Any]:
+        """Disable an application and cascade disablement, consent revocation, and delegation revocation in one transaction."""
+        self._verify_tenant_and_role(actor, org_id)
+
+        now_iso = _iso()
+        async with self._engine.raw.begin() as conn:
+            # 1. Lock and advance the tenant revocation epoch in the same transaction
+            new_epoch = await bump_epoch_on_connection(conn, org_id)
+
+            res = await conn.execute(
+                update(trust_fabric_principals)
+                .where(
+                    and_(
+                        trust_fabric_principals.c.id == app_id,
+                        trust_fabric_principals.c.org_id == org_id,
+                        trust_fabric_principals.c.principal_type == PrincipalType.APPLICATION.value,
+                    )
+                )
+                .values(lifecycle_state=PrincipalState.DISABLED.value, updated_at=now_iso)
+            )
+            if res.rowcount == 0:
+                raise application_not_found(
+                    f"Application {app_id!r} not found in organization {org_id!r}."
+                )
+
+            agent_rows = (
+                await conn.execute(
+                    select(trust_fabric_principals).where(
+                        and_(
+                            trust_fabric_principals.c.org_id == org_id,
+                            trust_fabric_principals.c.principal_type
+                            == PrincipalType.AI_AGENT.value,
+                        )
+                    )
+                )
+            ).fetchall()
+
+            affected_agents: list[str] = []
+            for a_row in agent_rows:
+                a_data = dict(a_row._mapping)
+                if a_data.get("metadata_json"):
+                    try:
+                        m = json.loads(a_data["metadata_json"])
+                        if m.get("application_id") == app_id:
+                            affected_agents.append(a_data["id"])
+                    except Exception:
+                        pass
+
+            for agent_id in affected_agents:
+                await conn.execute(
+                    update(trust_fabric_principals)
+                    .where(
+                        and_(
+                            trust_fabric_principals.c.id == agent_id,
+                            trust_fabric_principals.c.org_id == org_id,
+                        )
+                    )
+                    .values(lifecycle_state=PrincipalState.DISABLED.value, updated_at=now_iso)
+                )
+                await conn.execute(
+                    update(governance_consent_proofs)
+                    .where(
+                        and_(
+                            governance_consent_proofs.c.organization_id == org_id,
+                            governance_consent_proofs.c.grantee_id == agent_id,
+                            governance_consent_proofs.c.revoked_at.is_(None),
+                        )
+                    )
+                    .values(
+                        revoked_at=now_iso,
+                        revoked_by=actor.user_id,
+                        revoke_reason=f"Cascading disable from application {app_id}: {reason}",
+                    )
+                )
+
+            all_revoked = await self._delegations.revoke_branches_on_conn(
+                conn,
+                org_id,
+                affected_agents,
+                revoked_by=actor.user_id or "admin",
+                reason=f"Application {app_id} disabled: {reason}",
+                bump_epoch=False,
+            )
+
+            await self._audit.record(
+                action="APPLICATION_DISABLED",
+                actor_type=actor.actor_type,
+                actor_id=actor.actor_id,
+                org_id=org_id,
+                target_type="application",
+                target_id=app_id,
+                result="SUCCESS",
+                conn=conn,
+                metadata={
+                    "reason": reason,
+                    "cascaded_agents": affected_agents,
+                    "revoked_delegations": all_revoked,
+                    "revocation_epoch": new_epoch,
+                },
+            )
+
+        try:
+            from responsibleai.isolation.in_flight import InFlightExecutionRegistry
+
+            InFlightExecutionRegistry.get_instance().record_revoked_epoch(org_id, new_epoch)
+        except Exception:
+            pass
+
+        return {
+            "status": "DISABLED",
+            "application_id": app_id,
+            "organization_id": org_id,
+            "disabled_agents": affected_agents,
+            "revoked_delegations": all_revoked,
+            "revocation_epoch": new_epoch,
+        }
+
+    # ── Executable Capabilities ───────────────────────────────────────────────
+
+    async def list_capabilities(
+        self,
+        actor: Actor,
+        *,
+        org_id: str,
+        agent_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Server-authoritative enumeration of executable capabilities.
+
+        INVARIANTS:
+        1. Capabilities are server-authoritative and synthesized from verified root authority,
+           governance consent proofs, explicit active delegations, parent application state,
+           organization authority ceilings, and governance policies.
+        2. No capability is ever inferred from frontend descriptions or user strings.
+        3. Capability is reachability only; execution requires short-lived ExecutionAuthorization.
+        """
+        self._verify_tenant_and_role(actor, org_id)
+
+        now_dt = _now()
+        async with self._engine.raw.connect() as conn:
+            # 1. Inspect canonical root authority records
+            all_roots = (
+                await conn.execute(
+                    select(governance_root_authority_records)
+                    .where(governance_root_authority_records.c.organization_id == org_id)
+                    .order_by(governance_root_authority_records.c.issued_at.desc())
+                )
+            ).fetchall()
+
+            latest_root: dict[str, Any] | None = dict(all_roots[0]._mapping) if all_roots else None
+            active_root: dict[str, Any] | None = None
+            root_state = "MISSING"
+
+            for r in all_roots:
+                r_dict = dict(r._mapping)
+                if r_dict.get("revoked_at") is None:
+                    r_valid, r_expired = _is_temporally_valid(
+                        r_dict.get("not_before"),
+                        r_dict.get("expires_at"),
+                        now_dt,
+                    )
+                    if r_valid:
+                        active_root = r_dict
+                        root_state = "ACTIVE"
+                    elif r_expired:
+                        root_state = "EXPIRED"
+                    else:
+                        root_state = "REVOKED"
+                    break
+            else:
+                if all_roots:
+                    root_state = "REVOKED"
+
+            # 2. Inspect root owner consent proof
+            root_allowed_actions: set[str] = set()
+            root_allowed_targets: list[str] = []
+            if active_root is not None:
+                rc_rows = (
+                    await conn.execute(
+                        select(governance_consent_proofs)
+                        .where(
+                            and_(
+                                governance_consent_proofs.c.organization_id == org_id,
+                                governance_consent_proofs.c.consenting_root_id
+                                == active_root["root_id"],
+                                governance_consent_proofs.c.grantee_id == active_root["subject_id"],
+                            )
+                        )
+                        .order_by(governance_consent_proofs.c.consented_at.desc())
+                    )
+                ).fetchall()
+                if not rc_rows:
+                    rc_rows = (
+                        await conn.execute(
+                            select(governance_consent_proofs)
+                            .where(
+                                and_(
+                                    governance_consent_proofs.c.organization_id == org_id,
+                                    governance_consent_proofs.c.consenting_root_id
+                                    == active_root["root_id"],
+                                )
+                            )
+                            .order_by(governance_consent_proofs.c.consented_at.asc())
+                        )
+                    ).fetchall()
+                if not rc_rows:
+                    active_root = None
+                    root_state = "REVOKED"
+                else:
+                    rc_latest = dict(rc_rows[0]._mapping)
+                    if rc_latest.get("revoked_at") is not None:
+                        active_root = None
+                        root_state = "REVOKED"
+                    else:
+                        rc_valid, rc_expired = _is_temporally_valid(
+                            rc_latest.get("not_before"),
+                            rc_latest.get("expires_at"),
+                            now_dt,
+                        )
+                        if not rc_valid:
+                            active_root = None
+                            root_state = "EXPIRED" if rc_expired else "REVOKED"
+                        else:
+                            root_allowed_actions = set(
+                                json.loads(rc_latest.get("allowed_action_types") or "[]")
+                            )
+                            root_allowed_targets = list(
+                                json.loads(rc_latest.get("allowed_targets") or "[]")
+                            )
+
+            # 3. Inspect org security policy, authority ceiling, and governance policies
+            sec_pol_row = (
+                await conn.execute(
+                    select(org_security_policies).where(org_security_policies.c.org_id == org_id)
+                )
+            ).first()
+            phishing_resistant_required = bool(
+                sec_pol_row and getattr(sec_pol_row, "phishing_resistant_required", 0)
+            )
+
+            ceil_row = (
+                await conn.execute(
+                    select(org_authority_ceilings).where(org_authority_ceilings.c.org_id == org_id)
+                )
+            ).first()
+            ceiling_allowed_actions: set[str] | None = None
+            ceiling_allowed_targets: list[str] | None = None
+            ceiling_denied_targets: set[str] = set()
+            ceiling_require_approval_for: set[str] = set()
+            if ceil_row is not None:
+                c_map = dict(ceil_row._mapping)
+                if c_map.get("allowed_action_types"):
+                    ceiling_allowed_actions = set(json.loads(c_map["allowed_action_types"]))
+                if c_map.get("allowed_targets"):
+                    ceiling_allowed_targets = list(json.loads(c_map["allowed_targets"]))
+                if c_map.get("denied_targets"):
+                    ceiling_denied_targets = set(json.loads(c_map["denied_targets"]))
+                if c_map.get("require_approval_for"):
+                    ceiling_require_approval_for = set(json.loads(c_map["require_approval_for"]))
+
+            pol_rows = (
+                await conn.execute(
+                    select(governance_policies)
+                    .where(governance_policies.c.org_id == org_id)
+                    .order_by(governance_policies.c.position.asc())
+                )
+            ).fetchall()
+            policy_rules: list[dict[str, Any]] = []
+            for p_row in pol_rows:
+                p_map = dict(p_row._mapping)
+                policy_rules.append(
+                    {
+                        "rule_id": p_map["rule_id"],
+                        "effect": str(p_map["effect"]).upper(),
+                        "action_types": set(json.loads(p_map["action_types"]))
+                        if p_map.get("action_types")
+                        else None,
+                        "targets": set(json.loads(p_map["targets"]))
+                        if p_map.get("targets")
+                        else None,
+                    }
+                )
+
+            # 4. Inspect tenant applications for parent lifecycle validation
+            app_rows = (
+                await conn.execute(
+                    select(trust_fabric_principals).where(
+                        and_(
+                            trust_fabric_principals.c.org_id == org_id,
+                            trust_fabric_principals.c.principal_type
+                            == PrincipalType.APPLICATION.value,
+                        )
+                    )
+                )
+            ).fetchall()
+            apps_by_id = {r.id: dict(r._mapping) for r in app_rows}
+
+            # 5. Query agents
+            query = select(trust_fabric_principals).where(
+                and_(
+                    trust_fabric_principals.c.org_id == org_id,
+                    trust_fabric_principals.c.principal_type == PrincipalType.AI_AGENT.value,
+                )
+            )
+            if agent_id:
+                query = query.where(trust_fabric_principals.c.id == agent_id)
+
+            agent_rows = (await conn.execute(query)).fetchall()
+            if agent_id and not agent_rows:
+                raise agent_not_found(f"Agent {agent_id!r} not found in organization {org_id!r}.")
+
+            capabilities: list[dict[str, Any]] = []
+            for a_row in agent_rows:
+                a_data = dict(a_row._mapping)
+                current_agent_id = a_data["id"]
+                agent_state = a_data["lifecycle_state"]
+
+                meta: dict[str, Any] = {}
+                if a_data.get("metadata_json"):
+                    try:
+                        meta = json.loads(a_data["metadata_json"])
+                    except Exception:
+                        meta = {}
+                app_ref = meta.get("application_id")
+                app_is_active = True
+                if app_ref is not None:
+                    app_rec = apps_by_id.get(app_ref)
+                    app_is_active = (
+                        app_rec is not None
+                        and app_rec.get("lifecycle_state") == PrincipalState.ACTIVE.value
+                    )
+
+                latest_del = await self._delegations._get_latest_delegation_on_conn(
+                    conn, org_id, current_agent_id
+                )
+                active_del = await self._delegations._get_active_delegation_on_conn(
+                    conn, org_id, current_agent_id
+                )
+                chain = (
+                    await self._delegations._get_authority_chain_on_conn(
+                        conn, org_id, current_agent_id
+                    )
+                    if active_del is not None
+                    else []
+                )
+                chain_valid = bool(chain and chain[0].from_identity_id is None)
+
+                # Query agent-specific consent proof
+                ac_rows = (
+                    await conn.execute(
+                        select(governance_consent_proofs)
+                        .where(
+                            and_(
+                                governance_consent_proofs.c.organization_id == org_id,
+                                governance_consent_proofs.c.grantee_id == current_agent_id,
+                            )
+                        )
+                        .order_by(governance_consent_proofs.c.consented_at.desc())
+                    )
+                ).fetchall()
+                latest_ac: dict[str, Any] | None = dict(ac_rows[0]._mapping) if ac_rows else None
+                active_ac: dict[str, Any] | None = None
+                ac_state = "MISSING"
+                if latest_ac is not None:
+                    if latest_ac.get("revoked_at") is not None:
+                        ac_state = "REVOKED"
+                    else:
+                        ac_valid, ac_expired = _is_temporally_valid(
+                            latest_ac.get("not_before"),
+                            latest_ac.get("expires_at"),
+                            now_dt,
+                        )
+                        if ac_valid:
+                            if (
+                                active_root is not None
+                                and latest_ac.get("consenting_root_id") == active_root["root_id"]
+                            ):
+                                active_ac = latest_ac
+                                ac_state = "ACTIVE"
+                            elif root_state == "EXPIRED":
+                                ac_state = "EXPIRED"
+                            else:
+                                ac_state = "REVOKED"
+                        elif ac_expired:
+                            ac_state = "EXPIRED"
+                        else:
+                            ac_state = "REVOKED"
+
+                if latest_del is None:
+                    pending_status = (
+                        "DISABLED"
+                        if (agent_state != PrincipalState.ACTIVE.value or not app_is_active)
+                        else "PENDING_DELEGATION"
+                    )
+                    cap_suffix = "default" if root_state != "ACTIVE" else "pending"
+                    capabilities.append(
+                        {
+                            "capability_id": f"cap_{current_agent_id}_{cap_suffix}",
+                            "agent_id": current_agent_id,
+                            "organization_id": org_id,
+                            "application_id": app_ref,
+                            "kind": "DELEGATED_ACTION",
+                            "action_type": "*",
+                            "allowed_targets": [],
+                            "status": pending_status,
+                            "requires_approval": True,
+                            "requires_passkey_stepup": phishing_resistant_required,
+                            "root_id": active_root["root_id"]
+                            if active_root
+                            else (latest_root["root_id"] if latest_root else None),
+                            "delegation_id": None,
+                            "consent_id": None,
+                            "constraints": {},
+                            "authority_enforced": True,
+                        }
+                    )
+                    continue
+
+                del_expired = bool(
+                    latest_del.expires_at is not None
+                    and latest_del.revoked_at is None
+                    and not latest_del.is_active()
+                )
+                if agent_state != PrincipalState.ACTIVE.value or not app_is_active:
+                    base_status = "DISABLED"
+                elif (
+                    root_state == "REVOKED"
+                    or latest_del.revoked_at is not None
+                    or ac_state == "REVOKED"
+                ):
+                    base_status = "REVOKED"
+                elif root_state == "EXPIRED" or del_expired or ac_state == "EXPIRED":
+                    base_status = "EXPIRED"
+                elif (
+                    active_root is None
+                    or active_del is None
+                    or not chain_valid
+                    or active_ac is None
+                ):
+                    base_status = "REVOKED"
+                else:
+                    base_status = "AUTHORIZED"
+
+                ac_actions = (
+                    set(json.loads(active_ac.get("allowed_action_types") or "[]"))
+                    if active_ac
+                    else set()
+                )
+                ac_targets = (
+                    list(json.loads(active_ac.get("allowed_targets") or "[]")) if active_ac else []
+                )
+
+                for act in sorted(latest_del.granted_action_types):
+                    cap_id = f"cap_{current_agent_id}_{act.replace(':', '_')}"
+                    del_targets = list(latest_del.constraints.get("allowed_targets", []))
+                    act_status = base_status
+                    effective_targets = list(del_targets)
+
+                    req_approval = bool(
+                        act in latest_del.require_approval_for
+                        or "*" in latest_del.require_approval_for
+                        or act in ceiling_require_approval_for
+                        or "*" in ceiling_require_approval_for
+                    )
+                    req_stepup = bool(
+                        phishing_resistant_required
+                        or latest_del.constraints.get("requires_passkey_stepup", False)
+                    )
+
+                    if act_status == "AUTHORIZED":
+                        # Verify action is within root consent and agent consent
+                        root_permits_act = (
+                            "*" in root_allowed_actions or act in root_allowed_actions
+                        )
+                        ac_permits_act = "*" in ac_actions or act in ac_actions
+                        ceil_permits_act = (
+                            ceiling_allowed_actions is None
+                            or "*" in ceiling_allowed_actions
+                            or act in ceiling_allowed_actions
+                        )
+                        if not (root_permits_act and ac_permits_act and ceil_permits_act):
+                            act_status = "POLICY_DENIED"
+                            effective_targets = []
+                        else:
+                            effective_targets = _filter_targets_by_scope(
+                                effective_targets, ac_targets
+                            )
+                            effective_targets = _filter_targets_by_scope(
+                                effective_targets, root_allowed_targets
+                            )
+                            if ceiling_allowed_targets is not None:
+                                effective_targets = _filter_targets_by_scope(
+                                    effective_targets, ceiling_allowed_targets
+                                )
+                            if ceiling_denied_targets:
+                                effective_targets = [
+                                    t
+                                    for t in effective_targets
+                                    if not any(
+                                        t == pat or fnmatch.fnmatchcase(t, pat)
+                                        for pat in ceiling_denied_targets
+                                    )
+                                ]
+                            if del_targets and not effective_targets:
+                                act_status = "POLICY_DENIED"
+
+                    if act_status == "AUTHORIZED" and policy_rules:
+                        for rule in policy_rules:
+                            r_actions = rule["action_types"]
+                            if (
+                                r_actions is not None
+                                and "*" not in r_actions
+                                and act not in r_actions
+                            ):
+                                continue
+                            r_targets = rule["targets"]
+                            effect = rule["effect"]
+                            if r_targets is None or "*" in r_targets:
+                                if effect in {"DENY", "QUARANTINE"}:
+                                    act_status = "POLICY_DENIED"
+                                    effective_targets = []
+                                    req_approval = True
+                                elif effect == "REQUIRE_APPROVAL":
+                                    req_approval = True
+                                break
+                            else:
+                                if effect in {"DENY", "QUARANTINE"}:
+                                    effective_targets = [
+                                        t
+                                        for t in effective_targets
+                                        if not any(
+                                            t == pat or fnmatch.fnmatchcase(t, pat)
+                                            for pat in r_targets
+                                        )
+                                    ]
+                                    if del_targets and not effective_targets:
+                                        act_status = "POLICY_DENIED"
+                                        req_approval = True
+                                        break
+                                elif effect == "REQUIRE_APPROVAL":
+                                    if any(
+                                        t == "*"
+                                        or any(
+                                            t == pat or fnmatch.fnmatchcase(t, pat)
+                                            for pat in r_targets
+                                        )
+                                        for t in effective_targets
+                                    ):
+                                        req_approval = True
+
+                    if act_status != "AUTHORIZED":
+                        req_approval = True
+
+                    capabilities.append(
+                        {
+                            "capability_id": cap_id,
+                            "agent_id": current_agent_id,
+                            "organization_id": org_id,
+                            "application_id": app_ref,
+                            "kind": "DELEGATED_ACTION",
+                            "action_type": act,
+                            "allowed_targets": effective_targets,
+                            "status": act_status,
+                            "requires_approval": req_approval,
+                            "requires_passkey_stepup": req_stepup,
+                            "root_id": active_root["root_id"]
+                            if (act_status == "AUTHORIZED" and active_root)
+                            else (
+                                active_root["root_id"]
+                                if active_root
+                                else (latest_root["root_id"] if latest_root else None)
+                            ),
+                            "delegation_id": active_del.delegation_id
+                            if (act_status == "AUTHORIZED" and active_del)
+                            else latest_del.delegation_id,
+                            "consent_id": active_ac["consent_id"]
+                            if (act_status == "AUTHORIZED" and active_ac)
+                            else (latest_ac["consent_id"] if latest_ac else None),
+                            "constraints": latest_del.constraints,
+                            "authority_enforced": True,
+                        }
+                    )
+
+            return capabilities
 
     # ── Read-Only Reconciliation ──────────────────────────────────────────────
 
@@ -1624,7 +2912,9 @@ class CustomerAuthorityService:
 
         valid_targets = {"AGENT", "DELEGATION", "ROOT_AUTHORITY", "ORGANIZATION"}
         if target_type.upper() not in valid_targets:
-            raise containment_invalid_target(f"Invalid target_type: {target_type!r}. Must be one of {valid_targets}")
+            raise containment_invalid_target(
+                f"Invalid target_type: {target_type!r}. Must be one of {valid_targets}"
+            )
 
         valid_actions = {"QUARANTINE", "REVOKE", "SUSPEND", "LOCKDOWN"}
         if containment_action.upper() not in valid_actions:
@@ -1730,7 +3020,9 @@ class CustomerAuthorityService:
                     )
                 )
                 if d_res.rowcount == 0:
-                    raise containment_invalid_target(f"Active delegation {target_id!r} not found in organization.")
+                    raise containment_invalid_target(
+                        f"Active delegation {target_id!r} not found in organization."
+                    )
                 affected_records["delegations_revoked"] = d_res.rowcount
 
             elif target_type == "ROOT_AUTHORITY":
@@ -1750,7 +3042,9 @@ class CustomerAuthorityService:
                     )
                 )
                 if r_res.rowcount == 0:
-                    raise root_not_found(f"Active root authority {target_id!r} not found in organization.")
+                    raise root_not_found(
+                        f"Active root authority {target_id!r} not found in organization."
+                    )
 
                 await conn.execute(
                     update(governance_consent_proofs)
@@ -1831,7 +3125,8 @@ class CustomerAuthorityService:
                     .where(
                         and_(
                             trust_fabric_principals.c.org_id == org_id,
-                            trust_fabric_principals.c.principal_type == PrincipalType.AI_AGENT.value,
+                            trust_fabric_principals.c.principal_type
+                            == PrincipalType.AI_AGENT.value,
                         )
                     )
                     .values(lifecycle_state=PrincipalState.QUARANTINED.value, updated_at=now_iso)
@@ -1878,6 +3173,7 @@ class CustomerAuthorityService:
         # Record latest revoked epoch in in-flight registry
         try:
             from responsibleai.isolation.in_flight import InFlightExecutionRegistry
+
             InFlightExecutionRegistry.get_instance().record_revoked_epoch(org_id, new_epoch)
         except Exception:
             pass
@@ -1887,6 +3183,7 @@ class CustomerAuthorityService:
         termination_error: str | None = None
         try:
             from responsibleai.isolation.in_flight import InFlightExecutionRegistry
+
             registry = InFlightExecutionRegistry.get_instance()
             await registry.terminate_in_flight(organization_id=org_id)
             if registry.count_unresolved(org_id) > 0:
@@ -2058,14 +3355,18 @@ class CustomerAuthorityService:
             ).first()
 
             if not req_row:
-                raise recovery_request_not_found(f"Recovery request {request_id!r} not found for organization.")
+                raise recovery_request_not_found(
+                    f"Recovery request {request_id!r} not found for organization."
+                )
 
             req = dict(req_row._mapping)
 
             if req["status"] == "EXECUTED":
                 raise recovery_already_executed("Recovery request has already been executed.")
             if req["status"] != "PENDING":
-                raise recovery_request_not_found(f"Recovery request is {req['status']}, cannot accept votes.")
+                raise recovery_request_not_found(
+                    f"Recovery request is {req['status']}, cannot accept votes."
+                )
 
             if now_iso >= req["expires_at"]:
                 raise recovery_expired(f"Recovery request expired at {req['expires_at']}.")
@@ -2103,7 +3404,9 @@ class CustomerAuthorityService:
                 )
             ).first()
             if existing_vote:
-                raise already_voted(f"User {actor.user_id!r} has already cast a vote for this request.")
+                raise already_voted(
+                    f"User {actor.user_id!r} has already cast a vote for this request."
+                )
 
             vote_id = f"wp_rvote_{uuid.uuid4().hex}"
             await conn.execute(
@@ -2197,14 +3500,18 @@ class CustomerAuthorityService:
             ).first()
 
             if not req_row:
-                raise recovery_request_not_found(f"Recovery request {request_id!r} not found for organization.")
+                raise recovery_request_not_found(
+                    f"Recovery request {request_id!r} not found for organization."
+                )
 
             req = dict(req_row._mapping)
 
             if req["status"] == "EXECUTED":
                 raise recovery_already_executed("Recovery request has already been executed.")
             if req["status"] != "PENDING":
-                raise recovery_request_not_found(f"Recovery request is {req['status']}, cannot be executed.")
+                raise recovery_request_not_found(
+                    f"Recovery request is {req['status']}, cannot be executed."
+                )
 
             if now_iso >= req["expires_at"]:
                 raise recovery_expired(f"Recovery request expired at {req['expires_at']}.")
@@ -2214,7 +3521,6 @@ class CustomerAuthorityService:
                     f"Action digest mismatch: submitted {action_digest!r} != expected {req['action_digest']!r}."
                 )
 
-            # Verify and consume the proof even though its return value is unused.
             if webauthn_assertion:
                 await self._verify_webauthn_stepup_on_conn(
                     conn,
@@ -2321,7 +3627,10 @@ class CustomerAuthorityService:
                     verification_method="quorum_multi_admin_recovery",
                     organization_id=org_id,
                     jurisdiction="enterprise",
-                    evidence_refs=(f"recovery_request:{request_id}", f"quorum:{len(valid_approver_ids)}/{req['required_quorum_m']}"),
+                    evidence_refs=(
+                        f"recovery_request:{request_id}",
+                        f"quorum:{len(valid_approver_ids)}/{req['required_quorum_m']}",
+                    ),
                     expires_at=now_dt + timedelta(days=365),
                 )
                 await conn.execute(
@@ -2336,8 +3645,12 @@ class CustomerAuthorityService:
                         jurisdiction=canon_root_record.jurisdiction,
                         evidence_refs=json.dumps(list(canon_root_record.evidence_refs)),
                         issued_at=canon_root_record.issued_at.isoformat(),
-                        not_before=canon_root_record.not_before.isoformat() if canon_root_record.not_before else None,
-                        expires_at=canon_root_record.expires_at.isoformat() if canon_root_record.expires_at else None,
+                        not_before=canon_root_record.not_before.isoformat()
+                        if canon_root_record.not_before
+                        else None,
+                        expires_at=canon_root_record.expires_at.isoformat()
+                        if canon_root_record.expires_at
+                        else None,
                         revoked_at=None,
                         revoked_by=None,
                         revoke_reason=None,
@@ -2354,12 +3667,14 @@ class CustomerAuthorityService:
                             root_public_key=new_root_public_key,
                             established_at=now_iso,
                             status="ACTIVE",
-                            canonical_digest=compute_digest({
-                                "org_id": org_id,
-                                "root_principal_id": new_subject_id,
-                                "root_public_key": new_root_public_key,
-                                "established_at": now_iso,
-                            }),
+                            canonical_digest=compute_digest(
+                                {
+                                    "org_id": org_id,
+                                    "root_principal_id": new_subject_id,
+                                    "root_public_key": new_root_public_key,
+                                    "established_at": now_iso,
+                                }
+                            ),
                         )
                     )
 
@@ -2394,8 +3709,12 @@ class CustomerAuthorityService:
                         allowed_targets=json.dumps(list(new_consent.allowed_targets)),
                         evidence_refs=json.dumps(list(new_consent.evidence_refs)),
                         consented_at=new_consent.consented_at.isoformat(),
-                        not_before=new_consent.not_before.isoformat() if new_consent.not_before else None,
-                        expires_at=new_consent.expires_at.isoformat() if new_consent.expires_at else None,
+                        not_before=new_consent.not_before.isoformat()
+                        if new_consent.not_before
+                        else None,
+                        expires_at=new_consent.expires_at.isoformat()
+                        if new_consent.expires_at
+                        else None,
                         revoked_at=None,
                         revoked_by=None,
                         revoke_reason=None,
@@ -2413,11 +3732,13 @@ class CustomerAuthorityService:
                     .values(
                         root_public_key=new_root_public_key,
                         established_at=now_iso,
-                        canonical_digest=compute_digest({
-                            "org_id": org_id,
-                            "root_public_key": new_root_public_key,
-                            "established_at": now_iso,
-                        }),
+                        canonical_digest=compute_digest(
+                            {
+                                "org_id": org_id,
+                                "root_public_key": new_root_public_key,
+                                "established_at": now_iso,
+                            }
+                        ),
                     )
                 )
 
@@ -2482,7 +3803,9 @@ class CustomerAuthorityService:
             ).first()
 
             if not req_row:
-                raise recovery_request_not_found(f"Recovery request {request_id!r} not found for organization.")
+                raise recovery_request_not_found(
+                    f"Recovery request {request_id!r} not found for organization."
+                )
 
             req = dict(req_row._mapping)
 
@@ -2547,4 +3870,3 @@ class CustomerAuthorityService:
                 }
                 for r in rows
             ]
-
