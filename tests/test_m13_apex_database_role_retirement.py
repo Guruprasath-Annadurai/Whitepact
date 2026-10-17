@@ -47,7 +47,9 @@ async def test_version_credentials_fence_new_and_already_open_legacy_connections
                 )
                 old = await asyncpg.connect(database, user=old_role, password=password)
                 current = await asyncpg.connect(database, user=new_role, password=password)
-                await old.execute("INSERT INTO compatibility_effects VALUES ('legacy-before-fence')")
+                await old.execute(
+                    "INSERT INTO compatibility_effects VALUES ('legacy-before-fence')"
+                )
                 await old.execute("BEGIN")
                 await old.execute("INSERT INTO compatibility_effects VALUES ('uncommitted-legacy')")
 
@@ -55,7 +57,9 @@ async def test_version_credentials_fence_new_and_already_open_legacy_connections
                 # existing pool connection and must never be sold as sufficient.
                 await admin.execute(f"REVOKE CONNECT ON DATABASE {db_name} FROM {quoted(old_role)}")
                 assert await old.fetchval("SELECT 1") == 1
-                await old.execute("INSERT INTO compatibility_effects VALUES ('legacy-after-revoke')")
+                await old.execute(
+                    "INSERT INTO compatibility_effects VALUES ('legacy-after-revoke')"
+                )
 
                 # Retirement is an explicit operator action, not app startup code.
                 await admin.execute(f"ALTER ROLE {quoted(old_role)} NOLOGIN")
@@ -69,16 +73,24 @@ async def test_version_credentials_fence_new_and_already_open_legacy_connections
                     await old.fetchval("SELECT 1")
                 with pytest.raises(asyncpg.InvalidAuthorizationSpecificationError):
                     await asyncpg.connect(database, user=old_role, password=password)
-                assert await admin.fetchval(
-                    "SELECT count(*) FROM compatibility_effects WHERE value='uncommitted-legacy'"
-                ) == 0
-                assert await admin.fetchval(
-                    "SELECT count(*) FROM compatibility_effects WHERE value='legacy-after-revoke'"
-                ) == 0
+                assert (
+                    await admin.fetchval(
+                        "SELECT count(*) FROM compatibility_effects WHERE value='uncommitted-legacy'"
+                    )
+                    == 0
+                )
+                assert (
+                    await admin.fetchval(
+                        "SELECT count(*) FROM compatibility_effects WHERE value='legacy-after-revoke'"
+                    )
+                    == 0
+                )
 
                 # Current runtime stays operational, cannot assume the legacy role,
                 # and reconnects successfully after its own connection is closed.
-                await current.execute("INSERT INTO compatibility_effects VALUES ('current-after-fence')")
+                await current.execute(
+                    "INSERT INTO compatibility_effects VALUES ('current-after-fence')"
+                )
                 with pytest.raises(asyncpg.InsufficientPrivilegeError):
                     await current.execute(f"SET ROLE {quoted(old_role)}")
                 await current.close()
