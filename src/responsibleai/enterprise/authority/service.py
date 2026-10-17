@@ -334,13 +334,20 @@ class CustomerAuthorityService:
                 }:
                     raise unauthorized_caller(f"Principal identity is {p_row.lifecycle_state}.")
 
-            # 3. Enforce identity assurance if required
-            if require_identity_assurance:
-                status = u_row.verification_status
-                if status == "UNVERIFIED" and u_row.email_verified_at:
-                    status = "BASIC_VERIFIED"
-                if not status or status not in {"VERIFIED", "IDENTITY_VERIFIED", "BASIC_VERIFIED"}:
-                    raise assurance_required()
+            # 3. Enforce mandatory baseline identity assurance:
+            # Establishing root authority requires at least confirmed email verification (BASIC_VERIFIED).
+            # An unverified account cannot initiate root authority under any circumstances.
+            status = u_row.verification_status
+            if status == "UNVERIFIED" and u_row.email_verified_at:
+                status = "BASIC_VERIFIED"
+            if not u_row.email_verified_at or not status or status in {"UNVERIFIED", "PENDING"}:
+                raise assurance_required(
+                    "Account email verification is required to initiate root authority."
+                )
+            if status not in {"VERIFIED", "IDENTITY_VERIFIED", "BASIC_VERIFIED"}:
+                raise assurance_required(
+                    f"Account verification status {status!r} does not satisfy identity assurance requirements."
+                )
 
             # 4. Check if organization has an active pending quorum recovery request
             pending_rec = (
@@ -932,6 +939,21 @@ class CustomerAuthorityService:
                 or u_row.verification_status in {"SUSPENDED", "REJECTED"}
             ):
                 raise unauthorized_caller("User account is disabled, suspended, or rejected.")
+
+            # Enforce mandatory baseline identity assurance:
+            # Establishing root authority requires confirmed email verification (BASIC_VERIFIED).
+            # An unverified account cannot establish canonical root authority or mint active principals.
+            u_status = u_row.verification_status
+            if u_status == "UNVERIFIED" and u_row.email_verified_at:
+                u_status = "BASIC_VERIFIED"
+            if not u_row.email_verified_at or not u_status or u_status in {"UNVERIFIED", "PENDING"}:
+                raise assurance_required(
+                    "Account email verification is required to complete root authority bootstrap."
+                )
+            if u_status not in {"VERIFIED", "IDENTITY_VERIFIED", "BASIC_VERIFIED"}:
+                raise assurance_required(
+                    f"Account verification status {u_status!r} does not satisfy root authority requirements."
+                )
 
             # Enforce principal is not revoked in trust fabric if registered
             p_row = (

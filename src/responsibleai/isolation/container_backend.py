@@ -289,23 +289,24 @@ class DockerContainerBackend(IsolationBackend):
         wait_seconds: float,
     ) -> None:
         """Run container removal off the event loop, even if this task is cancelled."""
-        current = asyncio.current_task()
-        restored = 0
-        if current is not None and hasattr(current, "uncancel"):
-            while current.cancelling() > 0:
-                current.uncancel()
-                restored += 1
-        try:
-            await asyncio.shield(
-                asyncio.to_thread(
-                    self._remove_containers,
-                    targets,
-                    stable_seconds=stable_seconds,
-                    wait_seconds=wait_seconds,
-                )
+        worker = asyncio.create_task(
+            asyncio.to_thread(
+                self._remove_containers,
+                targets,
+                stable_seconds=stable_seconds,
+                wait_seconds=wait_seconds,
             )
+        )
+        cancelled = False
+        try:
+            try:
+                await asyncio.shield(worker)
+            except asyncio.CancelledError:
+                cancelled = True
+                await worker
         finally:
-            for _ in range(restored):
+            if cancelled:
+                current = asyncio.current_task()
                 if current is not None:
                     current.cancel()
 

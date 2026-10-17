@@ -71,39 +71,76 @@ def _check_remote_worker_active(organization_id: str | None) -> list[dict[str, A
         return unresolved_remote
     current_pid = os.getpid()
     try:
-        # Eagerly probe directory access to surface scan permission errors
-        with os.scandir(_DISTRIBUTED_REGISTRY_DIR):
-            pass
-        for f in _DISTRIBUTED_REGISTRY_DIR.glob("*.json"):
-            try:
-                data = json.loads(f.read_text(encoding="utf-8"))
-            except Exception:
-                continue
-            if organization_id is not None and data.get("organization_id") != organization_id:
-                continue
-            pid = data.get("pid")
-            if pid and pid != current_pid:
-                try:
-                    os.kill(pid, 0)
-                    is_alive = True
-                except ProcessLookupError:
-                    is_alive = False
-                except PermissionError:
-                    is_alive = True
-                if is_alive:
-                    unresolved_remote.append(data)
-                else:
-                    try:
-                        f.unlink()
-                    except Exception:
-                        pass
-    except (PermissionError, OSError) as exc:
-        logger.debug("Failed to scan distributed registry: %s", exc)
-        return [
-            {"execution_id": "unconfirmed_remote_scan_failure", "status": "UNRESOLVED_SCAN_FAILURE"}
-        ]
+        entries: list[Path] = []
+        with os.scandir(_DISTRIBUTED_REGISTRY_DIR) as it:
+            for entry in it:
+                if entry.name.endswith(".json"):
+                    entries.append(Path(entry.path))
     except Exception as exc:
-        logger.debug("Failed to scan distributed registry: %s", exc)
+        logger.warning("Failed to scan distributed registry directory: %s", exc)
+        unresolved_remote.append(
+            {
+                "execution_id": "scan_failure",
+                "organization_id": organization_id or "unknown",
+                "action_id": "unknown",
+                "pid": None,
+                "created_at": time.time(),
+                "error": f"Distributed registry scan failure: {exc}",
+            }
+        )
+        return unresolved_remote
+
+    for f in entries:
+        filename = f.name
+        # Match tenant prefix if organization_id is provided
+        if organization_id is not None:
+            prefix = f"{organization_id}_"
+            if not filename.startswith(prefix):
+                # Preserves tenant-safe isolation: ignore files of other organizations
+                continue
+            file_org = organization_id
+            file_exec = filename[len(prefix) : -5]
+        else:
+            stem = filename[:-5]
+            parts = stem.split("_", 1)
+            file_org = parts[0] if len(parts) > 0 else "unknown"
+            file_exec = parts[1] if len(parts) > 1 else stem
+
+        try:
+            data = json.loads(f.read_text(encoding="utf-8"))
+        except Exception as read_exc:
+            # File is unreadable, locked, or corrupted; cannot authoritatively prove absence!
+            unresolved_remote.append(
+                {
+                    "execution_id": file_exec,
+                    "organization_id": file_org,
+                    "action_id": "unknown",
+                    "pid": None,
+                    "created_at": time.time(),
+                    "error": f"Tracking file inaccessible: {read_exc}",
+                }
+            )
+            continue
+
+        if organization_id is not None and data.get("organization_id") != organization_id:
+            continue
+        pid = data.get("pid")
+        if pid and pid != current_pid:
+            try:
+                os.kill(pid, 0)
+                is_alive = True
+            except ProcessLookupError:
+                is_alive = False
+            except PermissionError:
+                # Target process is alive under another user, container, or security context
+                is_alive = True
+            if is_alive:
+                unresolved_remote.append(data)
+            else:
+                try:
+                    f.unlink()
+                except Exception:
+                    pass
     return unresolved_remote
 
 

@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncpg
 import pytest
 
-from responsibleai.db.migrate import _find_alembic_ini, _migration_env, _run_alembic
+from responsibleai.db.migrate import MigrationError, _find_alembic_ini, _migration_env, _run_alembic
 from tests.pg_test_url import isolated_pg_url
 
 
@@ -93,7 +93,20 @@ async def test_migration_0064_to_0065_upgrade_data_retention_and_downgrade():
         finally:
             await conn.close()
 
-        # 3. Clean downgrade from 0065 to 0064
+        # 3. Mandatory passkey row blocks downgrade fail-closed
+        with pytest.raises(MigrationError):
+            await _run_alembic(ini, env, "downgrade", "0064")
+        conn = await asyncpg.connect(url)
+        try:
+            assert await conn.fetchval("SELECT version_num FROM alembic_version") == "0065"
+            # Remove mandatory passkey requirement row to permit safe historical downgrade
+            await conn.execute(
+                "DELETE FROM trust_fabric_bootstrap_records WHERE id='wp_brec_stepup'"
+            )
+        finally:
+            await conn.close()
+
+        # Clean downgrade from 0065 to 0064 now succeeds for nonmandatory historical records
         await _run_alembic(ini, env, "downgrade", "0064")
         conn = await asyncpg.connect(url)
         try:
@@ -107,7 +120,7 @@ async def test_migration_0064_to_0065_upgrade_data_retention_and_downgrade():
 
             # Base records still preserved in 0064 schema
             count = await conn.fetchval("SELECT COUNT(*) FROM trust_fabric_bootstrap_records")
-            assert count == 2
+            assert count == 1
         finally:
             await conn.close()
 

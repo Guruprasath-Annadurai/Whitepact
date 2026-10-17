@@ -12,12 +12,13 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-from sqlalchemy import and_, insert, select, update
+from sqlalchemy import and_, func, insert, select, update
 
 from responsibleai.db.engine import (
     authority_recovery_requests,
     authority_step_up_challenges,
     create_engine,
+    governance_root_authority_records,
     organizations,
     trust_fabric_identifiers,
     trust_fabric_principals,
@@ -1246,45 +1247,53 @@ async def test_root_bootstrap_unverified_email_does_not_imply_external_identity_
             membership_status="ACTIVE",
         )
 
-        init_res = await svc.initiate_root_bootstrap(
-            actor, org_id=org_id, require_identity_assurance=False
-        )
+        # Mandatory server qualification: unverified email account cannot initiate root bootstrap
+        with pytest.raises(EnterpriseError) as exc_info:
+            await svc.initiate_root_bootstrap(
+                actor, org_id=org_id, require_identity_assurance=False
+            )
+        assert exc_info.value.code == IDENTITY_ASSURANCE_REQUIRED
+
+        # Completion boundary also strictly rejects unverified accounts
         priv, pub_hex, _ = _gen_ed25519()
         pop_sig = _b64url(
             priv.sign(
-                f"WP_ROOT_POP:{org_id}:{init_res['nonce']}:{hashlib.sha256(init_res['token'].encode()).hexdigest()}".encode()
+                f"WP_ROOT_POP:{org_id}:dummy_nonce:{hashlib.sha256(b'dummy_token').hexdigest()}".encode()
             )
         )
-
-        res = await svc.complete_root_bootstrap(
-            actor,
-            org_id=org_id,
-            token=init_res["token"],
-            nonce=init_res["nonce"],
-            root_public_key=pub_hex,
-            root_signature=pop_sig,
-            scope_description="Unverified email scope",
-            purpose="Assurance test",
-            allowed_action_types=["test.act"],
-            allowed_targets=["test:target"],
-        )
-        assert res["status"] == "BOOTSTRAPPED"
+        with pytest.raises(EnterpriseError) as exc_complete:
+            await svc.complete_root_bootstrap(
+                actor,
+                org_id=org_id,
+                token="dummy_token",
+                nonce="dummy_nonce",
+                root_public_key=pub_hex,
+                root_signature=pop_sig,
+                scope_description="Unverified email scope",
+                purpose="Assurance test",
+                allowed_action_types=["test.act"],
+                allowed_targets=["test:target"],
+            )
+        assert exc_complete.value.code in {IDENTITY_ASSURANCE_REQUIRED, "BOOTSTRAP_TOKEN_INVALID"}
 
         async with engine.raw.connect() as conn:
-            # 1. Identifier MUST be UNVERIFIED and verified_at MUST be None
-            ident = (
-                await conn.execute(
-                    select(
-                        trust_fabric_identifiers.c.verification_state,
-                        trust_fabric_identifiers.c.verified_at,
-                    ).where(trust_fabric_identifiers.c.principal_id == uid)
-                )
-            ).first()
-            assert ident is not None
-            assert ident.verification_state == IdentifierVerificationState.UNVERIFIED.value
-            assert ident.verified_at is None
+            # 1. No root authority record minted
+            canon_count = await conn.scalar(
+                select(func.count())
+                .select_from(governance_root_authority_records)
+                .where(governance_root_authority_records.c.organization_id == org_id)
+            )
+            assert canon_count == 0
 
-            # 2. User account verification status remains UNVERIFIED (no fabricated KYC)
+            # 2. No trust fabric principal minted
+            p_count = await conn.scalar(
+                select(func.count())
+                .select_from(trust_fabric_principals)
+                .where(trust_fabric_principals.c.id == uid)
+            )
+            assert p_count == 0
+
+            # 3. User account verification status remains UNVERIFIED (no fabricated KYC)
             u_state = (
                 await conn.execute(
                     select(web_users.c.verification_status, web_users.c.email_verified_at).where(
