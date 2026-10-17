@@ -38,14 +38,12 @@ from responsibleai.db.engine import (
     governance_consent_proofs,
     governance_delegations,
     governance_root_authority_records,
-    org_security_policies,
     organizations,
     passkey_credentials,
     trust_fabric_bootstrap_records,
     trust_fabric_principals,
     trust_fabric_trust_roots,
     web_memberships,
-    web_sessions,
     web_users,
 )
 from responsibleai.db.revocation_epoch_repository import (
@@ -80,16 +78,13 @@ from responsibleai.enterprise.authority.errors import (
     webauthn_challenge_replay,
 )
 from responsibleai.enterprise.errors import (
-    BREAK_GLASS_DENIED,
     CROSS_TENANT,
     FORBIDDEN,
     MEMBERSHIP_REVOKED,
     ORG_DISABLED,
     ORG_SUSPENDED,
-    WEBAUTHN_INVALID,
     forbidden,
 )
-from responsibleai.enterprise.security.rate_limit import DurableIdentityRateLimiter
 from responsibleai.enterprise.security.webauthn import (
     b64url_decode,
     b64url_encode,
@@ -140,7 +135,6 @@ def verify_root_proof_of_possession(
     signature_b64: str,
 ) -> None:
     """Verify Ed25519 signature over ceremony parameters to prove possession of root key."""
-    from cryptography.exceptions import InvalidSignature
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
     try:
@@ -151,7 +145,7 @@ def verify_root_proof_of_possession(
             pub_bytes = b64url_decode(root_public_key)
 
         sig_bytes = b64url_decode(signature_b64)
-        message = f"WP_ROOT_POP:{org_id}:{nonce}:{token_hash}".encode("utf-8")
+        message = f"WP_ROOT_POP:{org_id}:{nonce}:{token_hash}".encode()
 
         pub = Ed25519PublicKey.from_public_bytes(pub_bytes)
         pub.verify(sig_bytes, message)
@@ -362,7 +356,6 @@ class CustomerAuthorityService:
         now_dt = _now()
         expires_at_dt = now_dt + timedelta(seconds=ttl_seconds)
         expires_at = _iso(expires_at_dt)
-        rec_id = f"wp_ch_{uuid.uuid4().hex}"
 
         async with self._engine.raw.begin() as conn:
             await conn.execute(
@@ -2221,10 +2214,9 @@ class CustomerAuthorityService:
                     f"Action digest mismatch: submitted {action_digest!r} != expected {req['action_digest']!r}."
                 )
 
-            # WebAuthn step-up if provided
-            step_up_info = None
+            # Verify and consume the proof even though its return value is unused.
             if webauthn_assertion:
-                step_up_info = await self._verify_webauthn_stepup_on_conn(
+                await self._verify_webauthn_stepup_on_conn(
                     conn,
                     actor=actor,
                     org_id=org_id,
