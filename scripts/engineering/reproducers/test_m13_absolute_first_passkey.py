@@ -126,8 +126,10 @@ async def test_first_enrollment_rechecks_revocation_at_credential_write(
 ):
     engine, service, user, org, session, *_ = first_enrollment
     original = service.require_step_up
+    revocation_committed = False
 
     async def revoke_after_authorization(*args, **kwargs):
+        nonlocal revocation_committed
         await original(*args, **kwargs)
         # Deterministically schedule a real state change between the two transactions.
         async with engine.raw.begin() as conn:
@@ -163,9 +165,12 @@ async def test_first_enrollment_rechecks_revocation_at_credential_write(
                     .values(email_verified_at=None, verification_status="UNVERIFIED")
                 )
 
+        revocation_committed = True
+
     monkeypatch.setattr(service, "require_step_up", revoke_after_authorization)
     with pytest.raises(EnterpriseError):
         await enroll(first_enrollment)
+    assert revocation_committed, "The actual post-authorization revocation boundary must execute"
     async with engine.raw.connect() as conn:
         assert await conn.scalar(select(func.count()).select_from(passkey_credentials)) == 0
 
