@@ -2,6 +2,77 @@
 
 **M13 OPEN. GLOBAL PRODUCTION NO-GO.** New TITAN changes are not accepted.
 
+## Customer authority product continuation — 17 October 2026
+
+Starting checkpoint: `4b6d43d4168d20c6489b1462b8940966e402c239`, tree
+`4c2bb755dd37d81453047a6567ec9324aa51c41d`, parent
+`fb73369513217bc5c10979c025f504c5e16d7e3c`; clean at resumption. Remote owner
+heads remain `9fbfc122` / `d64992f1`. No corrected root/cancellation handoff exists.
+
+**Origin binding defect:** the integrated passkey routes constructed
+IdentitySecurityService with hardcoded `http://localhost`, omitting the browser's
+ephemeral port. The prior exact-head customer artifact stopped before registration
+with RP_OR_ORIGIN_CONTRACT_MISMATCH. New direct route/storage tests independently
+reproduced nine failures before routing changed. Two earlier test setup attempts
+errored because this Settings model has no WebAuthn fields; those attempts are
+not assertion RED evidence. Corrected tests use actual supported environment
+configuration and real SQLite challenge rows, not identity/trust fixtures.
+
+**Product correction:** selectively reuse the reviewed owner's origin validation
+helpers, but invoke them through a dedicated WebAuthn service factory at the four
+passkey issuance/finish routes only. The existing service, root authority,
+enrollment policy, session rotation, replay and containment implementations remain
+unchanged. Nonproduction inference permits loopback origins only. Production
+ignores client/proxy origins and requires explicit HTTPS origin plus a matching
+RP ID. Configure `WHITEPACT_WEBAUTHN_ORIGIN` and `WHITEPACT_WEBAUTHN_RP_ID` on the
+server; browser-supplied RP IDs are not authority. Forwarded headers do not replace
+browser origin. Unrelated OAuth/TOTP/service construction is not retargeted.
+
+Initial nine origin cases plus unchanged three identity-security suites: **82
+PASS in 111.49s**, zero skips. An additional forwarded-header case is included
+in final qualification. Exact committed-head CI adds this whole scope on both
+supported Python versions with mandatory zero-skip receipts.
+
+**Genuine integrated browser result:** origin comparison now passes, Chromium
+creates its actual credential and reaches register/finish. The backend responds
+403 AUTHENTICATION_ASSURANCE_TOO_LOW after the legitimate password session obtains
+an ADD_PASSKEY grant. The 25-stage result remains 5 PASS / 1 BLOCKED /
+19 NOT_EXECUTED, but the reason changes from origin mismatch to the independently
+owned first-passkey enrollment policy. Do not mark enrollment or authentication
+PASS, weaken that policy, or import the entire owner's service to bypass it.
+
+**Downstream actual product workflow:** preserved 25 names/order; owner-source
+genuine signup, WebAuthn, root, consent, application, agent, delegation and policy
+still yield 17 PASS / 1 BLOCKED / 7 NOT_EXECUTED. Stage 17 now attempts actual
+existing operations instead of stopping at an unexplored placeholder. Direct
+customer-session intent admission returns 401; the documented org-key workflow
+uses POST /api/web/api-keys, which instead returns 403 at canonical identity
+eligibility. BASIC_VERIFIED email is not a substitute for IDENTITY_VERIFIED
+qualification. No provider attestation, identity state, key, grant or approval is
+seeded. Returned credentials, if legitimately issued in a future qualified flow,
+stay private in browser memory and are revoked before logout; no token is logged.
+
+Intent contracts narrow existing authority and do not mint Judgment or
+ExecutionGrant. The current tools/call path likewise explicitly does not mint
+ExecutionGrant state. A general org key cannot be assumed to be an authenticated
+canonical agent grant. TITAN-1 must qualify the subject/tenant/delegation/policy
+contract and existing-kernel approval-resume/grant API before stages 17–24 can
+be accepted. Founder identity policy and actual verification prerequisites remain
+separate decisions. The 401 and 403 receipts are product workflow boundaries,
+not evidence that credential authentication should be bypassed.
+
+The previous completed candidate results (MCP 519 and extended 209 per Python,
+PG safety 3 per Python, native 15, frontend 315, SDK 3, frameworks 24/22) remain
+historical until rerun at this checkpoint. Mandatory original revision assertion,
+Ruff 101, unsigned ancestor DCO and six Gitleaks findings remain failed. No
+protected test/hash, root enforcement or containment code changed here. Owner
+handoff and final exact HEAD/tree/parent, clean browser receipts and CI results
+are published separately on PR216 to avoid a self-referential report hash.
+
+NEXT: independently qualify this committed origin correction; obtain enrollment,
+root and cancellation owner corrections; qualify the canonical customer-agent
+intent/judgment/approval/grant bridge with real identity and consent. **M13 NO-GO.**
+
 ## Corrective integration review — 17 October 2026 (client timezone)
 
 This continuation starts from cleanfb73369513217bc5c10979c025f504c5e16d7e3c,

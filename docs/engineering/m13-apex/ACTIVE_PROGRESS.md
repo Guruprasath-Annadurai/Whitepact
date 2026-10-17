@@ -1,6 +1,22 @@
 # APEX active engineering ledger
 
 M13 OPEN. GLOBAL PRODUCTION NO-GO. No M14/M21 or additional spending.
+## Customer authority product continuation — 17 October 2026
+
+Start clean `4b6d43d4`; remote owners unchanged `9fbfc122` / `d64992f1`.
+Origin RED: nine actual issuance/storage/configuration assertions fail after
+correcting test-only Settings setup errors. GREEN: dedicated origin-aware
+WebAuthn factory, four passkey routes, strict reviewed origin validation;
+82 PASS including unchanged identity-security suites. Forwarded-header case
+added for final CI. Root, enrollment policy, rotation and containment untouched.
+Integrated actual Chromium gets past origin binding to registration/finish:
+403 AUTHENTICATION_ASSURANCE_TOO_LOW; still 5 PASS / 1 BLOCKED / 19 NOT_EXECUTED.
+Owner positive journey stays 17/1/7; stage17 now attempts legitimate API workflow:
+cookie-only intent401, canonical hosted credential issuance403 at identity gate.
+No fabricated identity, credential, grant or approval. Final exact-head CI pending.
+NEXT: committed origin qualification; owner first-passkey/root/cancellation fixes;
+qualified customer-agent judgment/approval/grant bridge. Founder policy unchanged.
+
 ## Corrective continuation — 17 October 2026
 
 Starting cleanfb733695. Fetched9fbfc122/d64992f1. Original four-case blob7e3500

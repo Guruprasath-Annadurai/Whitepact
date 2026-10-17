@@ -16,17 +16,17 @@ const names = config.phases;
 assert.equal(names.length, 25);
 const stages = new Map(names.map(phase => [phase, { phase, status: "NOT_EXECUTED" }]));
 const requests = [];
-let browser, context, page, current = "signup", stop;
+let browser, context, page, current = "signup", stop, issuedKeyId;
 const sha = value => createHash("sha256").update(value).digest("hex");
 function mark(phase, status, extra = {}) { stages.set(phase, { phase, status, ...extra }); }
-async function call(path, method = "GET", body) {
-  const result = await page.evaluate(async ({ path, method, body }) => {
+async function call(path, method = "GET", body, apiKey) {
+  const result = await page.evaluate(async ({ path, method, body, apiKey }) => {
     const csrf = document.cookie.split("; ").find(item => item.startsWith("wp_csrf="))?.slice(8);
-    const response = await fetch(path, { method, credentials: "same-origin", signal: AbortSignal.timeout(15000), headers: { "Content-Type": "application/json", ...(csrf ? { "X-WP-CSRF": csrf, "X-WhitePact-CSRF": csrf } : {}) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+    const response = await fetch(path, { method, credentials: "same-origin", signal: AbortSignal.timeout(15000), headers: { "Content-Type": "application/json", ...(csrf ? { "X-WP-CSRF": csrf, "X-WhitePact-CSRF": csrf } : {}), ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
     let value = null;
     try { value = await response.json(); } catch { /* Invalid success remains unconfirmed. */ }
     return { status: response.status, value };
-  }, { path, method, body });
+  }, { path, method, body, apiKey });
   requests.push({ phase: current, path, method, http_status: result.status });
   return result;
 }
@@ -159,7 +159,23 @@ try {
   assert.equal(policy.org_id, org);
   assert.ok(policy.rules.some(persisted => persisted.rule_id === rule.rule_id && persisted.effect === "REQUIRE_APPROVAL"));
   mark(current, "PASS");
-  current = "judgment"; mark(current, "BLOCKED", { reason: "AUTHENTICATED_CUSTOMER_JUDGMENT_EXECUTION_CONTRACT_NOT_QUALIFIED" }); stop = current;
+  current = "judgment";
+  const credentialAdmission = await call("/api/web/api-keys", "POST", { name: "Ephemeral APEX intent qualification", environment: "test", scopes: ["governance:read", "governance:write"], expires_at: new Date(Date.now() + 120000).toISOString() });
+  if ([401, 403].includes(credentialAdmission.status)) {
+    const credentialError = credentialAdmission.value?.detail?.error ?? credentialAdmission.value?.detail?.code ?? credentialAdmission.value?.error;
+    mark(current, "BLOCKED", { reason: "QUALIFIED_IDENTITY_REQUIRED_FOR_CANONICAL_API_CREDENTIAL", http_status: credentialAdmission.status, ...(typeof credentialError === "string" && /^[A-Z][A-Z_]{2,79}$/.test(credentialError) ? { error_code: credentialError } : {}) });
+  } else {
+    const credential = expect(credentialAdmission, 201);
+    assert.ok(credential.api_key); issuedKeyId = credential.id ?? credential.key_id;
+    assert.ok(issuedKeyId);
+    const intentAdmission = await call("/api/governance/intent-contracts", "POST", { agent_id: agent.agent_id, goal: consent.purpose, max_value_usd: 0, allowed_targets: consent.allowed_targets, allowed_action_types: consent.allowed_action_types, expires_in_minutes: 2 }, credential.api_key);
+    if ([401, 403].includes(intentAdmission.status)) mark(current, "BLOCKED", { reason: "AGENT_BOUND_INTENT_ADMISSION_NOT_QUALIFIED", http_status: intentAdmission.status });
+    else {
+      expect(intentAdmission, 201);
+      mark(current, "BLOCKED", { reason: "INTENT_NARROWING_IS_NOT_CUSTOMER_JUDGMENT_OR_EXECUTION_GRANT", http_status: intentAdmission.status });
+    }
+  }
+  stop = current;
 } catch (error) {
   if (!stop) { stop = current; mark(current, "FAIL", { error_type: error.name }); }
 } finally {
@@ -167,6 +183,7 @@ try {
   if (page) {
     try {
       current = "logout_session_invalidation";
+      if (issuedKeyId) expect(await call(`/api/web/api-keys/${issuedKeyId}`, "DELETE"), 200);
       const response = await call("/api/v1/web/auth/logout", "POST");
       expect(response, 200, response.value?.status === "signed_out");
       const invalid = await call("/api/v1/web/session");
