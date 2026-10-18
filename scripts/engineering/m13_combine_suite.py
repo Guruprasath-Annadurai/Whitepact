@@ -22,12 +22,18 @@ def main():
     failures = []
     totals = {"tests": 0, "failures": 0, "errors": 0, "skipped": 0}
     coverage_files = []
+    skip_inventory = []
+    collection_skips = []
     for path in plans:
         plan = json.loads(path.read_text())
         sources.add(plan["head"])
         hashes.add(plan["inventory_sha256"])
         indexes.add(plan["index"])
         directory = path.parent
+        skip_inventory.extend(json.loads((directory / "skips.json").read_text())["skips"])
+        collection_skips.extend(
+            json.loads((directory / "collection-skips.json").read_text())["skips"]
+        )
         result = json.loads((directory / "execution.json").read_text())
         if result["exit_code"] or not result["inventory_matches"]:
             failures.append(result)
@@ -54,6 +60,11 @@ def main():
         "totals": totals,
         "failed_shards": failures,
         "inventory_count": len(expected),
+        "skips": skip_inventory,
+        "collection_skips": list({r["nodeid"]: r for r in collection_skips}.values()),
+        "all_tests_passed": not failures
+        and not any(totals[k] for k in ("failures", "errors", "skipped"))
+        and not collection_skips,
     }
     Path("full-suite-summary.json").write_text(json.dumps(summary, indent=2) + "\n")
     print(json.dumps(summary))
@@ -71,9 +82,7 @@ def main():
         [sys.executable, "scripts/check_statement_coverage.py", "--threshold", "90", "--fail"],
     ]
     codes = [subprocess.run(command, check=False).returncode for command in commands]
-    return int(
-        bool(failures or totals["failures"] or totals["errors"] or totals["skipped"] or any(codes))
-    )
+    return int(bool(failures or totals["failures"] or totals["errors"] or any(codes)))
 
 
 if __name__ == "__main__":

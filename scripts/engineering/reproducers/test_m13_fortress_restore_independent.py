@@ -71,6 +71,35 @@ async def test_store_b_floor_fences_canonical_governance_epoch(restored):
 
 
 @pytest.mark.asyncio
+async def test_runtime_canonical_fence_ignores_other_scope(restored, tmp_path, monkeypatch):
+    from responsibleai.db.engine import governance_revocation_epochs
+    from responsibleai.isolation import in_flight as tracking
+
+    monkeypatch.setattr(tracking, "_DISTRIBUTED_REGISTRY_DIR", tmp_path / "tracking")
+    registry = tracking.InFlightExecutionRegistry()
+    await registry.register(
+        "execution",
+        "restored-tenant",
+        "harmless-test",
+        admission_epoch=5,
+        terminate_callback=lambda: True,
+    )
+    epochs = RevocationEpochRepository(restored)
+    for _ in range(7):
+        await epochs.bump("restored-tenant")
+    async with restored.raw.begin() as conn:
+        await conn.execute(
+            insert(governance_revocation_epochs).values(
+                organization_id="restored-tenant",
+                scope="tenant_global",
+                epoch=2,
+                updated_at=datetime.now(UTC).isoformat(),
+            )
+        )
+    assert await registry.reconcile_epochs(restored) == ["execution"]
+
+
+@pytest.mark.asyncio
 async def test_tombstone_reconciliation_handles_real_approval_request_fk(restored):
     now = datetime.now(UTC)
     async with restored.raw.begin() as conn:

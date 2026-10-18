@@ -25,8 +25,9 @@ import struct
 import tempfile
 import time
 import uuid
-from collections.abc import Callable
-from dataclasses import dataclass
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -35,6 +36,7 @@ from sqlalchemy import select
 logger = logging.getLogger(__name__)
 
 _DISTRIBUTED_REGISTRY_DIR = Path(tempfile.gettempdir()) / "whitepact_inflight"
+_LOCK_CLOCK = time.monotonic
 
 
 def _ensure_distributed_dir() -> Path:
@@ -51,6 +53,37 @@ def _identity_digest(domain: bytes, value: str) -> str:
     # Database identifiers are exact strings; NFC is not a database identity rule.
     raw = value.encode("utf-8")
     return hashlib.sha256(domain + struct.pack(">Q", len(raw)) + raw).hexdigest()
+
+
+@contextmanager
+def _registry_ownership(directory: Path) -> Iterator[None]:
+    """Serialize publication and compare/unlink across cooperating POSIX workers."""
+    import fcntl
+
+    descriptor = os.open(
+        directory / ".registry.lock", os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600
+    )
+    try:
+        info = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(info.st_mode)
+            or info.st_uid != os.getuid()
+            or info.st_mode & 0o022
+            or info.st_nlink != 1
+        ):
+            raise PermissionError("Untrusted registry ownership lock")
+        deadline = _LOCK_CLOCK() + 1.0
+        while True:
+            try:
+                fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if _LOCK_CLOCK() >= deadline:
+                    raise TimeoutError("Registry ownership lock unavailable") from None
+                time.sleep(0.01)
+        yield
+    finally:
+        os.close(descriptor)
 
 
 def _tracking_filename(organization_id: str, execution_id: str) -> str:
@@ -71,6 +104,7 @@ def _record_cross_worker_registration(entry: InFlightExecution) -> None:
         "pid": os.getpid(),
         "created_at": time.time(),
         "containment_status": entry.containment_status,
+        "registration_id": entry.registration_id,
     }
     temporary = None
     try:
@@ -81,33 +115,42 @@ def _record_cross_worker_registration(entry: InFlightExecution) -> None:
             os.fsync(out.fileno())
         # Atomic no-replace publication. Existing, corrupt, colliding and symlink
         # records all retain ownership; no check-then-replace overwrite window.
-        os.link(temporary, file_path)
-        directory_fd = os.open(d, os.O_RDONLY)
-        try:
-            os.fsync(directory_fd)
-        finally:
-            os.close(directory_fd)
+        with _registry_ownership(d):
+            os.link(temporary, file_path)
+            directory_fd = os.open(d, os.O_RDONLY)
+            try:
+                os.fsync(directory_fd)
+            finally:
+                os.close(directory_fd)
     finally:
         if temporary is not None:
             temporary.unlink(missing_ok=True)
 
 
-def _remove_cross_worker_registration(organization_id: str, execution_id: str) -> None:
+def _remove_cross_worker_registration(
+    organization_id: str, execution_id: str, *, registration_id: str | None = None
+) -> None:
     try:
-        _ensure_distributed_dir()
+        directory = _ensure_distributed_dir()
         # Inspect actual directory entries, never construct a path from raw IDs.
-        for file_path in _DISTRIBUTED_REGISTRY_DIR.glob("*.json"):
-            if file_path.is_symlink():
-                continue
-            try:
-                data = json.loads(file_path.read_text(encoding="utf-8"))
-            except (OSError, ValueError):
-                continue
-            if isinstance(data, dict) and (
-                data.get("organization_id") == organization_id
-                and data.get("execution_id") == execution_id
-            ):
-                file_path.unlink()
+        with _registry_ownership(directory):
+            for file_path in directory.glob("*.json"):
+                if file_path.is_symlink():
+                    continue
+                try:
+                    data = json.loads(file_path.read_text(encoding="utf-8"))
+                except (OSError, ValueError):
+                    continue
+                if isinstance(data, dict) and (
+                    data.get("organization_id") == organization_id
+                    and data.get("execution_id") == execution_id
+                ):
+                    if (
+                        registration_id is not None
+                        and data.get("registration_id") != registration_id
+                    ):
+                        continue
+                    file_path.unlink()
     except Exception as exc:
         logger.debug("Failed to remove distributed execution tracking: %s", exc)
 
@@ -225,6 +268,7 @@ class InFlightExecution:
     termination_attempts: int = 0
     last_termination_error: str | None = None
     containment_status: str = "active"  # "active", "terminated", "unresolved"
+    registration_id: str = field(default_factory=lambda: uuid.uuid4().hex)
 
 
 class InFlightExecutionRegistry:
@@ -350,7 +394,9 @@ class InFlightExecutionRegistry:
                 async with self._lock:
                     self._unresolved.pop(execution_id, None)
                     if tracking_owned:
-                        _remove_cross_worker_registration(organization_id, execution_id)
+                        _remove_cross_worker_registration(
+                            organization_id, execution_id, registration_id=entry.registration_id
+                        )
             if task is not None and task is not asyncio.current_task() and not task.done():
                 task.cancel()
             raise PermissionError(
@@ -382,7 +428,9 @@ class InFlightExecutionRegistry:
                 return False
 
             if entry is not None:
-                _remove_cross_worker_registration(entry.organization_id, execution_id)
+                _remove_cross_worker_registration(
+                    entry.organization_id, execution_id, registration_id=entry.registration_id
+                )
             self._active.pop(execution_id, None)
             return True
 
@@ -467,7 +515,9 @@ class InFlightExecutionRegistry:
                 async with self._lock:
                     self._unresolved.pop(entry.execution_id, None)
                     self._active.pop(entry.execution_id, None)
-                _remove_cross_worker_registration(entry.organization_id, entry.execution_id)
+                _remove_cross_worker_registration(
+                    entry.organization_id, entry.execution_id, registration_id=entry.registration_id
+                )
                 terminated_ids.append(entry.execution_id)
 
         # Check cross-worker distributed tracking
@@ -561,7 +611,11 @@ class InFlightExecutionRegistry:
                         async with self._lock:
                             self._unresolved.pop(entry.execution_id, None)
                             self._active.pop(entry.execution_id, None)
-                        _remove_cross_worker_registration(entry.organization_id, entry.execution_id)
+                        _remove_cross_worker_registration(
+                            entry.organization_id,
+                            entry.execution_id,
+                            registration_id=entry.registration_id,
+                        )
                         resolved.append(entry.execution_id)
                 except Exception as exc:
                     entry.last_termination_error = str(exc)
@@ -583,7 +637,8 @@ class InFlightExecutionRegistry:
         try:
             async with engine.raw.connect() as conn:
                 stmt = select(epochs.c.organization_id, epochs.c.epoch).where(
-                    epochs.c.organization_id.in_(list(active_orgs))
+                    epochs.c.organization_id.in_(list(active_orgs)),
+                    epochs.c.scope == "governance",
                 )
                 result = await conn.execute(stmt)
                 db_epochs = {row[0]: row[1] for row in result}

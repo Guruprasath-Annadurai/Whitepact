@@ -27,7 +27,14 @@ def main():
         parser.error("invalid shard")
     out = args.output.resolve()
     out.mkdir(parents=True, exist_ok=True)
-    env = dict(os.environ, M13_COLLECTION_FILE=str(out / "inventory.json"))
+    (out / "dependencies.txt").write_text(
+        subprocess.check_output([sys.executable, "-m", "pip", "freeze", "--all"], text=True)
+    )
+    env = dict(
+        os.environ,
+        M13_COLLECTION_FILE=str(out / "inventory.json"),
+        WHITEPACT_QUALIFICATION_SKIP_LOG=str(out / "collection-skips.json"),
+    )
     collect = [
         sys.executable,
         "-m",
@@ -62,6 +69,8 @@ def main():
     plan = {
         "head": git("rev-parse", "HEAD"),
         "tree": git("rev-parse", "HEAD^{tree}"),
+        "parent": git("rev-parse", "HEAD^"),
+        "git_status": git("status", "--porcelain=v1"),
         "python": sys.version,
         "inventory_sha256": hashlib.sha256(
             json.dumps(inventory, sort_keys=True).encode()
@@ -86,7 +95,7 @@ def main():
         "-p",
         "scripts.engineering.m13_suite_inventory",
         "--timeout=120",
-        "--timeout-method=thread",
+        "--timeout-method=signal",
         "-o",
         "faulthandler_timeout=90",
         "--cov=src/responsibleai",
