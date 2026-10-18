@@ -19,3 +19,19 @@ Status: mandatory gates remain OPEN. No waiver or protected-history rewrite.
 |OPENSSF|External gate|Standalone workflow main/schedule-only, externally publishing|NOT_EXECUTED; no retargeting or policy weakening|BLOCKED|
 
 No live rotation, role retirement, blanket Gitleaks exclusion, forged signoff, paid credit purchase or production cutover is authorized.
+
+## Independent fingerprint dispositions (2026-10-18)
+
+Exact-head Gitleaks39131937716 found10 generic-api-key matches, including4 H5 synthetic constructor literals in historicalfef386131b320c84cfce88358e5b11f7bc6d9e77 and6318439b. Actual source review classifies all10 as non-credentials:
+- GITLEAKS-1: WebAuthn request example placeholder; not actual authenticator material.
+- GITLEAKS-2: Markdown table prose describing service-account credential endpoints; no credential value.
+- GITLEAKS-3: fixed synthetic key in a ConnectionManager redaction test using a fake socket; assertions require no raw key/prefix/suffix in logs.
+- GITLEAKS-4: Python type annotation Ed25519PrivateKey | None, with a newly generated key in the body; no serialized private key.
+- GITLEAKS-5/6: public demo directory entity_key values in JSON, not authentication credentials.
+- H5 four fingerprints: same fixed synthetic SDK constructor-only literal/assertion; AST confirms no method/network call in that case.
+
+Only the10 exact commit/path/rule/line fingerprints emitted by this run are appended to the existing .gitleaksignore. No directory/rule/global exclusion, secret value, history rewrite, credential rotation or broader waiver. Scanner requalification is pending; earlier unresolved classifications above are superseded by this review, not a claimed passing gate.
+
+Actual Dependabot alerts24(source-map-js),23(Mako),22(multidict) remain open on the default branch, but this candidate already pins1.2.2,1.4.3,6.9.1 respectively, meeting the advisory's listed fixes1.2.2,1.4.2,6.9.1. No gratuitous dependency update is needed. Alert2 NLTK GHSA-8mgp-746c-j5xp has no listed patched release; opt-in sentiment dependency and actual reachability remain a separately documented residual risk. Default-install security scan39131935301 PASS; it does not certify optional dependency absence.
+
+Whole-source mypy corrective result: Success, no issues in385 source files locally. Explicit missing MCP contexts are denied401, optional actor display-name formatting is typed safely, and the existing nonnullable policy field is read from its persisted mapping. No assurance flag, verification prerequisite or policy is relaxed. Final remote requalification remains required. Formula full local domain suite:148 PASS in5.27sec. Corrective credential-backed MCP HTTP + import-order scope:13 PASS in11.10sec.

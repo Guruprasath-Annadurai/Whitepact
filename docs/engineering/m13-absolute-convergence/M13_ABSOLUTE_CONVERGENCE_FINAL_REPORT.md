@@ -13,3 +13,15 @@ New findings: six original FORTRESS tracking counterexamples RED; integrated cor
 No final integrated Python/Linux/PostgreSQL/MCP/SDK/customer/coverage PASS yet. See the six companion reports for evidence layers, limits, unresolved inventory, human decisions and actual logs. Physical authenticators, production mail, legal identity, external witness, disaster-recovery certification and production latency are not established.
 
 No production infrastructure provisioned, deployment, main merge, package publication, credential rotation, paid service/model call or M14. Development checks can proceed; mandatory acceptance and release remain NO-GO.
+
+First committed checkpoint6318439bff2a446ed942dc6d913e03f0333b5788, tree9dd3f3d7e994aa5240b60560f49b64bf35908c15, parent38f3ceb0: draftPR220 stacked on216, preserving original APEX/FORTRESS branches. Runs39131876286(development),39131876170(product),39131867755(Go/wheels),39131932807(CodeQL),39131935301(security scan) succeeded. Runtime/enrollment/independent policies retain failures. These are checkpoint evidence, not successor-head acceptance.
+
+Bounded matrix39131867768 was cancelled for a demonstrated circular import exposed by independent shard collection, not silently retried. Annotation-only import correction passes23 focused formula cases in2.30sec. Real PostgreSQL owner restore reproduction adds unsupported QUARANTINED status to the backup blocker package. Gitleaks10 matches individually reviewed as non-credentials; exact-fingerprint remediation requires its own final-head scanner result. No source-enforcement relaxation was made for CI.
+
+Protected blobs verified unchanged before final corrective commit:
+- migration f4d5731e9b2792b18a69e1fcfd475164ee4f0898
+- TITAN acceptance7e3500ca714701553e69afb2de12174a72d08a22
+- corrective authoritybcda92d9939d122a3ec7e6f9f5ad67db915fd624
+- cancellationbc00c78e9cafa461b58cde388610b43c5866acfe
+
+All nine imported FORTRESS test blobs also match exact f50b0f7 originals. Existing signed-off integration commits do not attest another contributor's missing DCO. Current whole-source mypy is locally clean (385 files); focused corrective formula148 PASS and MCP/import13 PASS. Remaining whole-tree lint/protected specification/restore and human gates still preclude acceptance. Final corrective-HEAD CI and artifact references belong in the draft review evidence; no first-checkpoint result substitutes for them.

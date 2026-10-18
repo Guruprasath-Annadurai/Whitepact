@@ -1149,6 +1149,8 @@ def _build_http_app() -> Any:
         ctx, error = await _authenticate_or_error(request)
         if error is not None:
             return error
+        if ctx is None:
+            return JSONResponse({"error": "unauthorized"}, status_code=401)
 
         request.scope["user"] = _build_authenticated_user(ctx)
         org_token = _current_org.set(ctx)
@@ -1184,6 +1186,9 @@ def _build_http_app() -> Any:
             ctx, error = await _authenticate_or_error(request)
             if error is not None:
                 await error(scope, receive, send)
+                return
+            if ctx is None:
+                await JSONResponse({"error": "unauthorized"}, status_code=401)(scope, receive, send)
                 return
 
             session_id_param = request.query_params.get("session_id")
@@ -1272,6 +1277,9 @@ def _build_http_app() -> Any:
             ctx, error = await _authenticate_or_error(request)
             if error is not None:
                 await error(scope, receive, send)
+                return
+            if ctx is None:
+                await JSONResponse({"error": "unauthorized"}, status_code=401)(scope, receive, send)
                 return
 
             if request.method == "POST":

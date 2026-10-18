@@ -29,3 +29,16 @@ P1/high-confidence source defects on exact f50b0f7:
 Required owner acceptance: real PostgreSQL linked approval→request→authorization→attempt restore; current canonical governance epoch against authenticated Store B high-water state; concurrent revocation/restore monotonicity; actual restore-triggered runtime fencing. No arbitrary constant or alternate epoch namespace qualifies. Preserve roots/consent/evidence pending approved retention policy; SOC2/GDPR references alone do not establish indefinite retention.
 
 This handoff is committed for review; no external message was sent.
+
+## Real PostgreSQL owner reproduction
+
+scripts/engineering/reproducers/test_m13_fortress_restore_independent.py was run unchanged against exact FORTRESS source via PYTHONPATH=/private/tmp/whitepact-fortress-independent/src:. with real fresh PostgreSQL databases migrated to0065. Result:2 FAIL in24.69sec; /private/tmp/m13-fortress-restore-postgres-red.log.
+
+1. ACTIVE Store B floor7 after restored canonical governance epoch2: reconciliation claims RECONCILED, canonical repository still returns2. This directly confirms the wrong-namespace finding. It does not claim an authenticated stale-grant exploit was executed.
+2. Tombstoned tenant with a real approval→runtime-request FK: reconciliation aborts earlier than the suspected deletion-order fault. PostgreSQL rejects governance_status QUARANTINED under chk_org_governance_status. This is a third P1/high-confidence compatibility defect; FAILED restore is fail-closed, not successful recovery. The FK-order issue remains source-proven but not reached in this restore reproduction. No schema constraint was removed to manufacture a passing restore.
+
+Expected: valid canonical quarantine with readiness denied until authoritative reconciliation succeeds; correct canonical fencing and legitimate FK/retention disposition. Actual: stale canonical epoch and unsupported status. H4 source remains rejected pending independent owner correction. Fixture rows test restore/schema behavior only; they are not customer-issued authority or a customer journey receipt.
+
+## H2–H6 evidence boundaries
+
+All six owner reports and corrective report reviewed as assertions to verify, not independent receipts. H2 includes subprocess behavior, Docker flag assertions and injected daemon/permission faults; execution on an Ubuntu runner alone does not prove actual containers, kernel resource limits or teardown. Separate actual-container native suites are required. H3 validates local chain/tamper and file-backed signed witness logic; it does not establish independently operated immutable external anchoring or legal retention. H4 SQLite results cannot qualify migrated PostgreSQL recovery, as the independent RED demonstrated. H5 constructor/schema/redaction and mocked HTTP tests are distinct from live MCP session/reconnect and complete developer workflow acceptance. H6 in-process evaluation/concurrency microbenchmarks are not end-to-end authenticated API latency, deployment SLAs, universal memory-leak proof or disaster-recovery certification. Owner numerical latency claims are not adopted as production guarantees.

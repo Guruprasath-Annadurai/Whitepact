@@ -1116,7 +1116,7 @@ class CustomerAuthorityService:
             # Bridges verified web identity into Trust Fabric before root binding.
             if not p_row:
                 display_name = (
-                    u_row.full_name or u_row.email or f"Owner {actor.user_id[:8]}"
+                    u_row.full_name or u_row.email or f"Owner {(actor.user_id or '')[:8]}"
                 ).strip()
                 meta = {
                     "origin": "customer_root_bootstrap",
@@ -2466,8 +2466,8 @@ class CustomerAuthorityService:
                     select(org_security_policies).where(org_security_policies.c.org_id == org_id)
                 )
             ).first()
-            phishing_resistant_required = bool(
-                sec_pol_row and getattr(sec_pol_row, "phishing_resistant_required", 0)
+            phishing_resistant_required = sec_pol_row is not None and bool(
+                sec_pol_row._mapping["phishing_resistant_required"]
             )
 
             ceil_row = (
