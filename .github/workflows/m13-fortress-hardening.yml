@@ -1,0 +1,74 @@
+name: M13 Fortress Hardening Review
+
+on:
+  pull_request:
+    paths:
+      - 'src/responsibleai/isolation/in_flight.py'
+      - 'src/responsibleai/mcp/server.py'
+      - 'src/responsibleai/data_governance/backup_defense.py'
+      - 'tests/test_h1_reproducers.py'
+      - 'tests/test_h1_tenant_isolation_adversarial.py'
+      - 'tests/test_h1_collision_invariance.py'
+      - 'tests/test_h1_mcp_sse_transport_security.py'
+      - 'tests/test_h2_linux_containment_adversarial.py'
+      - 'tests/test_h3_audit_evidence_adversarial.py'
+      - 'tests/test_h4_backup_recovery_adversarial.py'
+      - 'tests/test_h5_developer_onboarding_acceptance.py'
+      - 'tests/bench/test_h6_performance_concurrency_bench.py'
+      - '.github/workflows/m13-fortress-hardening.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fortress-linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.12']
+    services:
+      postgres:
+        image: postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685
+        env:
+          POSTGRES_USER: wp
+          POSTGRES_PASSWORD: wp
+          POSTGRES_DB: postgres
+        ports: ['55432:5432']
+        options: >-
+          --health-cmd "pg_isready -U wp" --health-interval 5s
+          --health-timeout 5s --health-retries 12
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install -r tests/requirements-m11.txt
+          python -m pip install '.[dashboard,postgres,mcp]' alembic ruff==0.17.0
+
+      - name: Verify Fortress H1-H6 Hardening Suites on Native Linux
+        env:
+          PYTHONPATH: src:.
+          POSTGRES_URL: postgresql+asyncpg://wp:wp@127.0.0.1:55432/postgres
+        run: |
+          python -m pytest \
+            tests/test_h1_reproducers.py \
+            tests/test_h1_tenant_isolation_adversarial.py \
+            tests/test_h1_collision_invariance.py \
+            tests/test_h1_mcp_sse_transport_security.py \
+            tests/test_h2_linux_containment_adversarial.py \
+            tests/test_h3_audit_evidence_adversarial.py \
+            tests/test_h4_backup_recovery_adversarial.py \
+            tests/test_h5_developer_onboarding_acceptance.py \
+            tests/bench/test_h6_performance_concurrency_bench.py \
+            -o addopts='' --tb=short -ra

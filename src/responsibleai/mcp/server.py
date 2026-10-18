@@ -1211,7 +1211,7 @@ def _build_http_app() -> Any:
                     if isinstance(owner, dict)
                     else getattr(owner, "client_id", None)
                 )
-                if owner_client_id and ctx.org_id and owner_client_id != ctx.org_id:
+                if owner_client_id and (not ctx.org_id or owner_client_id != ctx.org_id):
                     _logger.warning(
                         "cross_tenant_sse_post_rejected session_id=%s caller_org=%s owner_org=%s",
                         session_id,
@@ -1233,7 +1233,7 @@ def _build_http_app() -> Any:
                     if isinstance(owner, dict)
                     else getattr(owner, "subject", None)
                 )
-                if owner_subject and ctx.key_id and owner_subject != ctx.key_id:
+                if owner_subject and (not ctx.key_id or owner_subject != ctx.key_id):
                     _logger.warning(
                         "mismatched_key_sse_post_rejected session_id=%s caller_key=%s owner_key=%s",
                         session_id,
