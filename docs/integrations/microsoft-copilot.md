@@ -1,5 +1,10 @@
 # Microsoft Copilot / Copilot Studio
 
+> **M13 APEX: GLOBAL PRODUCTION NO-GO.** Historical status and live-test claims
+> below are not current-head qualification. See the current
+> [APEX provider matrix](../engineering/m13-apex/AI_PLATFORM_COMPATIBILITY.md).
+> Do not activate hosted examples, publish or submit listings from this guide.
+
 **Status**: CONFIG_READY (technical prep only — submission is a founder
 action). See `PLATFORM_COMPATIBILITY.md`.
 **Source-of-truth date**: 2026-08-13.

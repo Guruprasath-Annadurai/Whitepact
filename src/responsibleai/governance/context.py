@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from responsibleai.governance.models import ActionRequest
 from responsibleai.rbac.models import OrgContext
 
-_AUTH_METHODS = frozenset({"api_key", "oidc", "saml", "oauth", "session", "vc"})
+_AUTH_METHODS = frozenset({"api_key", "oidc", "saml", "oauth", "session", "vc", "agent_pop"})
 
 
 @dataclass(frozen=True)

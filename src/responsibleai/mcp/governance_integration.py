@@ -227,10 +227,20 @@ async def apply_governance(
         if services.epoch_repo is not None
         else None
     )
+    if ctx.authentication_method == "agent_pop" and (
+        epoch is None or ctx.authentication_epoch != epoch
+    ):
+        return GovernanceOutcome(
+            proceed=False,
+            arguments=arguments,
+            blocked_response={"error": "agent_authentication_epoch_stale"},
+        )
 
     identity = IdentityContext(
         identity_id=ctx.key_id,
-        kind="oidc" if ctx.key_id.startswith("oidc:") else "api_key",
+        kind="agent"
+        if ctx.authentication_method == "agent_pop"
+        else ("oidc" if ctx.key_id.startswith("oidc:") else "api_key"),
         org_id=ctx.org_id,
         display_name=ctx.org_name,
     )
@@ -683,11 +693,14 @@ def _agent_from_approval(approval: ApprovalRequest) -> AgentContext:
         raise ValueError("Approval has no requested_by identity and cannot be resumed.")
     identity = IdentityContext(
         identity_id=requester,
-        kind="api_key",
+        kind="agent" if approval.authentication_method == "agent_pop" else "api_key",
         org_id=approval.organization_id,
     )
     return AgentContext(
-        identity=identity, organization_id=approval.organization_id, framework="resumed-approval"
+        identity=identity,
+        organization_id=approval.organization_id,
+        agent_id=requester,
+        framework="resumed-approval",
     )
 
 

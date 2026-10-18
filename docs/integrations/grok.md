@@ -1,5 +1,10 @@
 # xAI Grok
 
+> **M13 APEX: GLOBAL PRODUCTION NO-GO.** Historical status and live-test claims
+> below are not current-head qualification. See the current
+> [APEX provider matrix](../engineering/m13-apex/AI_PLATFORM_COMPATIBILITY.md).
+> Do not activate hosted examples, publish or submit listings from this guide.
+
 **Status**: VERIFIED (Path B, xAI API) — see `PLATFORM_COMPATIBILITY.md`.
 **Source-of-truth date**: 2026-08-14.
 

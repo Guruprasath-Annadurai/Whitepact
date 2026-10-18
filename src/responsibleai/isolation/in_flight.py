@@ -39,10 +39,9 @@ def _ensure_distributed_dir() -> Path:
 
 
 def _record_cross_worker_registration(entry: InFlightExecution) -> None:
-    try:
-        d = _ensure_distributed_dir()
-        file_path = d / f"{entry.organization_id}_{entry.execution_id}.json"
-        data = {
+    d = _ensure_distributed_dir()
+    file_path = d / f"{entry.organization_id}_{entry.execution_id}.json"
+    data = {
             "execution_id": entry.execution_id,
             "organization_id": entry.organization_id,
             "action_id": entry.action_id,
@@ -50,10 +49,24 @@ def _record_cross_worker_registration(entry: InFlightExecution) -> None:
             "admission_epoch": entry.admission_epoch,
             "pid": os.getpid(),
             "created_at": time.time(),
+            "containment_status": entry.containment_status,
         }
-        file_path.write_text(json.dumps(data), encoding="utf-8")
-    except Exception as exc:
-        logger.debug("Failed to record distributed execution tracking: %s", exc)
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", dir=d, prefix=".tracking-", delete=False) as out:
+            temporary = Path(out.name)
+            json.dump(data, out)
+            out.flush()
+            os.fsync(out.fileno())
+        os.replace(temporary, file_path)
+        directory_fd = os.open(d, os.O_RDONLY)
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
 
 
 def _remove_cross_worker_registration(organization_id: str, execution_id: str) -> None:
@@ -71,29 +84,77 @@ def _check_remote_worker_active(organization_id: str | None) -> list[dict[str, A
         return unresolved_remote
     current_pid = os.getpid()
     try:
-        for f in _DISTRIBUTED_REGISTRY_DIR.glob("*.json"):
-            try:
-                data = json.loads(f.read_text(encoding="utf-8"))
-            except Exception:
-                continue
-            if organization_id is not None and data.get("organization_id") != organization_id:
-                continue
-            pid = data.get("pid")
-            if pid and pid != current_pid:
-                try:
-                    os.kill(pid, 0)
-                    is_alive = True
-                except (ProcessLookupError, PermissionError):
-                    is_alive = False
-                if is_alive:
-                    unresolved_remote.append(data)
-                else:
-                    try:
-                        f.unlink()
-                    except Exception:
-                        pass
+        entries: list[Path] = []
+        with os.scandir(_DISTRIBUTED_REGISTRY_DIR) as it:
+            for entry in it:
+                if entry.name.endswith(".json"):
+                    entries.append(Path(entry.path))
     except Exception as exc:
-        logger.debug("Failed to scan distributed registry: %s", exc)
+        logger.warning("Failed to scan distributed registry directory: %s", exc)
+        unresolved_remote.append(
+            {
+                "execution_id": "scan_failure",
+                "organization_id": organization_id or "unknown",
+                "action_id": "unknown",
+                "pid": None,
+                "created_at": time.time(),
+                "error": f"Distributed registry scan failure: {exc}",
+            }
+        )
+        return unresolved_remote
+
+    for f in entries:
+        filename = f.name
+        # Match tenant prefix if organization_id is provided
+        if organization_id is not None:
+            prefix = f"{organization_id}_"
+            if not filename.startswith(prefix):
+                # Preserves tenant-safe isolation: ignore files of other organizations
+                continue
+            file_org = organization_id
+            file_exec = filename[len(prefix) : -5]
+        else:
+            stem = filename[:-5]
+            parts = stem.split("_", 1)
+            file_org = parts[0] if len(parts) > 0 else "unknown"
+            file_exec = parts[1] if len(parts) > 1 else stem
+
+        try:
+            data = json.loads(f.read_text(encoding="utf-8"))
+        except Exception as read_exc:
+            # File is unreadable, locked, or corrupted; cannot authoritatively prove absence!
+            unresolved_remote.append(
+                {
+                    "execution_id": file_exec,
+                    "organization_id": file_org,
+                    "action_id": "unknown",
+                    "pid": None,
+                    "created_at": time.time(),
+                    "error": f"Tracking file inaccessible: {read_exc}",
+                }
+            )
+            continue
+
+        if organization_id is not None and data.get("organization_id") != organization_id:
+            continue
+        pid = data.get("pid")
+        if pid and pid != current_pid:
+            try:
+                os.kill(pid, 0)
+                is_alive = True
+            except ProcessLookupError:
+                is_alive = False
+            except PermissionError:
+                # Target process is alive under another user, container, or security context
+                is_alive = True
+            if is_alive:
+                unresolved_remote.append(data)
+            else:
+                # A dead worker cannot attest that its container was terminated.
+                # Retain legacy records too: they carry no contrary containment proof.
+                unresolved_remote.append({**data, "error": "Worker exited; containment unconfirmed"})
+        elif data.get("containment_status") == "unresolved":
+            unresolved_remote.append(data)
     return unresolved_remote
 
 
@@ -144,7 +205,6 @@ class InFlightExecutionRegistry:
             cls._instance._watcher_task.cancel()
         cls._instance = None
 
-
     def record_revoked_epoch(self, organization_id: str, epoch: int) -> None:
         """Record the latest revoked epoch for an organization to reject late registrations."""
         current = self._latest_revoked_epoch.get(organization_id, -1)
@@ -174,28 +234,6 @@ class InFlightExecutionRegistry:
         terminate_callback: Callable[[], Any] | None = None,
         admission_epoch: int = 0,
     ) -> InFlightExecution:
-        # Check late registration: if this tenant has already bumped beyond admission_epoch, abort!
-        if self.is_revoked(organization_id, admission_epoch):
-            logger.warning(
-                "late_registration_rejected: %s for org: %s (admission_epoch=%d, revoked_epoch=%d)",
-                execution_id,
-                organization_id,
-                admission_epoch,
-                self._latest_revoked_epoch.get(organization_id, -1),
-            )
-            if terminate_callback is not None:
-                try:
-                    res = terminate_callback()
-                    if asyncio.iscoroutine(res):
-                        await res
-                except Exception:
-                    pass
-            if task is not None and not task.done():
-                task.cancel()
-            raise PermissionError(
-                f"Execution authorization for tenant '{organization_id}' has been revoked in-flight."
-            )
-
         entry = InFlightExecution(
             execution_id=execution_id,
             organization_id=organization_id,
@@ -207,8 +245,56 @@ class InFlightExecutionRegistry:
             admission_epoch=admission_epoch,
         )
         async with self._lock:
-            self._active[execution_id] = entry
-        _record_cross_worker_registration(entry)
+            rejected = self.is_revoked(organization_id, admission_epoch)
+            if rejected:
+                # A process can already exist when admission is rejected. Track it
+                # before awaiting termination; discard only after confirmation.
+                entry.termination_attempts = 1
+                entry.containment_status = "unresolved"
+                self._unresolved[execution_id] = entry
+            else:
+                self._active[execution_id] = entry
+            try:
+                _record_cross_worker_registration(entry)
+            except Exception as exc:
+                # The container may already exist. Deny admission and run the
+                # actual termination callback instead of losing its tracking.
+                rejected = True
+                entry.containment_status = "unresolved"
+                entry.termination_attempts = 1
+                entry.last_termination_error = f"Tracking persistence failed: {exc}"
+                self._active.pop(execution_id, None)
+                self._unresolved[execution_id] = entry
+
+        if rejected:
+            logger.warning(
+                "late_registration_rejected: %s for org: %s (admission_epoch=%d, revoked_epoch=%d)",
+                execution_id,
+                organization_id,
+                admission_epoch,
+                self._latest_revoked_epoch.get(organization_id, -1),
+            )
+            confirmed = terminate_callback is None and task is None
+            if terminate_callback is not None:
+                try:
+                    res = terminate_callback()
+                    if asyncio.iscoroutine(res):
+                        res = await res
+                    confirmed = res is True
+                    if not confirmed:
+                        entry.last_termination_error = "Rejected execution termination unconfirmed"
+                except Exception as exc:
+                    entry.last_termination_error = str(exc)
+            if confirmed:
+                async with self._lock:
+                    self._unresolved.pop(execution_id, None)
+                    _remove_cross_worker_registration(organization_id, execution_id)
+            if task is not None and task is not asyncio.current_task() and not task.done():
+                task.cancel()
+            raise PermissionError(
+                f"Execution authorization for tenant '{organization_id}' has been revoked in-flight."
+            )
+
         return entry
 
     async def unregister(self, execution_id: str, *, force: bool = False) -> bool:
@@ -375,9 +461,17 @@ class InFlightExecutionRegistry:
 
     def count_unresolved(self, organization_id: str | None = None) -> int:
         """Count active unresolved containment failures, including unconfirmed remote workers."""
-        local_count = sum(1 for e in self._unresolved.values() if organization_id is None or e.organization_id == organization_id)
+        local_count = sum(
+            1
+            for e in self._unresolved.values()
+            if organization_id is None or e.organization_id == organization_id
+        )
         remote_active = _check_remote_worker_active(organization_id)
-        remote_ids = {r["execution_id"] for r in remote_active if r.get("execution_id") not in self._unresolved}
+        remote_ids = {
+            r["execution_id"]
+            for r in remote_active
+            if r.get("execution_id") not in self._unresolved
+        }
         return local_count + len(remote_ids)
 
     async def retry_unresolved(self, organization_id: str | None = None) -> list[str]:

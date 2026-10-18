@@ -193,6 +193,7 @@ from responsibleai.db.execution_nonce_repository import ExecutionNonceRepository
 from responsibleai.db.migrate import MigrationError, run_migrations_or_raise
 from responsibleai.db.revocation_epoch_repository import RevocationEpochRepository
 from responsibleai.db.root_authority_repository import RootAuthorityRepository
+from responsibleai.enterprise.agent_auth_router import router as development_agent_auth_router
 from responsibleai.enterprise.authority.router import router as customer_authority_router
 from responsibleai.enterprise.router import router as enterprise_router
 from responsibleai.enterprise.security.rate_limit import DurableIdentityRateLimiter
@@ -518,6 +519,13 @@ async def lifespan(application: FastAPI):
             ) from exc
 
     _db_engine = create_engine(settings.effective_db_url)
+    from responsibleai.db.runtime_compatibility import assert_runtime_schema_compatible
+
+    try:
+        await assert_runtime_schema_compatible(_db_engine)
+    except Exception:
+        await _db_engine.close()
+        raise
     # Production: Alembic owns the schema; never metadata.create_all.
     # Non-prod SQLite: create_all remains the test/dev convenience path.
     # PostgreSQL with auto_migrate=False: migrations were applied out of band
@@ -560,6 +568,10 @@ async def lifespan(application: FastAPI):
     from responsibleai.enterprise.runtime import configure_enterprise
 
     configure_enterprise(_db_engine)
+    if settings.dev_agent_auth_enabled:
+        from responsibleai.enterprise.agent_auth import DevelopmentAgentAuth
+
+        await DevelopmentAgentAuth(_db_engine, settings).initialize()
     _audit_repo = AuditRepository(_db_engine)
     _incident_repo = IncidentRepository(_db_engine)
     _leaderboard_repo = LeaderboardRepository(_db_engine)
@@ -738,6 +750,7 @@ app = FastAPI(
 
 app.include_router(enterprise_router)
 app.include_router(customer_authority_router)
+app.include_router(development_agent_auth_router)
 app.include_router(enterprise_security_router)
 app.include_router(sovereign_router)
 app.include_router(sovereign_web_router)
@@ -1667,6 +1680,9 @@ class BillingPortalRequest(BaseModel):
 
 class UpdateWebOrganizationRequest(BaseModel):
     name: str = Field(..., min_length=2, max_length=200)
+    organization_id: str | None = Field(default=None, min_length=1, max_length=64)
+    expected_organization_id: str | None = Field(default=None, min_length=1, max_length=64)
+    expected_name: str | None = Field(default=None, min_length=1, max_length=200)
 
 
 class WebSwitchOrganizationRequest(BaseModel):
@@ -3010,16 +3026,43 @@ async def web_execute_approval(
 
 
 @app.patch("/api/web/organization", tags=["web-console"])
+@app.patch("/api/web/organizations/{target_org_id}", tags=["web-console"])
 @limiter.limit("10/minute")
 async def web_update_organization(
     request: Request,
     req: UpdateWebOrganizationRequest,
+    target_org_id: str | None = None,
     principal: WebPrincipal = Depends(require_web_csrf),
 ) -> dict[str, str]:
     org_id = _web_org_admin(principal)
-    if not await _ready(_org_repo).update_org_name(org_id, req.name.strip()):
+    expected_orgs = (
+        target_org_id,
+        req.expected_organization_id,
+        req.organization_id,
+        request.headers.get("x-whitepact-org-id"),
+    )
+    if any(value is not None and value.strip() != org_id for value in expected_orgs):
+        raise HTTPException(
+            409,
+            detail={
+                "code": "WORKSPACE_CONTEXT_CONFLICT",
+                "message": "Active organization context changed; reload before renaming.",
+            },
+        )
+    expected_name = req.expected_name.strip() if req.expected_name is not None else None
+    new_name = req.name.strip()
+    org_repo = _ready(_org_repo)
+    if not await org_repo.update_org_name(org_id, new_name, expected_name=expected_name):
+        if expected_name is not None and await org_repo.get_org(org_id) is not None:
+            raise HTTPException(
+                409,
+                detail={
+                    "code": "ORGANIZATION_STATE_CONFLICT",
+                    "message": "Organization name was modified concurrently; reload before renaming.",
+                },
+            )
         raise HTTPException(404, "Organization not found.")
-    return {"id": org_id, "name": req.name.strip()}
+    return {"id": org_id, "organization_id": org_id, "name": new_name}
 
 
 # ── Root / HTML ────────────────────────────────────────────────────────────────

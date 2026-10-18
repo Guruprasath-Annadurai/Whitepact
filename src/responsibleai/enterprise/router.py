@@ -132,6 +132,7 @@ async def _web_actor(request: Request) -> Actor:
         role=principal.role,
         membership_status="ACTIVE",
         request_id=_request_id(request),
+        session_id=principal.session_id,
     )
 
 

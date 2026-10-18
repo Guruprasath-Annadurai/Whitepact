@@ -3,6 +3,25 @@ name: M13-I1 Independent Integration Review
 on:
   pull_request:
     paths:
+      - 'docs/engineering/m13-apex/**'
+      - 'scripts/engineering/m13_apex_*'
+      - 'tests/test_m13_apex_*'
+      - 'tests/conftest.py'
+      - 'tests/test_runtime_resilience_adversarial.py'
+      - 'src/responsibleai/db/execution_nonce_repository.py'
+      - 'src/responsibleai/isolation/in_flight.py'
+      - 'src/responsibleai/isolation/container_backend.py'
+      - 'src/responsibleai/enterprise/security/router.py'
+      - 'src/responsibleai/enterprise/authority/service.py'
+      - 'scripts/engineering/reproducers/test_m13_dual_titan_*.py'
+      - 'tests/test_inflight_liveness_adversarial.py'
+      - 'migrations/versions/0065_bootstrap_require_passkey_stepup.py'
+      - 'scripts/engineering/reproducers/test_m13_corrective_authority.py'
+      - 'tests/js/m13-apex-*'
+      - 'src/responsibleai/trust_fabric/directory.py'
+      - 'src/responsibleai/mcp/tools.py'
+      - 'src/responsibleai/mcp/server.py'
+      - 'pyproject.toml'
       - 'docs/engineering/m13i3/**'
       - 'scripts/engineering/m13i3_*'
       - 'tests/test_m13i3_*'
@@ -52,7 +71,8 @@ jobs:
           python-version: ${{ matrix.python }}
       - run: |
           python -m pip install -r tests/requirements-m11.txt
-          python -m pip install '.[dashboard,postgres,mcp]' alembic
+          python -m pip install '.[dashboard,postgres,mcp,sso]' alembic
+          python -m pip install 'langgraph==1.2.14'
       - name: Record exact candidate and preserved reproducers
         env:
           CANDIDATE: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -67,12 +87,45 @@ jobs:
           python -m pytest tests/independent_m13r2 tests/test_m13r3_security_regression.py tests/test_m12fs_root_hardening.py -o addopts='' --tb=short -ra
           python -c 'import json; r=json.load(open("/tmp/m13i1-core-skips.json")); assert r["exit_status"] == 0 and r["skip_count"] == 0, r'
       - name: Revocation and egress regression scope
+        if: ${{ !cancelled() }}
         env:
           PYTHONPATH: src:.
           WHITEPACT_QUALIFICATION_SKIP_LOG: /tmp/m13i1-extended-skips.json
         run: |
-          python -m pytest tests/test_m13s_security_regression.py tests/test_revocation_kernel.py tests/test_delegation_revocation_verification.py tests/test_in_flight_revocation.py tests/test_dns_egress_security.py tests/test_isolation_egress_boundary.py -o addopts='' --tb=short -ra
+          python -m pytest tests/test_m13s_security_regression.py tests/test_revocation_kernel.py tests/test_delegation_revocation_verification.py tests/test_in_flight_revocation.py tests/test_dns_egress_security.py tests/test_isolation_egress_boundary.py tests/test_runtime_resilience_adversarial.py tests/test_inflight_liveness_adversarial.py -o addopts='' --tb=short -ra
           python -c 'import json; r=json.load(open("/tmp/m13i1-extended-skips.json")); assert r["exit_status"] == 0 and r["skip_count"] == 0, r'
+      - name: Full MCP transport and session-binding regression
+        if: ${{ !cancelled() }}
+        env:
+          PYTHONPATH: src:.
+          WHITEPACT_QUALIFICATION_SKIP_LOG: /tmp/m13apex-mcp-skips.json
+        run: |
+          python -m pytest tests/test_mcp*.py tests/test_m13p4_mcp_lifecycle.py tests/test_m13_apex_sse_binding.py -o addopts='' --tb=short -ra
+          python -c 'import json; r=json.load(open("/tmp/m13apex-mcp-skips.json")); assert r["exit_status"] == 0 and r["skip_count"] == 0, r'
+      - name: Mandatory passkey downgrade restriction and supported rollback
+        if: ${{ !cancelled() }}
+        env:
+          PYTHONPATH: src:.
+          WHITEPACT_QUALIFICATION_SKIP_LOG: /tmp/m13apex-migration-skips.json
+        run: |
+          python -m pytest tests/test_m13_apex_migration_guard.py -o addopts='' --tb=short -ra
+          python -c 'import json; r=json.load(open("/tmp/m13apex-migration-skips.json")); assert r["exit_status"] == 0 and r["skip_count"] == 0, r'
+      - name: Mandatory root email and persisted owner denial boundaries
+        if: ${{ !cancelled() }}
+        env:
+          PYTHONPATH: src:.
+          WHITEPACT_QUALIFICATION_SKIP_LOG: /tmp/m13apex-root-email-skips.json
+        run: |
+          python -m pytest -p tests.conftest scripts/engineering/reproducers/test_m13_corrective_authority.py scripts/engineering/reproducers/test_m13_dual_titan_root.py -k 'unverified or completion' -o addopts='' --tb=short -ra
+          python -c 'import json; r=json.load(open("/tmp/m13apex-root-email-skips.json")); assert r["exit_status"] == 0 and r["skip_count"] == 0, r'
+      - name: WebAuthn product origin binding and unchanged identity security
+        if: ${{ !cancelled() }}
+        env:
+          PYTHONPATH: src:.
+          WHITEPACT_QUALIFICATION_SKIP_LOG: /tmp/m13apex-origin-skips.json
+        run: |
+          python -m pytest tests/test_m13_apex_origin.py tests/test_enterprise_layer2_identity_security.py tests/test_enterprise_security_branch_campaign.py tests/test_enterprise_security_branch_campaign_batch2.py -o addopts='' --tb=short -ra
+          python -c 'import json; r=json.load(open("/tmp/m13apex-origin-skips.json")); assert r["exit_status"] == 0 and r["skip_count"] == 0, r'
 
   real-customer-journey:
     runs-on: ubuntu-24.04
@@ -121,12 +174,23 @@ jobs:
           ruff format --check scripts/engineering/m13i3_browser_journey.py tests/test_m13i3_browser_evidence.py
           python -m pytest tests/test_m13i2_customer_journey.py tests/test_m13i3_browser_evidence.py -o addopts='' --tb=short -ra
           python scripts/engineering/m13i3_browser_journey.py --report /tmp/m13i3-browser-evidence.json
+      - name: Attempt preserved APEX 25-stage customer journey independently of legacy gate
+        if: ${{ !cancelled() }}
+        env:
+          PYTHONPATH: src:.
+          WHITEPACT_ENV: development
+          PLAYWRIGHT_BROWSERS_PATH: /tmp/whitepact-m13i3-chromium
+        run: |
+          python -m pytest tests/test_m13_apex_journey_evidence.py -o addopts='' --tb=short -ra
+          python scripts/engineering/m13_apex_customer_journey.py --report /tmp/m13apex-customer-evidence.json
       - name: Preserve redacted actual browser evidence even when blocked
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: m13i3-actual-browser-evidence
-          path: /tmp/m13i3-browser-evidence.json
+          path: |
+            /tmp/m13i3-browser-evidence.json
+            /tmp/m13apex-customer-evidence.json
           if-no-files-found: error
 
   native-container-scope:

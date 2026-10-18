@@ -1,0 +1,96 @@
+name: M13 Sovereign Authority Development Qualification
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  development-qualification:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.11', '3.12']
+    services:
+      postgres:
+        image: postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685
+        env:
+          POSTGRES_USER: wp
+          POSTGRES_PASSWORD: wp
+          POSTGRES_DB: postgres
+        ports: ['55432:5432']
+        options: >-
+          --health-cmd "pg_isready -U wp" --health-interval 5s
+          --health-timeout 5s --health-retries 12
+    env:
+      PYTHONPATH: src:.
+      WHITEPACT_TEST_PG_ADMIN_URL: postgresql://wp:wp@127.0.0.1:55432/postgres
+      WHITEPACT_ISOLATION_IMAGE: whitepact-isolated-runtime:sovereign
+      WHITEPACT_REQUIRE_DOCKER_ISOLATION: '1'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Record exact source and preserved evidence
+        run: |
+          git rev-parse HEAD 'HEAD^{tree}' 'HEAD^'
+          test "$(git rev-parse HEAD:tests/independent_m13r2/test_m13r_migration_roundtrip.py)" = f4d5731e9b2792b18a69e1fcfd475164ee4f0898
+          test "$(git rev-parse HEAD:scripts/engineering/reproducers/test_m13_apex_titan_acceptance.py)" = 7e3500ca714701553e69afb2de12174a72d08a22
+      - name: Prepare disposable PostgreSQL, browser and native container environment
+        id: environment
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y acl
+          python -m pip install -r tests/requirements-m11.txt
+          python -m pip install '.[dashboard,postgres,mcp]' alembic ruff==0.17.0
+          npm ci
+          npx playwright install --with-deps chromium
+          docker build -f Dockerfile.isolation -t whitepact-isolated-runtime:sovereign .
+      - name: A2 and B1 positive and negative PostgreSQL qualification
+        run: |
+          python -m pytest tests/test_sovereign_authority.py -o addopts='' --junitxml=/tmp/sovereign.xml --tb=short -ra
+          python -c 'import xml.etree.ElementTree as E; r=E.parse("/tmp/sovereign.xml"); assert not list(r.iter("skipped")) and not list(r.iter("failure")) and not list(r.iter("error"))'
+      - name: Genuine default-disabled customer journey
+        if: ${{ !cancelled() && steps.environment.conclusion == 'success' }}
+        run: |
+          set +e
+          python scripts/engineering/m13_apex_customer_journey.py --report /tmp/sovereign-default.json
+          result=$?
+          set -e
+          test "$result" = 2
+          python -c 'import json; r=json.load(open("/tmp/sovereign-default.json")); s=[s["status"] for s in r["stages"]]; assert r["acceptance"] == "BLOCKED" and s.count("PASS") == 17 and s.count("BLOCKED") == 1 and s.count("NOT_EXECUTED") == 7'
+      - name: Genuine isolated development prototype customer journey
+        if: ${{ !cancelled() && steps.environment.conclusion == 'success' }}
+        run: |
+          python scripts/engineering/m13_apex_customer_journey.py --development-agent-prototype --report /tmp/sovereign-prototype.json
+          python -c 'import json; r=json.load(open("/tmp/sovereign-prototype.json")); assert len(r["stages"]) == 25 and all(s["status"] == "PASS" for s in r["stages"])'
+      - name: Native containment qualification
+        if: ${{ !cancelled() && steps.environment.conclusion == 'success' }}
+        run: |
+          python -m pytest tests/test_m13_absolute_native_runtime.py tests/test_docker_ownership_regression.py tests/test_runtime_isolation_docker.py tests/test_container_isolation_contract.py -o addopts='' --junitxml=/tmp/sovereign-native.xml --tb=short -ra
+          python -c 'import xml.etree.ElementTree as E; r=E.parse("/tmp/sovereign-native.xml"); assert not list(r.iter("skipped")) and not list(r.iter("failure")) and not list(r.iter("error"))'
+      - name: Source and workflow hygiene
+        if: ${{ !cancelled() && steps.environment.conclusion == 'success' }}
+        run: |
+          ruff check src tests/test_sovereign_authority.py scripts/engineering/m13_apex_customer_journey.py
+          python scripts/check_pinned_actions.py
+          python scripts/manage_license_headers.py --check
+      - name: Preserve exact-head qualification receipts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: sovereign-development-${{ matrix.python }}-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            /tmp/sovereign.xml
+            /tmp/sovereign-native.xml
+            /tmp/sovereign-default.json
+            /tmp/sovereign-prototype.json

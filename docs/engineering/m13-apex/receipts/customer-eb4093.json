@@ -1,0 +1,256 @@
+{
+  "kind": "ACTUAL_APEX_POSTGRESQL_HTTP_CHROMIUM",
+  "acceptance": "BLOCKED",
+  "stop": "application_registration",
+  "stages": [
+    {
+      "phase": "signup",
+      "status": "PASS"
+    },
+    {
+      "phase": "email_verification",
+      "status": "PASS"
+    },
+    {
+      "phase": "password_login",
+      "status": "PASS"
+    },
+    {
+      "phase": "organization_onboarding",
+      "status": "PASS"
+    },
+    {
+      "phase": "passkey_enrollment",
+      "status": "PASS"
+    },
+    {
+      "phase": "passkey_assertion_verification",
+      "status": "PASS"
+    },
+    {
+      "phase": "secure_elevated_session",
+      "status": "PASS",
+      "prior_session_status": 401,
+      "cookies_rotated": true
+    },
+    {
+      "phase": "legitimate_identity_qualification",
+      "status": "PASS",
+      "reported_status": "BASIC_VERIFIED",
+      "email_verified": true,
+      "provider_present": false,
+      "assurance_present": false
+    },
+    {
+      "phase": "explicit_customer_consent",
+      "status": "PASS"
+    },
+    {
+      "phase": "root_initiation",
+      "status": "PASS"
+    },
+    {
+      "phase": "root_proof_of_possession",
+      "status": "PASS"
+    },
+    {
+      "phase": "root_activation",
+      "status": "PASS"
+    },
+    {
+      "phase": "application_registration",
+      "status": "BLOCKED",
+      "reason": "DOWNSTREAM_AUTHORITY_CONTRACTS_NOT_QUALIFIED"
+    },
+    {
+      "phase": "agent_registration",
+      "status": "NOT_EXECUTED"
+    },
+    {
+      "phase": "capability_delegation",
+      "status": "NOT_EXECUTED"
+    },
+    {
+      "phase": "policy_assignment",
+      "status": "NOT_EXECUTED"
+    },
+    {
+      "phase": "judgment",
+      "status": "NOT_EXECUTED"
+    },
+    {
+      "phase": "human_approval",
+      "status": "NOT_EXECUTED"
+    },
+    {
+      "phase": "execution_grant",
+      "status": "NOT_EXECUTED"
+    },
+    {
+      "phase": "controlled_execution",
+      "status": "NOT_EXECUTED"
+    },
+    {
+      "phase": "evidence_verification",
+      "status": "NOT_EXECUTED"
+    },
+    {
+      "phase": "revocation",
+      "status": "NOT_EXECUTED"
+    },
+    {
+      "phase": "post_revocation_execution_attempt",
+      "status": "NOT_EXECUTED"
+    },
+    {
+      "phase": "post_revocation_denial",
+      "status": "NOT_EXECUTED"
+    },
+    {
+      "phase": "logout_session_invalidation",
+      "status": "PASS"
+    }
+  ],
+  "requests": [
+    {
+      "phase": "signup",
+      "path": "/api/v1/web/auth/register",
+      "method": "POST",
+      "http_status": 202
+    },
+    {
+      "phase": "email_verification",
+      "path": "/api/v1/web/auth/verify",
+      "method": "POST",
+      "http_status": 200
+    },
+    {
+      "phase": "password_login",
+      "path": "/api/v1/web/auth/login",
+      "method": "POST",
+      "http_status": 200
+    },
+    {
+      "phase": "organization_onboarding",
+      "path": "/api/v1/web/onboarding",
+      "method": "POST",
+      "http_status": 200
+    },
+    {
+      "phase": "organization_onboarding",
+      "path": "/api/v1/web/session",
+      "method": "GET",
+      "http_status": 200
+    },
+    {
+      "phase": "organization_onboarding",
+      "path": "/api/enterprise/organizations/2cce3ac4-dcd7-4a9f-a36e-2f6f0e1a2976/authority/status",
+      "method": "GET",
+      "http_status": 200
+    },
+    {
+      "phase": "passkey_enrollment",
+      "path": "/api/enterprise/passkeys/register/begin",
+      "method": "POST",
+      "http_status": 200
+    },
+    {
+      "phase": "passkey_enrollment",
+      "path": "/api/enterprise/security/step-up",
+      "method": "POST",
+      "http_status": 200
+    },
+    {
+      "phase": "passkey_enrollment",
+      "path": "/api/enterprise/passkeys/register/finish",
+      "method": "POST",
+      "http_status": 200
+    },
+    {
+      "phase": "passkey_assertion_verification",
+      "path": "/api/enterprise/passkeys/authenticate/begin",
+      "method": "POST",
+      "http_status": 200
+    },
+    {
+      "phase": "passkey_assertion_verification",
+      "path": "/api/enterprise/passkeys/authenticate/finish",
+      "method": "POST",
+      "http_status": 200
+    },
+    {
+      "phase": "secure_elevated_session",
+      "path": "/api/v1/web/session",
+      "method": "GET",
+      "http_status": 200
+    },
+    {
+      "phase": "legitimate_identity_qualification",
+      "path": "/api/enterprise/identity/verification",
+      "method": "GET",
+      "http_status": 200
+    },
+    {
+      "phase": "root_initiation",
+      "path": "/api/enterprise/organizations/2cce3ac4-dcd7-4a9f-a36e-2f6f0e1a2976/authority/bootstrap/initiate",
+      "method": "POST",
+      "http_status": 200
+    },
+    {
+      "phase": "root_proof_of_possession",
+      "path": "/api/enterprise/organizations/2cce3ac4-dcd7-4a9f-a36e-2f6f0e1a2976/authority/webauthn/challenge",
+      "method": "POST",
+      "http_status": 200
+    },
+    {
+      "phase": "root_proof_of_possession",
+      "path": "/api/enterprise/organizations/2cce3ac4-dcd7-4a9f-a36e-2f6f0e1a2976/authority/bootstrap/complete",
+      "method": "POST",
+      "http_status": 200
+    },
+    {
+      "phase": "root_activation",
+      "path": "/api/enterprise/organizations/2cce3ac4-dcd7-4a9f-a36e-2f6f0e1a2976/authority/status",
+      "method": "GET",
+      "http_status": 200
+    },
+    {
+      "phase": "logout_session_invalidation",
+      "path": "/api/v1/web/auth/logout",
+      "method": "POST",
+      "http_status": 200
+    },
+    {
+      "phase": "logout_session_invalidation",
+      "path": "/api/v1/web/session",
+      "method": "GET",
+      "http_status": 401
+    }
+  ],
+  "browser": "151.0.7922.34",
+  "authority_seeded": false,
+  "limitations": [
+    "Virtual browser authenticator, not physical hardware certification",
+    "No credential imports or forged signatures",
+    "No later privileged stage run after a failed or blocked boundary"
+  ],
+  "implementation_git": {
+    "commit": "eb4093e58ec4f068baa2ad706a86d7998d9de15d",
+    "tree": "d9fb06c416fed6794f0bf84c172b91f30367f577",
+    "clean": true
+  },
+  "harness_git": {
+    "commit": "08551472503fb7d0422a99bebcb926a4e496ece3",
+    "tree": "23ba90aeeff2e868f0dbe5fded122a9598374014",
+    "clean": true
+  },
+  "fresh_postgresql": true,
+  "migration_configuration": "/private/tmp/whitepact-apex-titan-eb4093/alembic.ini",
+  "identity_binding_diagnostic": {
+    "user_exists": true,
+    "canonical_principal_count": 1,
+    "read_only": true,
+    "root_records": 1,
+    "consent_records": 1
+  }
+}
