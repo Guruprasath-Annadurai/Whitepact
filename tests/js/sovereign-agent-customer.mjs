@@ -77,6 +77,7 @@ export async function runDevelopmentAgent({ origin, call, expect, mark, setPhase
   const before = expect(await call("/api/web/evidence?limit=100"), 200);
   const stale = expect(await agentCall("/api/dev/agent-auth/request-challenge", { audience, intent }), 200);
   const staleProof = signed(stale);
+  const staleMessage = JSON.parse(Buffer.from(stale.message, "base64url").toString("utf8"));
   assert.ok(issued.expires_at > Date.now() / 1000, "Revocation must precede natural credential expiry");
 
   set("revocation");
@@ -85,6 +86,8 @@ export async function runDevelopmentAgent({ origin, call, expect, mark, setPhase
   mark(phase, "PASS", { agent_id: agent.agent_id, lifecycle_state: disabled.lifecycle_state });
   set("post_revocation_execution_attempt");
   const denied = await agentCall(intentPath, { audience, intent, challenge_id: stale.challenge_id, signature: staleProof });
+  assert.ok(issued.expires_at > Date.now() / 1000, "Expired credential cannot prove revocation");
+  assert.ok(staleMessage.expires > Date.now() / 1000, "Expired challenge cannot prove revocation");
   assert.equal(denied.status, 403);
   mark(phase, "PASS", { http_status: denied.status, authentication: "agent_pop" });
   set("post_revocation_denial");

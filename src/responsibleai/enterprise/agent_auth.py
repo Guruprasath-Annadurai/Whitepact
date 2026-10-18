@@ -439,14 +439,22 @@ class DevelopmentAgentAuth:
             raise reject()
         return row, binding
 
+    async def _request_limit(self, token, audience):
+        await self.limiter.check("b1-request:unauthenticated", limit=600, window_seconds=60)
+        async with self.engine.raw.begin() as conn:
+            row, _ = await self._credential(conn, token, audience)
+            credential_id = row.id
+        # Never acquire a second pooled connection while holding authority locks.
+        # The operation transaction rechecks qualification after this limit check.
+        await self.limiter.check(f"b1-request:{credential_id}", limit=60, window_seconds=60)
+
     async def begin_request(self, token, *, audience, method, path, body):
         self.gate()
         if method != "POST" or path != INTENT_PATH:
             raise reject()
-        await self.limiter.check("b1-request:unauthenticated", limit=600, window_seconds=60)
+        await self._request_limit(token, audience)
         async with self.engine.raw.begin() as conn:
             row, binding = await self._credential(conn, token, audience)
-            await self.limiter.check(f"b1-request:{row.id}", limit=60, window_seconds=60)
             return await self._challenge(
                 conn,
                 binding,
@@ -459,10 +467,9 @@ class DevelopmentAgentAuth:
 
     async def authenticate(self, token, challenge_id, signature, *, audience, method, path, body):
         self.gate()
-        await self.limiter.check("b1-request:unauthenticated", limit=600, window_seconds=60)
+        await self._request_limit(token, audience)
         async with self.engine.raw.begin() as conn:
             row, binding = await self._credential(conn, token, audience)
-            await self.limiter.check(f"b1-request:{row.id}", limit=60, window_seconds=60)
             payload = await self._consume(
                 conn, challenge_id, signature, "request", binding["org_id"]
             )

@@ -46,6 +46,7 @@ jobs:
           test "$(git rev-parse HEAD:tests/independent_m13r2/test_m13r_migration_roundtrip.py)" = f4d5731e9b2792b18a69e1fcfd475164ee4f0898
           test "$(git rev-parse HEAD:scripts/engineering/reproducers/test_m13_apex_titan_acceptance.py)" = 7e3500ca714701553e69afb2de12174a72d08a22
       - name: Prepare disposable PostgreSQL, browser and native container environment
+        id: environment
         run: |
           sudo apt-get update
           sudo apt-get install -y acl
@@ -59,6 +60,7 @@ jobs:
           python -m pytest tests/test_sovereign_authority.py -o addopts='' --junitxml=/tmp/sovereign.xml --tb=short -ra
           python -c 'import xml.etree.ElementTree as E; r=E.parse("/tmp/sovereign.xml"); assert not list(r.iter("skipped")) and not list(r.iter("failure")) and not list(r.iter("error"))'
       - name: Genuine default-disabled customer journey
+        if: ${{ !cancelled() && steps.environment.conclusion == 'success' }}
         run: |
           set +e
           python scripts/engineering/m13_apex_customer_journey.py --report /tmp/sovereign-default.json
@@ -67,14 +69,17 @@ jobs:
           test "$result" = 2
           python -c 'import json; r=json.load(open("/tmp/sovereign-default.json")); s=[s["status"] for s in r["stages"]]; assert r["acceptance"] == "BLOCKED" and s.count("PASS") == 17 and s.count("BLOCKED") == 1 and s.count("NOT_EXECUTED") == 7'
       - name: Genuine isolated development prototype customer journey
+        if: ${{ !cancelled() && steps.environment.conclusion == 'success' }}
         run: |
           python scripts/engineering/m13_apex_customer_journey.py --development-agent-prototype --report /tmp/sovereign-prototype.json
           python -c 'import json; r=json.load(open("/tmp/sovereign-prototype.json")); assert len(r["stages"]) == 25 and all(s["status"] == "PASS" for s in r["stages"])'
       - name: Native containment qualification
+        if: ${{ !cancelled() && steps.environment.conclusion == 'success' }}
         run: |
           python -m pytest tests/test_m13_absolute_native_runtime.py tests/test_docker_ownership_regression.py tests/test_runtime_isolation_docker.py tests/test_container_isolation_contract.py -o addopts='' --junitxml=/tmp/sovereign-native.xml --tb=short -ra
           python -c 'import xml.etree.ElementTree as E; r=E.parse("/tmp/sovereign-native.xml"); assert not list(r.iter("skipped")) and not list(r.iter("failure")) and not list(r.iter("error"))'
       - name: Source and workflow hygiene
+        if: ${{ !cancelled() && steps.environment.conclusion == 'success' }}
         run: |
           ruff check src tests/test_sovereign_authority.py scripts/engineering/m13_apex_customer_journey.py
           python scripts/check_pinned_actions.py

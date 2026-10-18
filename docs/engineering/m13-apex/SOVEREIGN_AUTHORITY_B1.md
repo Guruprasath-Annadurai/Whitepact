@@ -114,6 +114,17 @@ that only the shared counter exists. Its shared budget can cause availability
 denials under sustained invalid traffic; deployment-level DoS qualification
 remains a production prerequisite.
 
+A follow-up found nested rate-limit connection acquisition while authority locks
+were held. The correction releases the qualification transaction before checking
+the verified credential bucket, then rechecks authority in the actual operation
+transaction. A real PostgreSQL single-connection-pool test covers both challenge
+issuance and authentication without a second connection or unchecked state gap.
+Browser revocation receipts additionally require the credential and signed
+challenge to remain unexpired after receiving the denial; expiry cannot stand
+in for revocation qualification. Authorization ID/nonce receipts alone do not
+prove permit lifetime; canonical approval/expiry/admission tests are separate
+required evidence.
+
 P2 OPEN: the existing ownership-transfer transaction locks membership before
 organization; A2 and existing passkey enrollment lock organization before
 membership. PostgreSQL can abort one concurrent operation for deadlock. This

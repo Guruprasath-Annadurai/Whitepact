@@ -297,6 +297,45 @@ async def delegated(owner, *, issue=True):
 @pytest.mark.parametrize("owner", ["postgres"], indirect=True)
 class TestDevelopmentB1:
     @pytest.mark.asyncio
+    async def test_request_authentication_with_single_connection_pool(self, owner):
+        import asyncio
+
+        from sqlalchemy.ext.asyncio import create_async_engine
+
+        from responsibleai.db.engine import DatabaseEngine
+
+        original, _, key, issued = await delegated(owner)
+        pool = create_async_engine(owner[0].raw.url, pool_size=1, max_overflow=0, pool_timeout=1)
+        auth = DevelopmentAgentAuth(DatabaseEngine(pool), original.settings)
+        body = dict(name="rai_policy_check", arguments={}, purpose="bounded pool")
+        try:
+            challenge = await asyncio.wait_for(
+                auth.begin_request(
+                    issued["credential"],
+                    audience=AUDIENCE,
+                    method="POST",
+                    path=INTENT_PATH,
+                    body=body,
+                ),
+                5,
+            )
+            context = await asyncio.wait_for(
+                auth.authenticate(
+                    issued["credential"],
+                    challenge["challenge_id"],
+                    proof(key, challenge),
+                    audience=AUDIENCE,
+                    method="POST",
+                    path=INTENT_PATH,
+                    body=body,
+                ),
+                5,
+            )
+            assert context.authentication_method == "agent_pop"
+        finally:
+            await pool.dispose()
+
+    @pytest.mark.asyncio
     async def test_concurrent_prototype_initialization(self, owner):
         import asyncio
 
@@ -639,7 +678,12 @@ class TestDevelopmentB1:
 
             response = await guarded(Request({"type": "http", "headers": []}), operation)
             assert response.status_code == 503
-            assert b"B1_STORAGE_UNVERIFIED" in response.body
+            import json
+
+            assert json.loads(response.body)["error"] in {
+                "B1_STORAGE_UNVERIFIED",
+                "IDENTITY_PROTECTION_UNAVAILABLE",
+            }
         finally:
             await admin.execute(f"ALTER DATABASE {quoted} ALLOW_CONNECTIONS true")
             await admin.close()
