@@ -53,14 +53,15 @@ Every consequential execution remains strictly subject to independently enforced
 
 ## 3. Vulnerability & Defect Remediations
 
-During adversarial investigations, FORTRESS identified four critical defects, authored reproduction tests, and implemented isolated, backward-compatible, fail-closed remediations:
+During adversarial investigations, FORTRESS identified five critical defects, authored reproduction tests, and implemented isolated, backward-compatible, fail-closed remediations:
 
 | Defect ID | Severity | Affected Module | Root Cause | Remediated Behavior | Test Evidence |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **Defect H1-01** | **P0** (Security) | `src/responsibleai/mcp/server.py` | Cross-tenant MCP SSE session key fallback permitted unauthenticated access when `RAI_MCP_AUTH_KEY` was unset or empty string. | Removed static fallback. Enforces strict tenant scoping and rejects unauthenticated/unscoped SSE requests with `401 Unauthorized` / `403 Forbidden`. | `tests/test_h1_reproducers.py::test_repro_h1_01_mcp_unscoped_session_key_fail_closed` |
 | **Defect H1-02** | **P0** (Security) | `src/responsibleai/isolation/in_flight.py` | Distributed in-flight execution tracking filename used raw `org_id` with single underscore delimiters, allowing delimiter injection and tenant collision (e.g., `org_a_b` vs `org_a`). | Tracking files now URL-quote `org_id` and `action_id`, joining with double underscore delimiter (`__`), preventing delimiter ambiguity and cross-tenant collisions. | `tests/test_h1_reproducers.py::test_repro_h1_02_inflight_tracking_org_delimiter_collision` |
+| **Defect H1-03** | **P0** (Security) | `src/responsibleai/isolation/in_flight.py` | URL-quoting identifiers while joining with `__` preserved underscores, allowing distinct pairs like `(a_, b)` and `(a, _b)` to both resolve to `a___b.json`. | Implemented strictly injective, length-prefixed domain-separated canonical binary tuple encoding hashed via SHA-256 (`trk_v2_{sha256_tenant}_{sha256_exec}.json`, 141 chars) with assertion collision guards. | `tests/test_h1_reproducers.py::test_reproduce_h1_03_underscore_delimiter_tenant_collision` |
 | **Defect H4-01** | **P0** (Governance) | `src/responsibleai/data_governance/backup_defense.py` | Restored tombstoned organizations retained `ACTIVE` governance status after Store B recovery, allowing suspended/tombstoned orgs to execute actions immediately. | Restoration pipeline explicitly updates restored tombstoned organizations to `QUARANTINED` governance status in the database upon recovery. | `tests/test_h4_backup_recovery_adversarial.py::test_07_restored_tombstoned_tenant_quarantined` |
-| **Defect H4-02** | **P1** (Durability) | `src/responsibleai/data_governance/backup_defense.py` | Backup reconciliation cascade purge omitted authority graph tables (`governance_delegations`, `governance_root_authority_records`, `governance_execution_authorizations`, `governance_execution_nonces`), and revocation epochs did not synchronize from Store B. | Added cascade purge across all authority tables, and synchronized `governance_revocation_epochs` to advance to `max(db_epoch, store_b_security_epoch)` during disaster restore. | `tests/test_h4_backup_recovery_adversarial.py::test_08_reconciliation_purge_delegations` & `test_09` |
+| **Defect H4-02** | **P1** (Durability) | `src/responsibleai/data_governance/backup_defense.py` | Backup reconciliation cascade purge omitted authority graph tables, and revocation epochs did not synchronize from Store B. | Added cascade purge across all authority tables in topological order (`votes` -> `approvals`), preserved legal retention records (`records`, `proofs`), elevated epoch to `max(epoch + 1000, 999999)` for restored tombstoned tenants, and synchronized `governance_revocation_epochs` to `max(db_epoch, store_b_security_epoch)` during disaster restore. | `tests/test_h4_backup_recovery_adversarial.py::test_08_reconciliation_purge_delegations` & `test_09` |
 
 ---
 
@@ -68,13 +69,14 @@ During adversarial investigations, FORTRESS identified four critical defects, au
 
 ### 4.1 M13-H1: Enterprise Tenant Isolation (Priority P0)
 - **Objective:** Prove no tenant can access another tenant's identities, policies, agents, approvals, grants, evidence, or administrative operations across application, database, MCP, and worker layers.
-- **Verification Matrix:** 2 reproduction tests + 20 comprehensive adversarial scenarios covering cross-tenant resource reading, cross-tenant policy modification, cross-tenant approval hijacking, nonce replay across tenants, tenant prefix collisions, MCP session reuse, and database transaction isolation.
-- **Results:** **22 / 22 PASS (100%)**. Legitimate same-tenant operations succeed; all cross-tenant requests are denied fail-closed with zero data disclosure.
+- **Verification Matrix:** 3 reproduction tests + 20 comprehensive adversarial scenarios + 20-scenario collision invariance test suite + 11-scenario independent DB-backed MCP SSE transport security suite.
+- **Results:** **54 / 54 PASS (100%)**. Legitimate same-tenant operations succeed; all cross-tenant requests are denied fail-closed with zero data disclosure.
 - **Detailed Report:** [`H1_TENANT_ISOLATION_REPORT.md`](./H1_TENANT_ISOLATION_REPORT.md).
 
 ### 4.2 M13-H2: Linux Containment & Fail-Closed Infrastructure (Priority P0)
 - **Objective:** Verify execution containment remains effective during infrastructure failures, Docker daemon errors, worker death, cancellation, and revocation.
 - **Verification Matrix:** 25 adversarial infrastructure scenarios covering Docker containment, non-root uid/gid, read-only root filesystems, drop-all capabilities, cgroup memory/CPU limits, daemon outages, PID tracking death, orphaned container detection, unconfirmed containment quarantine, and storage exhaustion.
+- **Local vs Native Linux Boundary:** Local execution on macOS executes Docker/cgroup simulations and mocks; native Linux container validation is isolated and automated in GitHub Actions workflow `.github/workflows/m13-fortress-hardening.yml` (Ubuntu 24.04).
 - **Results:** **25 / 25 PASS (100%)**. Uncertainty about execution status is never assumed to be confirmed termination; failed containment states unconditionally fail-closed.
 - **Detailed Report:** [`H2_LINUX_CONTAINMENT_REPORT.md`](./H2_LINUX_CONTAINMENT_REPORT.md).
 
@@ -86,14 +88,14 @@ During adversarial investigations, FORTRESS identified four critical defects, au
 
 ### 4.4 M13-H4: Backup, Disaster Recovery & Governance Reconcile (Priority P1)
 - **Objective:** Validate hot backup, cold backup, Store B authority log synchronization, point-in-time recovery, cryptographic validation, and post-restore reconciliation.
-- **Verification Matrix:** 20 adversarial disaster-recovery scenarios covering Store B dual-store replication, authority log replay, cryptographic signature verification, tombstoned tenant quarantine, cascade authority table purging, and revocation epoch advancement across restore events.
+- **Verification Matrix:** 20 adversarial disaster-recovery scenarios covering Store B dual-store replication, authority log replay, cryptographic signature verification, tombstoned tenant quarantine, topological cascade authority table purging, legal retention preservation, and revocation epoch advancement across restore events.
 - **Results:** **20 / 20 PASS (100%)**. Restored databases are fully reconciled; stale pre-backup credentials cannot bypass revocation epochs.
 - **Detailed Report:** [`H4_BACKUP_RECOVERY_REPORT.md`](./H4_BACKUP_RECOVERY_REPORT.md).
 
 ### 4.5 M13-H5: Developer Experience & SDK Onboarding (Priority P1)
 - **Objective:** Qualify end-to-end developer onboarding, zero-configuration local evaluation, quickstarts, MCP stdio/HTTP transport security, and SDK ergonomics.
-- **Verification Matrix:** 12 acceptance scenarios in `tests/test_h5_developer_onboarding_acceptance.py` + full TypeScript SDK test suite (56 tests) + Python SDK test suite (328 tests) + Core MCP test suite (68 tests).
-- **Results:** **464 / 464 PASS (100%)**. Fast path allows local evaluation in <5 lines of code; production path strictly enforces API keys, token authentication, and fail-closed authorization.
+- **Verification Matrix:** 12 acceptance scenarios in `tests/test_h5_developer_onboarding_acceptance.py` + full TypeScript SDK test suite (56 tests) + Python SDK test suite (328 tests) + Core MCP test suite (68 tests). Go SDK honest status: `NOT_EXECUTED (toolchain unavailable on macOS test host)`.
+- **Results:** **464 / 464 PASS (100%)** on installed runtimes (Python, TypeScript, MCP). Fast path allows local evaluation in <5 lines of code; production path strictly enforces API keys, token authentication, and fail-closed authorization.
 - **Detailed Report:** [`H5_DEVELOPER_ONBOARDING_REPORT.md`](./H5_DEVELOPER_ONBOARDING_REPORT.md).
 
 ### 4.6 M13-H6: Performance, Concurrency & Resource-Exhaustion (Priority P1)
@@ -108,14 +110,16 @@ During adversarial investigations, FORTRESS identified four critical defects, au
 
 | Suite File | Scope | Test Count | Pass Rate | Execution Duration |
 | :--- | :--- | :--- | :--- | :--- |
-| `tests/test_h1_reproducers.py` | H1 Vulnerability Reproducers | 2 | **100%** (2/2) | 0.82s |
+| `tests/test_h1_reproducers.py` | H1 Vulnerability Reproducers | 3 | **100%** (3/3) | 0.95s |
 | `tests/test_h1_tenant_isolation_adversarial.py` | H1 Tenant Isolation Adversarial | 20 | **100%** (20/20) | 12.14s |
+| `tests/test_h1_collision_invariance.py` | H1 Tenant Filename Collision Invariance | 20 | **100%** (20/20) | 2.64s |
+| `tests/test_h1_mcp_sse_transport_security.py` | H1 MCP SSE Transport Security | 11 | **100%** (11/11) | 8.68s |
 | `tests/test_h2_linux_containment_adversarial.py` | H2 Linux Containment & Fail-Closed | 25 | **100%** (25/25) | 1.84s |
 | `tests/test_h3_audit_evidence_adversarial.py` | H3 Audit Integrity & Durability | 20 | **100%** (20/20) | 33.08s |
 | `tests/test_h4_backup_recovery_adversarial.py` | H4 Backup & Disaster Recovery | 20 | **100%** (20/20) | 14.65s |
 | `tests/test_h5_developer_onboarding_acceptance.py` | H5 Developer Onboarding Acceptance | 12 | **100%** (12/12) | 2.58s |
 | `tests/bench/test_h6_performance_concurrency_bench.py` | H6 Performance & Concurrency Benchmarks | 20 | **100%** (20/20) | 7.34s |
-| **Consolidated Fortress Run (task-1242)** | **All H1–H6 Suites Combined** | **119** | **100%** (119/119) | **56.83s** |
+| **Consolidated Fortress Run (task-1515)** | **All H1–H6 Suites Combined** | **151** | **100%** (151/151) | **93.37s** |
 
 ### Additional Existing & Baseline Regressions Validated
 - Tenant Isolation Baseline (`tests/test_tenant_isolation.py`): 17/17 PASS
@@ -126,7 +130,7 @@ During adversarial investigations, FORTRESS identified four critical defects, au
 - Core MCP Tooling (`tests/test_mcp*.py`): 68/68 PASS
 - TypeScript SDK (`npm test` in `sdk/typescript`): 56/56 PASS
 
-**Grand Total Validated Tests: 693 tests with 100% pass rate.**
+**Grand Total Validated Tests: 725 tests with 100% pass rate.**
 
 ---
 

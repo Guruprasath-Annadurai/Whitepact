@@ -17,8 +17,8 @@ Disaster recovery and backup restorations pose severe security risks to multi-te
 3. **Orphaned Running Containers**: An active container spawned before database restore could continue executing without oversight or database linkage.
 
 In M13-H4, WhitePact's `RestoreReconciliationEngine` was hardened with two major architectural improvements:
-- **Defect H4-01 Correction**: Restored tombstoned tenants now explicitly receive `governance_status = "QUARANTINED"`, and their authority graph (`governance_delegations`, `governance_root_authority_records`, `governance_consent_proofs`, `governance_execution_authorizations`, `governance_execution_nonces`) is purged in addition to web sessions and API keys.
-- **Defect H4-02 Correction**: Revocation epochs are synchronized against independent Store B lifecycle records across disaster restore (`max(db_epoch, store_b_security_epoch)`), preventing replay of pre-restore credentials or execution grants.
+- **Defect H4-01 Correction**: Restored tombstoned tenants now explicitly receive `governance_status = "QUARANTINED"`. To prevent dangling foreign keys and ensure referential integrity, dependent records are purged in strict topological order (`governance_approval_votes` before `governance_approvals`, followed by `governance_execution_authorizations`, `governance_execution_nonces`, `governance_delegations`, web sessions, and API keys). Furthermore, in accordance with SOC2 and GDPR Art 17(3)(e) legal retention mandates, immutable audit records (`governance_root_authority_records` and `governance_consent_proofs`) are strictly preserved as non-repudiation evidence.
+- **Defect H4-02 Correction**: Revocation epochs are synchronized against independent Store B lifecycle records across disaster restore (`max(db_epoch, store_b_security_epoch)`), preventing replay of pre-restore credentials or execution grants. For restored tombstoned organizations, the revocation epoch is unconditionally elevated to `max(epoch + 1000, 999999)`, ensuring any extant or replayed pre-restore tokens or execution nonces fail closed immediately.
 
 ---
 

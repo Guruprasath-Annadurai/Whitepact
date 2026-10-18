@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 import uuid
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
 import httpx
 import pytest
@@ -34,17 +34,19 @@ async def test_reproduce_sse_unscoped_credential_bypasses_tenant_check(monkeypat
 
     session_id = uuid.uuid4()
     endpoint.transport._read_stream_writers = {session_id: MagicMock()}
-    endpoint.transport._session_owners = {
-        session_id: {"client_id": "tenant-A"}
-    }
+    endpoint.transport._session_owners = {session_id: {"client_id": "tenant-A"}}
+
     async def mock_handle_post_message(scope, receive, send):
         from starlette.responses import JSONResponse
+
         resp = JSONResponse({"status": "bypassed_to_handle_post_message"}, status_code=200)
         await resp(scope, receive, send)
 
     endpoint.transport.handle_post_message = mock_handle_post_message
 
-    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
         resp = await client.post(
             f"/messages/?session_id={session_id.hex}",
             json={"jsonrpc": "2.0", "method": "ping", "id": 1},
@@ -85,3 +87,25 @@ def test_reproduce_distributed_tracking_prefix_ambiguity(tmp_path):
     assert len(unresolved) == 0, (
         f"VULNERABILITY CONFIRMED: Tenant 'org' inspected and was poisoned by 'org_corp' file: {unresolved}"
     )
+
+
+def test_reproduce_h1_03_underscore_delimiter_tenant_collision():
+    """DEFECT H1-03: Identifier collision between (org='a_', exec='b') and (org='a', exec='_b').
+
+    In URL-quoted joining with '__':
+    quote('a_') -> 'a_'
+    quote('b') -> 'b'
+    Filename: 'a___b.json'
+
+    quote('a') -> 'a'
+    quote('_b') -> '_b'
+    Filename: 'a___b.json'
+
+    In the fixed collision-resistant implementation, domain-separated length-prefixed
+    canonical identity digests guarantee that f1 != f2.
+    """
+    f1 = tracking._tracking_filename("a_", "b")
+    f2 = tracking._tracking_filename("a", "_b")
+    assert f1 != f2, f"COLLISION VULNERABILITY: Both produced {f1}"
+    assert f1.startswith("trk_v2_")
+    assert f2.startswith("trk_v2_")

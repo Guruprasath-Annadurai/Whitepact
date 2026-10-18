@@ -16,11 +16,14 @@ Features:
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import os
+import struct
 import tempfile
 import time
+import unicodedata
 import urllib.parse
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -39,30 +42,96 @@ def _ensure_distributed_dir() -> Path:
     return _DISTRIBUTED_REGISTRY_DIR
 
 
-def _tracking_filename(organization_id: str, execution_id: str) -> str:
-    """Derive an injection-safe, unambiguous tracking filename.
+def _canonical_identity_bytes(val: str) -> bytes:
+    """Canonicalize an identity string using Unicode NFC and length prefix."""
+    normalized = unicodedata.normalize("NFC", str(val))
+    raw = normalized.encode("utf-8")
+    # 8-byte big-endian unsigned length prefix ensures unambiguous tuple framing
+    return struct.pack(">Q", len(raw)) + raw
 
-    Uses URL encoding to prevent directory traversal and double-underscore
-    delimiter '__' to prevent prefix collisions between tenants.
+
+def _tenant_identity_digest(org_id: str) -> str:
+    """Compute domain-separated SHA-256 digest for tenant identity.
+
+    Domain separator: b'WP-INFLIGHT-V2-TENANT\x00'
+    Canonical input: 8-byte big-endian length prefix followed by NFC UTF-8 bytes.
+    Note: SHA-256 provides 2^256 pre-image and 2^128 collision resistance.
+    In software, collisions are guarded against by validating stored payload tuples.
     """
-    safe_org = urllib.parse.quote(str(organization_id), safe="")
-    safe_exec = urllib.parse.quote(str(execution_id), safe="")
-    return f"{safe_org}__{safe_exec}.json"
+    return hashlib.sha256(
+        b"WP-INFLIGHT-V2-TENANT\x00" + _canonical_identity_bytes(org_id)
+    ).hexdigest()
+
+
+def _exec_identity_digest(exec_id: str) -> str:
+    """Compute domain-separated SHA-256 digest for execution identity.
+
+    Domain separator: b'WP-INFLIGHT-V2-EXEC\x00'
+    Canonical input: 8-byte big-endian length prefix followed by NFC UTF-8 bytes.
+    """
+    return hashlib.sha256(
+        b"WP-INFLIGHT-V2-EXEC\x00" + _canonical_identity_bytes(exec_id)
+    ).hexdigest()
+
+
+def _tracking_filename(organization_id: str, execution_id: str) -> str:
+    """Derive an injection-safe, collision-resistant tracking filename.
+
+    Format: trk_v2_{tenant_digest}_{exec_digest}.json
+    Length: exactly 141 characters, well below POSIX 255-byte limit.
+    Fully immune to directory traversal, delimiter ambiguities, percent-encoding
+    aliasing, Unicode normalization mismatches, and arbitrary string lengths.
+    """
+    tenant_digest = _tenant_identity_digest(organization_id)
+    exec_digest = _exec_identity_digest(execution_id)
+    return f"trk_v2_{tenant_digest}_{exec_digest}.json"
 
 
 def _record_cross_worker_registration(entry: InFlightExecution) -> None:
     d = _ensure_distributed_dir()
     file_path = d / _tracking_filename(entry.organization_id, entry.execution_id)
+
+    # Collision guard: check if file exists and points to a different tenant/exec
+    if file_path.exists():
+        try:
+            existing_data = json.loads(file_path.read_text(encoding="utf-8"))
+            if (
+                existing_data.get("organization_id") != entry.organization_id
+                or existing_data.get("execution_id") != entry.execution_id
+            ):
+                logger.critical(
+                    "INFLIGHT_FILENAME_COLLISION_DETECTED: file=%s existing_org=%s target_org=%s",
+                    file_path.name,
+                    existing_data.get("organization_id"),
+                    entry.organization_id,
+                )
+                quarantine_path = d / f"quarantine_collision_{time.time()}_{file_path.name}"
+                quarantine_path.write_text(
+                    json.dumps(
+                        {
+                            "error": "Filename collision detected",
+                            "attempted_registration": {
+                                "organization_id": entry.organization_id,
+                                "execution_id": entry.execution_id,
+                            },
+                            "existing_registration": existing_data,
+                        }
+                    )
+                )
+                raise RuntimeError(f"Tracking filename collision detected for {file_path.name}")
+        except json.JSONDecodeError:
+            pass
+
     data = {
-            "execution_id": entry.execution_id,
-            "organization_id": entry.organization_id,
-            "action_id": entry.action_id,
-            "authorization_id": entry.authorization_id,
-            "admission_epoch": entry.admission_epoch,
-            "pid": os.getpid(),
-            "created_at": time.time(),
-            "containment_status": entry.containment_status,
-        }
+        "execution_id": entry.execution_id,
+        "organization_id": entry.organization_id,
+        "action_id": entry.action_id,
+        "authorization_id": entry.authorization_id,
+        "admission_epoch": entry.admission_epoch,
+        "pid": os.getpid(),
+        "created_at": time.time(),
+        "containment_status": entry.containment_status,
+    }
     temporary = None
     try:
         with tempfile.NamedTemporaryFile(mode="w", dir=d, prefix=".tracking-", delete=False) as out:
@@ -83,12 +152,28 @@ def _record_cross_worker_registration(entry: InFlightExecution) -> None:
 
 def _remove_cross_worker_registration(organization_id: str, execution_id: str) -> None:
     try:
+        # Modern v2 tracking file
         file_path = _DISTRIBUTED_REGISTRY_DIR / _tracking_filename(organization_id, execution_id)
         if file_path.exists():
             file_path.unlink()
-        legacy_path = _DISTRIBUTED_REGISTRY_DIR / f"{organization_id}_{execution_id}.json"
-        if legacy_path.exists():
-            legacy_path.unlink()
+
+        # Legacy tracking file cleanup: strictly verify content matches BEFORE removing
+        legacy_candidates = [
+            f"{organization_id}_{execution_id}.json",
+            f"{urllib.parse.quote(str(organization_id), safe='')}__{urllib.parse.quote(str(execution_id), safe='')}.json",
+        ]
+        for legacy_name in legacy_candidates:
+            legacy_path = _DISTRIBUTED_REGISTRY_DIR / legacy_name
+            if legacy_path.exists():
+                try:
+                    data = json.loads(legacy_path.read_text(encoding="utf-8"))
+                    if (
+                        data.get("organization_id") == organization_id
+                        and data.get("execution_id") == execution_id
+                    ):
+                        legacy_path.unlink()
+                except Exception:
+                    pass
     except Exception as exc:
         logger.debug("Failed to remove distributed execution tracking: %s", exc)
 
@@ -102,7 +187,7 @@ def _check_remote_worker_active(organization_id: str | None) -> list[dict[str, A
         entries: list[Path] = []
         with os.scandir(_DISTRIBUTED_REGISTRY_DIR) as it:
             for entry in it:
-                if entry.name.endswith(".json"):
+                if entry.name.endswith(".json") and not entry.name.startswith("."):
                     entries.append(Path(entry.path))
     except Exception as exc:
         logger.warning("Failed to scan distributed registry directory: %s", exc)
@@ -118,63 +203,52 @@ def _check_remote_worker_active(organization_id: str | None) -> list[dict[str, A
         )
         return unresolved_remote
 
+    target_tenant_digest = (
+        _tenant_identity_digest(organization_id) if organization_id is not None else None
+    )
+
     for f in entries:
         filename = f.name
-        stem = filename[:-5]
-        has_modern_delimiter = "__" in stem
+        is_modern_v2 = filename.startswith("trk_v2_")
 
-        if has_modern_delimiter:
-            parts = stem.split("__", 1)
-            raw_org = parts[0]
-            file_exec = urllib.parse.unquote(parts[1]) if len(parts) > 1 else stem
-            try:
-                file_org = urllib.parse.unquote(raw_org)
-            except Exception:
-                file_org = raw_org
-
-            if organization_id is not None and file_org != organization_id:
-                # Preserves tenant-safe isolation: ignore files of other organizations
-                continue
+        if is_modern_v2:
+            # Modern format: trk_v2_{tenant_digest}_{exec_digest}.json
+            if target_tenant_digest is not None:
+                # Fast tenant isolation filter on prefix
+                if not filename.startswith(f"trk_v2_{target_tenant_digest}_"):
+                    continue
         else:
-            # Legacy format with single underscore: inspect content before attributing
-            try:
-                data = json.loads(f.read_text(encoding="utf-8"))
-            except Exception as read_exc:
-                if organization_id is None:
-                    unresolved_remote.append(
-                        {
-                            "execution_id": stem,
-                            "organization_id": "unknown",
-                            "action_id": "unknown",
-                            "pid": None,
-                            "created_at": time.time(),
-                            "error": f"Tracking file inaccessible: {read_exc}",
-                        }
-                    )
-                continue
-
-            if organization_id is not None and data.get("organization_id") != organization_id:
-                continue
-            file_org = data.get("organization_id", "unknown")
-            file_exec = data.get("execution_id", stem)
+            # Legacy format (e.g. org_exec.json or org__exec.json or quarantine_*)
+            pass
 
         try:
             data = json.loads(f.read_text(encoding="utf-8"))
         except Exception as read_exc:
             # File is unreadable, locked, or corrupted; cannot authoritatively prove absence!
-            unresolved_remote.append(
-                {
-                    "execution_id": file_exec,
-                    "organization_id": file_org,
-                    "action_id": "unknown",
-                    "pid": None,
-                    "created_at": time.time(),
-                    "error": f"Tracking file inaccessible: {read_exc}",
-                }
-            )
+            # Attribute to specific tenant only if modern v2 file cryptographically matches tenant digest;
+            # otherwise attribute only to global admin scan (organization_id is None).
+            if organization_id is None or (
+                is_modern_v2
+                and target_tenant_digest is not None
+                and filename.startswith(f"trk_v2_{target_tenant_digest}_")
+            ):
+                unresolved_remote.append(
+                    {
+                        "execution_id": filename[:-5],
+                        "organization_id": organization_id or "unknown",
+                        "action_id": "unknown",
+                        "pid": None,
+                        "created_at": time.time(),
+                        "error": f"Tracking file inaccessible/corrupted: {read_exc}",
+                        "containment_status": "unresolved",
+                    }
+                )
             continue
 
-        if organization_id is not None and data.get("organization_id") != organization_id:
+        file_org = data.get("organization_id")
+
+        # Strict authoritative cross-tenant boundary check on stored payload
+        if organization_id is not None and file_org != organization_id:
             continue
         pid = data.get("pid")
         if pid and pid != current_pid:
@@ -191,7 +265,9 @@ def _check_remote_worker_active(organization_id: str | None) -> list[dict[str, A
             else:
                 # A dead worker cannot attest that its container was terminated.
                 # Retain legacy records too: they carry no contrary containment proof.
-                unresolved_remote.append({**data, "error": "Worker exited; containment unconfirmed"})
+                unresolved_remote.append(
+                    {**data, "error": "Worker exited; containment unconfirmed"}
+                )
         elif data.get("containment_status") == "unresolved":
             unresolved_remote.append(data)
     return unresolved_remote

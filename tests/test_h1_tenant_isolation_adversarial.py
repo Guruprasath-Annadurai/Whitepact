@@ -29,9 +29,7 @@ from __future__ import annotations
 
 import asyncio
 import os
-import time
 import uuid
-from typing import Any
 from unittest.mock import MagicMock
 
 import httpx
@@ -40,10 +38,8 @@ from asgi_lifespan import LifespanManager
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
 
-from responsibleai.dashboard import app as app_module
 from responsibleai.dashboard.app import app, limiter, settings
 from responsibleai.dashboard.config import get_settings
-from responsibleai.db.engine import create_engine
 from responsibleai.db.execution_nonce_repository import ExecutionNonceRepository
 from responsibleai.db.policy_repository import PolicyActor, PolicyRepository
 from responsibleai.db.revocation_epoch_repository import RevocationEpochRepository
@@ -130,8 +126,11 @@ async def test_02_cross_tenant_policy_mutation_rejected(client: AsyncClient):
     # Actor from Tenant A attempts to remove Tenant B's rule
     # Policy repository requires matching org_id: removing from org_a does not touch org_b!
     from responsibleai.db.policy_repository import PolicyRuleNotFoundError
+
     with pytest.raises(PolicyRuleNotFoundError):
-        await policy_repo.remove_rule(org_a, "rule-b-core", actor=PolicyActor("system", "attacker_a"))
+        await policy_repo.remove_rule(
+            org_a, "rule-b-core", actor=PolicyActor("system", "attacker_a")
+        )
 
     # Verify B's rule is intact
     policy_b_after = await policy_repo.get_policy(org_b)
@@ -163,7 +162,9 @@ async def test_03_cross_tenant_approval_rejected(client: AsyncClient):
             json={"decision": "approved"},
             headers={"Authorization": f"Bearer {key_a}"},
         )
-        assert r_vote.status_code in {403, 404}, "Cross-tenant approval vote must be forbidden or not found!"
+        assert r_vote.status_code in {403, 404}, (
+            "Cross-tenant approval vote must be forbidden or not found!"
+        )
 
 
 # Scenario 4: Cross-tenant execution-grant replay
@@ -179,17 +180,20 @@ async def test_04_cross_tenant_execution_grant_replay_rejected(client: AsyncClie
     nonce_val = f"grant-nonce-{uuid.uuid4().hex}"
 
     # Tenant B consumes its granted permit nonce
-    await nonce_repo.consume(nonce_val, authorization_id="auth_b_valid", organization_id=org_b, expected_epoch=0)
+    await nonce_repo.consume(
+        nonce_val, authorization_id="auth_b_valid", organization_id=org_b, expected_epoch=0
+    )
 
     # Tenant A attempts to replay/consume the identical permit nonce
     with pytest.raises(NonceAlreadyConsumedError):
-        await nonce_repo.consume(nonce_val, authorization_id="auth_a_replay", organization_id=org_a, expected_epoch=0)
+        await nonce_repo.consume(
+            nonce_val, authorization_id="auth_a_replay", organization_id=org_a, expected_epoch=0
+        )
 
 
 # Scenario 5: Cross-tenant agent registration
 @pytest.mark.asyncio
 async def test_05_cross_tenant_agent_registration_rejected(client: AsyncClient):
-    from responsibleai.dashboard.app import _org_repo
 
     org_a, _, key_a = await seed_org_with_key(name="Tenant A", slug="tenant-a-05", role=Role.ADMIN)
     org_b, _, _ = await seed_org_with_key(name="Tenant B", slug="tenant-b-05", role=Role.ADMIN)
@@ -200,7 +204,9 @@ async def test_05_cross_tenant_agent_registration_rejected(client: AsyncClient):
         json={"name": "rogue-agent", "role": "ANALYST"},
         headers={"Authorization": f"Bearer {key_a}"},
     )
-    assert r.status_code in {403, 404}, f"Tenant A cannot register credentials in Tenant B, got {r.status_code}!"
+    assert r.status_code in {403, 404}, (
+        f"Tenant A cannot register credentials in Tenant B, got {r.status_code}!"
+    )
 
 
 # Scenario 6: Cross-tenant delegated capability escalation
@@ -301,15 +307,20 @@ def test_10_tenant_prefix_ambiguity_worker_tracking(tmp_path):
 
     with pytest.MonkeyPatch.context() as mp:
         import responsibleai.isolation.in_flight as tracking
+
         mp.setattr(tracking, "_DISTRIBUTED_REGISTRY_DIR", tracking_dir)
 
         # Checking status for "org" must NOT be poisoned by "org_corp"
         unresolved = _check_remote_worker_active("org")
-        assert len(unresolved) == 0, f"Tenant 'org' was falsely poisoned by 'org_corp': {unresolved}"
+        assert len(unresolved) == 0, (
+            f"Tenant 'org' was falsely poisoned by 'org_corp': {unresolved}"
+        )
 
         # Checking status for "org_corp" MUST detect its own corrupted file
         unresolved_corp = _check_remote_worker_active("org_corp")
-        assert len(unresolved_corp) == 1, "Tenant 'org_corp' must detect its own unresolved containment"
+        assert len(unresolved_corp) == 1, (
+            "Tenant 'org_corp' must detect its own unresolved containment"
+        )
 
 
 # Scenario 11: Cross-tenant MCP session reuse
@@ -327,23 +338,26 @@ async def test_11_cross_tenant_mcp_session_reuse_rejected(monkeypatch):
 
     session_id = uuid.uuid4()
     endpoint.transport._read_stream_writers = {session_id: MagicMock()}
-    endpoint.transport._session_owners = {
-        session_id: {"client_id": "tenant-victim"}
-    }
+    endpoint.transport._session_owners = {session_id: {"client_id": "tenant-victim"}}
 
     async def mock_handle_post_message(scope, receive, send):
         from starlette.responses import JSONResponse
+
         resp = JSONResponse({"status": "bypassed"}, status_code=200)
         await resp(scope, receive, send)
 
     endpoint.transport.handle_post_message = mock_handle_post_message
 
-    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app_mcp), base_url="http://test") as c:
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app_mcp), base_url="http://test"
+    ) as c:
         resp = await c.post(
             f"/messages/?session_id={session_id.hex}",
             json={"jsonrpc": "2.0", "method": "ping", "id": 1},
         )
-    assert resp.status_code == 403, f"Cross-tenant SSE post must be rejected with 403, got {resp.status_code}"
+    assert resp.status_code == 403, (
+        f"Cross-tenant SSE post must be rejected with 403, got {resp.status_code}"
+    )
 
 
 # Scenario 12: Stale identity membership
@@ -351,7 +365,9 @@ async def test_11_cross_tenant_mcp_session_reuse_rejected(monkeypatch):
 async def test_12_stale_identity_membership_denial(client: AsyncClient):
     from responsibleai.dashboard.app import _org_repo
 
-    org_a, kid_a, raw_key_a = await seed_org_with_key(name="Tenant A", slug="tenant-a-12", role=Role.ADMIN)
+    org_a, kid_a, raw_key_a = await seed_org_with_key(
+        name="Tenant A", slug="tenant-a-12", role=Role.ADMIN
+    )
 
     # Verify key works
     auth_ok = await _org_repo.authenticate(raw_key_a)
@@ -405,9 +421,7 @@ async def test_14_concurrent_cross_tenant_operations():
             action_id="process_batch",
         )
 
-    jobs = [
-        register_job(org_a, f"exec_a_{i}") for i in range(10)
-    ] + [
+    jobs = [register_job(org_a, f"exec_a_{i}") for i in range(10)] + [
         register_job(org_b, f"exec_b_{i}") for i in range(10)
     ]
     await asyncio.gather(*jobs)
@@ -417,9 +431,7 @@ async def test_14_concurrent_cross_tenant_operations():
     assert len(term_a) == 10
 
     # Verify Tenant B's executions remain completely active and undisturbed
-    active_b = [
-        e.execution_id for e in registry._active.values() if e.organization_id == org_b
-    ]
+    active_b = [e.execution_id for e in registry._active.values() if e.organization_id == org_b]
     assert len(active_b) == 10
 
     # Cleanup Tenant B
@@ -443,8 +455,13 @@ def test_16_worker_tracking_collision_defense():
     f2 = _tracking_filename("tenant_corp", "job1")
 
     assert f1 != f2, f"Worker tracking filename collision detected: {f1} == {f2}"
-    assert f1 == "tenant__corp_job1.json"
-    assert f2 == "tenant_corp__job1.json"
+    assert f1.startswith("trk_v2_") and f1.endswith(".json")
+    assert f2.startswith("trk_v2_") and f2.endswith(".json")
+
+    # Counterexample from CTO Directive: "a_", "b" vs "a", "_b"
+    f_sub1 = _tracking_filename("a_", "b")
+    f_sub2 = _tracking_filename("a", "_b")
+    assert f_sub1 != f_sub2, f"Collision detected for underscore boundary: {f_sub1} == {f_sub2}"
 
 
 # Scenario 17: Policy lookup ambiguity

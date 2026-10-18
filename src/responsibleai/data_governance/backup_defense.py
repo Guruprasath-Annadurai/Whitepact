@@ -34,15 +34,14 @@ from responsibleai.db.engine import (
     DatabaseEngine,
     eval_baselines,
     eval_runs,
+    governance_approval_votes,
     governance_approvals,
-    governance_consent_proofs,
     governance_delegations,
     governance_execution_authorizations,
     governance_execution_nonces,
     governance_policies,
     governance_policy_versions,
     governance_revocation_epochs,
-    governance_root_authority_records,
     iam_api_key_lineage,
     iam_scim_groups,
     iam_scim_users,
@@ -950,7 +949,28 @@ class RestoreReconciliationEngine:
                         )
                         revoked_keys += (r_k.rowcount or 0) + (r_ik.rowcount or 0)
 
-                        # Cascade erase of all restored tenant operational/eval/authority data
+                        # Purge approval votes before approvals to preserve FK integrity
+                        approval_ids = [
+                            row[0]
+                            for row in (
+                                await conn.execute(
+                                    select(governance_approvals.c.id).where(
+                                        governance_approvals.c.org_id == org.id
+                                    )
+                                )
+                            ).fetchall()
+                        ]
+                        if approval_ids:
+                            await conn.execute(
+                                delete(governance_approval_votes).where(
+                                    governance_approval_votes.c.approval_id.in_(approval_ids)
+                                )
+                            )
+
+                        # Cascade erase of transient/active operational and delegation data.
+                        # Note: evidence, consent proofs, and root authority records are
+                        # legally required for retention under SOC2/GDPR Art 17(3)(e) and are
+                        # strictly preserved.
                         for tbl, col in [
                             (eval_runs, "org_id"),
                             (eval_baselines, "org_id"),
@@ -959,12 +979,9 @@ class RestoreReconciliationEngine:
                             (governance_approvals, "org_id"),
                             (governance_policies, "org_id"),
                             (governance_policy_versions, "org_id"),
-                            (governance_delegations, "org_id"),
-                            (governance_root_authority_records, "organization_id"),
-                            (governance_consent_proofs, "organization_id"),
-                            (governance_execution_authorizations, "organization_id"),
                             (governance_execution_nonces, "organization_id"),
-                            (governance_revocation_epochs, "organization_id"),
+                            (governance_execution_authorizations, "organization_id"),
+                            (governance_delegations, "org_id"),
                             (iam_scim_users, "org_id"),
                             (iam_scim_groups, "org_id"),
                             (web_memberships, "org_id"),
@@ -972,6 +989,34 @@ class RestoreReconciliationEngine:
                             c_attr = getattr(tbl.c, col)
                             r_del = await conn.execute(delete(tbl).where(c_attr == org.id))
                             erased_records += r_del.rowcount or 0
+
+                        # Ensure revocation epoch is elevated to maximum to invalidate any stale restored grants
+                        epoch_row = (
+                            await conn.execute(
+                                select(governance_revocation_epochs).where(
+                                    governance_revocation_epochs.c.organization_id == org.id,
+                                    governance_revocation_epochs.c.scope == "tenant_global",
+                                )
+                            )
+                        ).fetchone()
+                        if epoch_row is not None:
+                            await conn.execute(
+                                update(governance_revocation_epochs)
+                                .where(
+                                    governance_revocation_epochs.c.organization_id == org.id,
+                                    governance_revocation_epochs.c.scope == "tenant_global",
+                                )
+                                .values(epoch=max(epoch_row.epoch + 1000, 999999), updated_at=now)
+                            )
+                        else:
+                            await conn.execute(
+                                insert(governance_revocation_epochs).values(
+                                    organization_id=org.id,
+                                    scope="tenant_global",
+                                    epoch=999999,
+                                    updated_at=now,
+                                )
+                            )
 
                     # Ensure Store A tenant_tombstones contains all Store B tombstones
                     existing_a_ids = {t.org_id for t in tombstones_a}
@@ -1010,7 +1055,8 @@ class RestoreReconciliationEngine:
                                 await conn.execute(
                                     update(governance_revocation_epochs)
                                     .where(
-                                        governance_revocation_epochs.c.organization_id == rec.tenant_id,
+                                        governance_revocation_epochs.c.organization_id
+                                        == rec.tenant_id,
                                         governance_revocation_epochs.c.scope == "tenant_global",
                                     )
                                     .values(epoch=rec.security_epoch, updated_at=now)
@@ -1019,7 +1065,9 @@ class RestoreReconciliationEngine:
                         else:
                             org_exists = (
                                 await conn.execute(
-                                    select(organizations.c.id).where(organizations.c.id == rec.tenant_id)
+                                    select(organizations.c.id).where(
+                                        organizations.c.id == rec.tenant_id
+                                    )
                                 )
                             ).fetchone()
                             if org_exists and rec.tenant_id not in tombstoned_ids:

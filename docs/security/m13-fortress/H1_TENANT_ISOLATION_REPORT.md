@@ -13,13 +13,19 @@
 
 Workstream M13-H1 evaluated the complete multi-tenant security boundary of the WhitePact governance engine across application APIs, database foreign key constraints, background workers, MCP session transports, and distributed execution tracking.
 
-During adversarial penetration testing, two critical P0 vulnerabilities were identified, independently reproduced with failing test cases, and repaired:
+During adversarial penetration testing, three critical P0 vulnerabilities were identified, independently reproduced with failing test cases, and repaired:
 1. **Defect H1-01 (P0): Cross-Tenant MCP SSE Session Injection via Unscoped Credentials.**
    In `src/responsibleai/mcp/server.py`, the session post-message handler checked `if owner_client_id and ctx.org_id and owner_client_id != ctx.org_id:`. When a caller authenticated with an unscoped credential (`ctx.org_id is None`), the conditional failed open, permitting cross-tenant SSE message injection into tenant-bound sessions.
 2. **Defect H1-02 (P0): In-Flight Worker Tracking Filename Collision & Prefix Ambiguity Poisoning.**
    In `src/responsibleai/isolation/in_flight.py`, distributed execution files were written as `{organization_id}_{execution_id}.json`. When tenant `"org"` inspected remote worker status, a corrupt tracking file for tenant `"org_corp"` (`org_corp_exec.json`) matched `"org_"`, falsely poisoning tenant `"org"` and locking it into an unresolved containment state (`has_unresolved("org") == True`). Furthermore, unescaped tenant and execution IDs permitted path traversal outside the tracking directory.
+3. **Defect H1-03 (P0): Underscore Delimiter Collision in URL-Quoted Filename Encoding.**
+   In `src/responsibleai/isolation/in_flight.py`, URL-quoting identifiers while joining with `__` preserved underscores. Consequently, distinct pairs such as `(org="a_", exec="b")` and `(org="a", exec="_b")` both mapped to `a___b.json`. This allowed a malicious tenant with trailing underscores to overwrite or collide with sibling tenant tracking files.
 
-Both defects have been remediated, verified against negative reproducers, and subjected to a comprehensive 20-scenario adversarial qualification suite (`tests/test_h1_tenant_isolation_adversarial.py`) with 100% pass rate.
+All three defects have been remediated, verified against negative reproducers, and subjected to three dedicated test suites:
+- `tests/test_h1_reproducers.py` (3/3 PASS)
+- `tests/test_h1_tenant_isolation_adversarial.py` (20/20 PASS)
+- `tests/test_h1_collision_invariance.py` (20/20 PASS)
+- `tests/test_h1_mcp_sse_transport_security.py` (11/11 PASS)
 
 ---
 
@@ -62,9 +68,28 @@ Both defects have been remediated, verified against negative reproducers, and su
   AssertionError: VULNERABILITY CONFIRMED: Tenant 'org' inspected and was poisoned by 'org_corp' file:
   [{'execution_id': 'corp_exec999', 'organization_id': 'org', ... 'error': 'Tracking file inaccessible'}]
   ```
+
+### 2.3 Defect H1-03: Underscore Delimiter Tenant Isolation Collision
+- **File:** `src/responsibleai/isolation/in_flight.py`
+- **Root Cause:** Joining URL-quoted identifiers with `__` preserved underscores (`urllib.parse.quote` does not encode `_`). Thus, `org="a_"` with `exec="b"` produces `a___b.json`, identically matching `org="a"` with `exec="_b"`.
+- **Negative Reproducer:** `tests/test_h1_reproducers.py::test_reproduce_h1_03_underscore_delimiter_tenant_collision`
+- **Pre-Fix Failure Evidence:**
+  ```text
+  AssertionError: VULNERABILITY CONFIRMED: Collision detected between distinct tenant/execution pairs!
+  file1: 'a___b.json'
+  file2: 'a___b.json'
+  ```
 - **Remediation:**
-  1. Implemented `_tracking_filename(organization_id, execution_id)` using URL encoding (`urllib.parse.quote(..., safe="")`) to eliminate path traversal and introduced double-underscore `__` as the immutable tenant-to-execution delimiter: `safe_org__safe_exec.json`.
-  2. In `_check_remote_worker_active()`, modern files with `__` are parsed for exact tenant match before reading or error attribution. Legacy single-underscore files are inspected via JSON content; if unreadable and without explicit delimiters, they are never attributed to a tenant prefix.
+  1. Implemented domain-separated, length-prefixed canonical binary tuple encoding:
+     ```python
+     def _canonical_identity_bytes(domain: str, identifier: str) -> bytes:
+         encoded = identifier.encode("utf-8")
+         return f"{domain}{len(encoded)}:".encode("ascii") + encoded
+     ```
+  2. Generated strictly injective, fixed-length filenames:
+     `trk_v2_{sha256_tenant}_{sha256_exec}.json` (141 characters total, guaranteed well below 255-byte POSIX limits).
+  3. Added software collision guard in `_record_cross_worker_registration` asserting existing files match the identical `(org_id, exec_id)` tuple.
+  4. Refined `_check_remote_worker_active()` to isolate corrupt legacy tracking files to admin only, while strictly filtering v2 files by tenant SHA-256 digest.
 
 ---
 
@@ -89,7 +114,7 @@ The complete adversarial matrix was executed against PostgreSQL and SQLite runti
 | 13 | Suspended tenant access | `ExecutionNonceRepository.consume` | **PASS** | Denied with `OrganizationNotGovernableError` |
 | 14 | Concurrent cross-tenant operations | `InFlightExecutionRegistry` | **PASS** | 10 concurrent jobs per tenant terminate independently |
 | 15 | Cache-key namespace collisions | `TrustClient` cache keys | **PASS** | Namespace prefix prevents cross-tenant pollution |
-| 16 | Worker tracking filename collision | `_tracking_filename` | **PASS** | `"tenant__corp_job1"` != `"tenant_corp__job1"` |
+| 16 | Worker tracking filename collision | `_tracking_filename` | **PASS** | Collision-invariance verified across 20 edge-case criteria |
 | 17 | Policy lookup ambiguity | `PolicyRepository.get_policy` | **PASS** | Identical rule IDs resolve strictly to owner org |
 | 18 | Cross-tenant artifact path traversal | Path canonicalization | **PASS** | Path escaping tenant boundary raises `PermissionError` |
 | 19 | Unauthorized admin enumeration | `/api/orgs` | **PASS** | Scoped admin key only enumerates caller's organization |
@@ -99,14 +124,16 @@ The complete adversarial matrix was executed against PostgreSQL and SQLite runti
 
 ## 4. Verification Provenance
 
-- **Test Suite:** `tests/test_h1_tenant_isolation_adversarial.py` (20 passed in 33.25s)
-- **Reproducers:** `tests/test_h1_reproducers.py` (2 passed in 4.53s)
-- **Regressions:**
+- **Test Suite (Adversarial Matrix):** `tests/test_h1_tenant_isolation_adversarial.py` (20 passed in 12.14s)
+- **Test Suite (Collision Invariance):** `tests/test_h1_collision_invariance.py` (20 passed in 2.64s)
+- **Test Suite (MCP SSE Transport Security):** `tests/test_h1_mcp_sse_transport_security.py` (11 passed in 8.68s)
+- **Reproducers:** `tests/test_h1_reproducers.py` (3 passed in 0.95s)
+- **Baseline Regressions:**
   - `tests/test_p0_linux_containment.py`: 10 passed
   - `tests/test_tenant_isolation.py`: 4 passed
   - `tests/test_tenant_isolation_org_admin.py`: 2 passed
   - `tests/test_tenant_isolation_webhooks.py`: 1 passed
-- **Total Tests Passed:** 39 passed, 0 failed.
+- **Total Tests Passed:** 71 passed, 0 failed.
 
 ---
 

@@ -31,21 +31,16 @@ import asyncio
 import gc
 import json
 import os
-import sys
 import tempfile
 import time
 import uuid
-from pathlib import Path
-from unittest.mock import MagicMock
 
 import pytest
-from sqlalchemy import delete, insert, select, update
+from sqlalchemy import insert, select, update
 
 from responsibleai.db import EvidenceRepository, create_engine
 from responsibleai.db.engine import (
     governance_approvals,
-    governance_evidence,
-    governance_evidence_chain_heads,
     governance_execution_nonces,
     governance_revocation_epochs,
     organizations,
@@ -61,13 +56,6 @@ from responsibleai.governance import (
 from responsibleai.governance.evidence import EvidenceRecord, build_evidence_record
 from responsibleai.governance.evidence_bundle import build_evidence_bundle, verify_evidence_bundle
 from responsibleai.governance.policy import Policy, PolicyRule
-from responsibleai.isolation.in_flight import (
-    InFlightExecution,
-    InFlightExecutionRegistry,
-    _ensure_distributed_dir,
-    _record_cross_worker_registration,
-    _remove_cross_worker_registration,
-)
 
 
 @pytest.fixture()
@@ -105,7 +93,9 @@ async def _seed_bench_org(engine, org_id: str):
             )
 
 
-def _make_bench_action(org_id: str, idx: int = 0, size_bytes: int = 100) -> tuple[ActionRequest, AuthorityContext]:
+def _make_bench_action(
+    org_id: str, idx: int = 0, size_bytes: int = 100
+) -> tuple[ActionRequest, AuthorityContext]:
     actor = f"actor-{org_id}-{idx}"
     identity = IdentityContext(identity_id=actor, kind="api_key", org_id=org_id)
     agent = AgentContext(identity=identity, organization_id=org_id, agent_id=f"agent-{idx}")
@@ -406,7 +396,6 @@ async def test_12_worker_pool_exhaustion_fail_closed():
 # Scenario 13: File descriptor / socket lifecycle cleanup
 def test_13_file_descriptor_lifecycle_cleanup():
     # Creating and closing 100 temporary file handles without leak
-    initial_handles = []
     for _ in range(100):
         with tempfile.NamedTemporaryFile() as tmp:
             tmp.write(b"fd-test")
@@ -434,8 +423,9 @@ def test_14_sustained_evaluation_latency_percentiles():
     p95 = latencies[int(n * 0.95)]
     p99 = latencies[int(n * 0.99)]
 
-    # In-memory p50 must be sub-millisecond, p99 < 5ms
+    # In-memory p50 must be sub-millisecond, p95 < 2.5ms, p99 < 5ms
     assert p50 < 1.0, f"p50 too high: {p50}ms"
+    assert p95 < 2.5, f"p95 too high: {p95}ms"
     assert p99 < 5.0, f"p99 too high: {p99}ms"
 
 
@@ -479,12 +469,14 @@ async def test_16_db_lock_contention_concurrent_grants(bench_engine):
 
 # Scenario 17: In-flight execution tracking scan latency with 500 tracked executions
 def test_17_inflight_tracking_scan_latency(tmp_path):
+    from responsibleai.isolation.in_flight import _tracking_filename
+
     # Benchmarking scanning 500 JSON entries
     tracking_dir = tmp_path / "tracking_bench"
     tracking_dir.mkdir(parents=True, exist_ok=True)
 
     for i in range(500):
-        f = tracking_dir / f"org_bench_{i:04d}__exec_{i:04d}.json"
+        f = tracking_dir / _tracking_filename(f"org_bench_{i:04d}", f"exec_{i:04d}")
         f.write_text(json.dumps({"org": f"org-{i}", "pid": os.getpid()}))
 
     t0 = time.perf_counter()
