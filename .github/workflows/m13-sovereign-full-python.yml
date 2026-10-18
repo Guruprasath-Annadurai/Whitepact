@@ -51,6 +51,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           ref: 265ab88479db71f7b063f6fb247bda495367d41d
+          fetch-depth: 2
           persist-credentials: false
       - name: Record tested source
         run: |
