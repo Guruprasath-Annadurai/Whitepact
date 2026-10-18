@@ -3432,43 +3432,14 @@ async def restore_status() -> JSONResponse:
 @app.post("/api/restore/reconcile", tags=["ops"], include_in_schema=False)
 @app.post("/api/v1/restore/reconcile", tags=["ops"])
 async def restore_reconcile(request: Request) -> JSONResponse:
-    """Narrow operator recovery endpoint to trigger post-restore lifecycle reconciliation."""
-    from responsibleai.data_governance.backup_defense import (
-        RestoreReconciliationEngine,
-        RestoreReconciliationError,
-        get_restore_readiness_gate,
+    """Public restore mutation is blocked pending independent operator qualification."""
+    return JSONResponse(
+        status_code=503,
+        content={
+            "error": "RESTORE_SECURITY_QUALIFICATION_REQUIRED",
+            "message": "Restore admission requires independently qualified operator authorization and reconciliation.",
+        },
     )
-
-    if _db_engine is None:
-        return JSONResponse(
-            status_code=503,
-            content={"error": "db_unavailable", "message": "Database is not initialized."},
-        )
-
-    gate = get_restore_readiness_gate()
-    engine = RestoreReconciliationEngine(engine=_db_engine, gate=gate)
-    try:
-        report = await engine.reconcile_post_restore(reconciled_by="operator-recovery-endpoint")
-        return JSONResponse(
-            content={
-                "status": "success",
-                "report_id": report.id,
-                "reconciliation_status": report.status,
-                "tombstones_detected": report.tombstones_detected,
-                "tenants_quarantined": report.tenants_quarantined,
-            },
-            status_code=200,
-        )
-    except RestoreReconciliationError as exc:
-        logger.error("restore_reconciliation_failed", error=str(exc))
-        return JSONResponse(
-            status_code=500,
-            content={
-                "error": "reconciliation_failed",
-                "message": "Post-restore reconciliation failed. Details are in the server log.",
-                "gate_state": gate.state.value,
-            },
-        )
 
 
 @app.get("/api/metrics", tags=["ops"])

@@ -57,7 +57,7 @@ jobs:
           docker build -f Dockerfile.isolation -t whitepact-isolated-runtime:sovereign .
       - name: A2 and B1 positive and negative PostgreSQL qualification
         run: |
-          python -m pytest tests/test_sovereign_authority.py tests/test_m13_convergence_a2.py -o addopts='' --junitxml=/tmp/sovereign.xml --tb=short -ra
+          python -m pytest tests/test_sovereign_authority.py tests/test_m13_convergence_a2.py tests/test_m13_convergence_restore_http.py -o addopts='' --junitxml=/tmp/sovereign.xml --tb=short -ra
           python -c 'import xml.etree.ElementTree as E; r=E.parse("/tmp/sovereign.xml"); assert not list(r.iter("skipped")) and not list(r.iter("failure")) and not list(r.iter("error"))'
       - name: Genuine default-disabled customer journey
         if: ${{ !cancelled() && steps.environment.conclusion == 'success' }}

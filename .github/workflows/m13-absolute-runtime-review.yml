@@ -58,7 +58,7 @@ jobs:
         env:
           PYTHONPATH: src:.
         run: |
-          python -m pytest scripts/engineering/reproducers/test_m13_convergence_tracking.py tests/test_m13_runtime_schema_compatibility.py tests/test_m13_apex_database_role_retirement.py -o addopts='' --tb=short -ra
+          python -m pytest scripts/engineering/reproducers/test_m13_convergence_tracking.py tests/test_m13_convergence_tracking.py tests/test_m13_runtime_schema_compatibility.py tests/test_m13_apex_database_role_retirement.py -o addopts='' --tb=short -ra
       - name: Unchanged counterexamples and neighboring runtime contracts
         env:
           PYTHONPATH: src:.
