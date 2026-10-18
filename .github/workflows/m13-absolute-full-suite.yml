@@ -67,6 +67,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip setuptools build
+          python -m pip install 'hatchling==1.32.0'
           pip install -e ".[dev,openai,anthropic,sso,sentiment,postgres,redis]"
           pip install -r tests/requirements-wave1-frameworks.txt
 
