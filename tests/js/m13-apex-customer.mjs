@@ -22,7 +22,7 @@ function mark(phase, status, extra = {}) { stages.set(phase, { phase, status, ..
 async function call(path, method = "GET", body, apiKey) {
   const result = await page.evaluate(async ({ path, method, body, apiKey }) => {
     const csrf = document.cookie.split("; ").find(item => item.startsWith("wp_csrf="))?.slice(8);
-    const response = await fetch(path, { method, credentials: "same-origin", signal: AbortSignal.timeout(15000), headers: { "Content-Type": "application/json", ...(csrf ? { "X-WP-CSRF": csrf, "X-WhitePact-CSRF": csrf } : {}), ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+    const response = await fetch(path, { method, credentials: "same-origin", signal: AbortSignal.timeout(path.endsWith("/execute") ? 60000 : 15000), headers: { "Content-Type": "application/json", ...(csrf ? { "X-WP-CSRF": csrf, "X-WhitePact-CSRF": csrf } : {}), ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
     let value = null;
     try { value = await response.json(); } catch { /* Invalid success remains unconfirmed. */ }
     return { status: response.status, value };
@@ -124,7 +124,7 @@ try {
   const stepup = expect(await call(`${authority}/webauthn/challenge`, "POST", { action: "COMPLETE_ROOT_BOOTSTRAP", operation_digest: digest }), 200);
   assert.equal(stepup.origin, origin.origin); assert.equal(stepup.rp_id, origin.hostname);
   const proof = sign(null, Buffer.from(`WP_ROOT_POP:${org}:${boot.nonce}:${tokenHash}`), rootKey.privateKey).toString("base64url");
-  const consent = { scope_description: "Harmless local APEX read only", purpose: "Independent ephemeral customer qualification", allowed_action_types: ["apex.local.read"], allowed_targets: ["apex:local-read"], consent_method: "API_AUTHENTICATED_REQUEST" };
+  const consent = { scope_description: "Harmless local APEX read only", purpose: "Independent ephemeral customer qualification", allowed_action_types: [config.developmentAgentPrototype ? "rai_policy_check" : "apex.local.read"], allowed_targets: [config.developmentAgentPrototype ? "rai_policy_check" : "apex:local-read"], consent_method: "API_AUTHENTICATED_REQUEST" };
   response = await call(`${authority}/bootstrap/complete`, "POST", { token: boot.token, nonce: boot.nonce, root_public_key: publicKey, root_signature: proof, webauthn_assertion: await assertion(stepup, registration.credential_id), ...consent });
   const established = expect(response, 200, response.value?.status === "BOOTSTRAPPED" && response.value?.passkey_verified === true && response.value?.proof_of_possession_verified === true);
   mark(current, "PASS"); current = "root_activation";
@@ -160,6 +160,10 @@ try {
   assert.ok(policy.rules.some(persisted => persisted.rule_id === rule.rule_id && persisted.effect === "REQUIRE_APPROVAL"));
   mark(current, "PASS");
   current = "judgment";
+  if (config.developmentAgentPrototype) {
+    const { runDevelopmentAgent } = await import("./sovereign-agent-customer.mjs");
+    await runDevelopmentAgent({ origin, call, expect, mark, setPhase: phase => { current = phase; }, agent, authority, consent, requests });
+  } else {
   const credentialAdmission = await call("/api/web/api-keys", "POST", { name: "Ephemeral APEX intent qualification", environment: "test", scopes: ["governance:read", "governance:write"], expires_at: new Date(Date.now() + 120000).toISOString() });
   if ([401, 403].includes(credentialAdmission.status)) {
     const credentialError = credentialAdmission.value?.detail?.error ?? credentialAdmission.value?.detail?.code ?? credentialAdmission.value?.error;
@@ -174,6 +178,7 @@ try {
       expect(intentAdmission, 201);
       mark(current, "BLOCKED", { reason: "INTENT_NARROWING_IS_NOT_CUSTOMER_JUDGMENT_OR_EXECUTION_GRANT", http_status: intentAdmission.status });
     }
+  }
   }
   stop = current;
 } catch (error) {
@@ -194,5 +199,5 @@ try {
   await browser?.close();
   stop = boundary ?? stop;
   const phases = [...stages.values()];
-  console.log(JSON.stringify({ kind: "ACTUAL_APEX_POSTGRESQL_HTTP_CHROMIUM", acceptance: phases.some(phase => phase.status === "FAIL") ? "FAIL" : "BLOCKED", stop, stages: phases, requests, browser: version, authority_seeded: false, limitations: ["Virtual browser authenticator, not physical hardware certification", "No credential imports or forged signatures", "No later privileged stage run after a failed or blocked boundary"] }));
+  console.log(JSON.stringify({ kind: "ACTUAL_APEX_POSTGRESQL_HTTP_CHROMIUM", acceptance: phases.some(phase => phase.status === "FAIL") ? "FAIL" : phases.every(phase => phase.status === "PASS") ? "PASS" : "BLOCKED", stop: phases.every(phase => phase.status === "PASS") ? null : stop, stages: phases, requests, browser: version, authority_seeded: false, development_prototype: Boolean(config.developmentAgentPrototype), production_enabled: false, limitations: ["Virtual browser authenticator, not physical hardware certification", "No credential imports or forged signatures", "No later privileged stage run after a failed or blocked boundary", "Local chain verification is not independent witnessing", "B1 is development-only and default-disabled"] }));
 }

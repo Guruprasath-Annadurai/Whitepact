@@ -210,6 +210,7 @@ class OrgContext:
     # Downstream governance records it as authentication evidence; it never
     # becomes an authority grant.
     authentication_method: str = "api_key"
+    authentication_epoch: int | None = None
 
 
 @dataclass

@@ -56,6 +56,7 @@ from responsibleai.db.revocation_epoch_repository import (
     lock_epoch,
 )
 from responsibleai.enterprise.audit import EnterpriseAuditLog
+from responsibleai.enterprise.authority.assurance import require_recent_owner
 from responsibleai.enterprise.authority.errors import (
     agent_not_found,
     already_voted,
@@ -257,6 +258,9 @@ class CustomerAuthorityService:
         """
         self._verify_tenant_and_role(actor, org_id, require_owner=True)
 
+        # Ratified A2 is a server requirement, not a caller-selected flag.
+        require_passkey_stepup = True
+
         async with self._engine.raw.connect() as conn:
             # Enforce organization is active
             org_row = (
@@ -350,6 +354,7 @@ class CustomerAuthorityService:
                 )
 
             # 4. Check if organization has an active pending quorum recovery request
+            await require_recent_owner(conn, actor, org_id)
             pending_rec = (
                 await conn.execute(
                     select(authority_recovery_requests.c.id).where(
@@ -395,13 +400,17 @@ class CustomerAuthorityService:
 
         token = f"wp_boot_{secrets.token_urlsafe(32)}"
         token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
-        nonce = f"wp_nonce_{secrets.token_hex(16)}"
         now_dt = _now()
         expires_at_dt = now_dt + timedelta(seconds=ttl_seconds)
         expires_at = _iso(expires_at_dt)
         rec_id = f"wp_brec_{uuid.uuid4().hex}"
 
         async with self._engine.raw.begin() as conn:
+            epoch = await lock_epoch(conn, org_id)
+            await require_recent_owner(conn, actor, org_id)
+            # Opaque, server-stored nonce binds the A2 ceremony generation without
+            # adding schema fields or accepting a client-provided epoch.
+            nonce = f"a2.{epoch:x}.{secrets.token_hex(16)}"
             existing_rec = (
                 await conn.execute(
                     select(trust_fabric_bootstrap_records).where(
@@ -881,7 +890,7 @@ class CustomerAuthorityService:
 
         async with self._engine.raw.begin() as conn:
             # 1. Lock tenant revocation epoch to serialize concurrent ceremony attempts
-            await lock_epoch(conn, org_id)
+            current_epoch = await lock_epoch(conn, org_id)
 
             # Enforce organization is active
             org_row = (
@@ -993,6 +1002,7 @@ class CustomerAuthorityService:
                 raise root_already_exists("Organization has an active quorum recovery in progress.")
 
             # 2. Check no active canonical root already exists (anti-race)
+            await require_recent_owner(conn, actor, org_id)
             existing_canon = (
                 await conn.execute(
                     select(governance_root_authority_records.c.root_id).where(
@@ -1025,6 +1035,14 @@ class CustomerAuthorityService:
             # Constant-time token hash comparison
             if not secrets.compare_digest(rec["token_hash"], token_hash):
                 raise bootstrap_invalid("Bootstrap token does not match.")
+            try:
+                generation, issued_epoch, _ = rec["nonce"].split(".", 2)
+                if generation != "a2" or int(issued_epoch, 16) != current_epoch:
+                    raise ValueError("Stale ceremony generation")
+            except ValueError:
+                raise bootstrap_invalid(
+                    "A2 ceremony must be restarted after an authority change."
+                ) from None
 
             # Anti-replay check
             if rec["consumed_at"] is not None:
@@ -1046,11 +1064,11 @@ class CustomerAuthorityService:
 
             # Phishing-resistant WebAuthn Step-up check
             step_up_info = None
-            if rec.get("require_passkey_stepup"):
-                if not webauthn_assertion:
-                    raise passkey_step_up_required(
-                        "Phishing-resistant passkey step-up is required to complete root bootstrap."
-                    )
+            # A2 applies to legacy ceremonies too; stored flags cannot bypass it.
+            if not webauthn_assertion:
+                raise passkey_step_up_required(
+                    "Phishing-resistant passkey step-up is required to complete root bootstrap."
+                )
 
             if webauthn_assertion:
                 op_digest = compute_canonical_operation_digest(
@@ -1072,6 +1090,12 @@ class CustomerAuthorityService:
                 )
 
             # Root Key Proof of Possession (PoP)
+            if key_algorithm != "Ed25519":
+                raise proof_of_possession_invalid("A2 root keys require Ed25519.")
+            if not root_signature:
+                raise proof_of_possession_invalid(
+                    "Root key proof of possession is mandatory under A2."
+                )
             if root_signature:
                 verify_root_proof_of_possession(
                     org_id=org_id,
@@ -3271,6 +3295,9 @@ class CustomerAuthorityService:
         request_id = f"wp_recov_{uuid.uuid4().hex}"
 
         async with self._engine.raw.begin() as conn:
+            # Recovery initiation changes agent authentication qualification and
+            # pending approval safety. Serialize and fence it atomically.
+            await bump_epoch_on_connection(conn, org_id)
             await conn.execute(
                 authority_recovery_requests.insert().values(
                     id=request_id,

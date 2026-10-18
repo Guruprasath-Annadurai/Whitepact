@@ -193,6 +193,7 @@ from responsibleai.db.execution_nonce_repository import ExecutionNonceRepository
 from responsibleai.db.migrate import MigrationError, run_migrations_or_raise
 from responsibleai.db.revocation_epoch_repository import RevocationEpochRepository
 from responsibleai.db.root_authority_repository import RootAuthorityRepository
+from responsibleai.enterprise.agent_auth_router import router as development_agent_auth_router
 from responsibleai.enterprise.authority.router import router as customer_authority_router
 from responsibleai.enterprise.router import router as enterprise_router
 from responsibleai.enterprise.security.rate_limit import DurableIdentityRateLimiter
@@ -567,6 +568,10 @@ async def lifespan(application: FastAPI):
     from responsibleai.enterprise.runtime import configure_enterprise
 
     configure_enterprise(_db_engine)
+    if settings.dev_agent_auth_enabled:
+        from responsibleai.enterprise.agent_auth import DevelopmentAgentAuth
+
+        await DevelopmentAgentAuth(_db_engine, settings).initialize()
     _audit_repo = AuditRepository(_db_engine)
     _incident_repo = IncidentRepository(_db_engine)
     _leaderboard_repo = LeaderboardRepository(_db_engine)
@@ -745,6 +750,7 @@ app = FastAPI(
 
 app.include_router(enterprise_router)
 app.include_router(customer_authority_router)
+app.include_router(development_agent_auth_router)
 app.include_router(enterprise_security_router)
 app.include_router(sovereign_router)
 app.include_router(sovereign_web_router)

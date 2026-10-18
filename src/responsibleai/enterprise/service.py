@@ -104,6 +104,7 @@ class Actor:
     environment_id: str | None = None
     scopes: frozenset[str] = frozenset()
     request_id: str | None = None
+    session_id: str | None = None
 
 
 class EnterpriseIAM:

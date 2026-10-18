@@ -80,6 +80,7 @@ class WebPrincipal:
     org_plan: Plan | None
     role: Role | None
     csrf_hash: str
+    session_id: str | None = None
 
 
 def _now() -> datetime:
@@ -418,6 +419,7 @@ class WebIdentityRepository:
             org_plan=Plan(org.plan) if org else None,
             role=role_from_str(membership.role) if membership else None,
             csrf_hash=session.csrf_hash,
+            session_id=session.session_id,
         )
 
     async def revoke_session(self, token: str) -> None:

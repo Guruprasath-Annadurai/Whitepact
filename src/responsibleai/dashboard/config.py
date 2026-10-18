@@ -191,6 +191,10 @@ class Settings(BaseSettings):
         ),
         description="Deployment environment (development, staging, production).",
     )
+    dev_agent_auth_enabled: bool = Field(
+        default=False,
+        description="Explicit isolated-development B1 prototype only; production always refuses it.",
+    )
     policy_governance_mode: Literal["single_admin", "tiered"] = Field(
         default="single_admin",
         description=(

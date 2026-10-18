@@ -97,7 +97,7 @@ def validate_evidence(result: dict) -> None:
             raise ValueError("Privileged success after an unqualified boundary")
 
 
-async def attempt() -> dict:
+async def attempt(*, development_agent_prototype: bool = False) -> dict:
     mail = []
     delivery_secret, receipt_secret = secrets.token_urlsafe(32), secrets.token_urlsafe(32)
 
@@ -136,6 +136,7 @@ async def attempt() -> dict:
                         "api_keys": [],
                         "environment": "development",
                         "web_auth_dev_tokens": False,
+                        "dev_agent_auth_enabled": development_agent_prototype,
                         "web_session_secure": False,
                         "web_verification_delivery_url": f"{mailbox}/deliver",
                         "web_verification_delivery_token": delivery_secret,
@@ -145,6 +146,7 @@ async def attempt() -> dict:
                         config = {
                             "origin": origin,
                             "phases": PHASES,
+                            "developmentAgentPrototype": development_agent_prototype,
                             "receiptUrl": f"{mailbox}/receipt",
                             "receiptSecret": receipt_secret,
                             "credentials": {
@@ -167,7 +169,8 @@ async def attempt() -> dict:
                         )
                         try:
                             stdout, _stderr = await asyncio.wait_for(
-                                process.communicate(json.dumps(config).encode()), 180
+                                process.communicate(json.dumps(config).encode()),
+                                420 if development_agent_prototype else 180,
                             )
                             if process.returncode:
                                 raise RuntimeError("Browser failed; private diagnostics withheld")
@@ -216,9 +219,12 @@ async def attempt() -> dict:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--report", required=True, type=Path)
+    parser.add_argument("--development-agent-prototype", action="store_true")
     args = parser.parse_args()
     try:
-        evidence = asyncio.run(attempt())
+        evidence = asyncio.run(
+            attempt(development_agent_prototype=args.development_agent_prototype)
+        )
     except Exception as error:
         evidence = {"acceptance": "FAIL", "error_type": type(error).__name__}
     args.report.write_text(json.dumps(evidence, indent=2) + "\n")

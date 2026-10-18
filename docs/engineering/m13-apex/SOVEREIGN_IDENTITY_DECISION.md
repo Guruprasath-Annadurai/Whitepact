@@ -1,6 +1,10 @@
-# Founder Decision Record A — precise decision required, NOT RATIFIED
+# Founder Decision Record A — A2 RATIFIED; B1 DEVELOPMENT ONLY
 
-Status: proposed options only. No assurance or credential policy changed.
+Status: founder ratified A2 in Operation Sovereign Authority,2026-10-18.
+B1 architecture, isolated development prototype and qualification authorized;
+B1 production activation explicitly NOT authorized. Reusable human/service
+API credentials continue requiring IDENTITY_VERIFIED. Prior alternatives below
+remain decision history, not permission to weaken that separate gate.
 M13 OPEN. GLOBAL PRODUCTION NO-GO.
 
 ## Existing contracts
@@ -29,22 +33,23 @@ revocation primitives must remain the only authority path.
 | Option | Meaning | Consequence |
 |---|---|---|
 |A1|Independently established IDENTITY_VERIFIED before self-service root|Requires legitimate approved proofing integration; excludes mailbox-only onboarding|
-|A2 — recommendation, unapproved|Verified email plus recent server-verified WebAuthn UV for self-service root; enterprise can demand stronger proofing|Proves account/authenticator control, not legal identity; requires explicit policy, freshness, tenant binding and lifecycle qualification|
+|A2 — RATIFIED|Verified email plus recent server-verified WebAuthn UV for self-service root; enterprise can demand stronger proofing|Proves account/authenticator control, not legal identity; server enforcement, consent and root PoP mandatory|
 |A3|Mailbox/password alone|Insufficient recommended control for consequential self-service root; do not adopt implicitly|
 
-Minimum defensible account-control recommendation is A2, with server-enforced
+Selected account-control requirement is A2, with server-enforced
 UV/freshness and no silent optional-client-flag bypass of the selected policy.
-It is not a universal legal-identity assurance claim. Founder must select the
-product's actual assurance promise. Existing test behavior does not ratify A2.
+It is not a universal legal-identity assurance claim. Ratification comes from
+the explicit founder directive, not from prior passing tests.
 
 ## B. Agent authentication alternatives — independent decision
 
 | Option | Authentication contract | Implementation status |
 |---|---|---|
 |B0|Keep reusable credential requirement; legitimately proof customer identity through an approved provider and then use existing canonical issuance|Current gate retained; provider and proofing onboarding unavailable|
-|B1|Explicit new short-lived, proof-of-possession agent authentication contract under a qualified owner/root|Policy-dependent; NOT implemented or enabled|
+|B1|Explicit new short-lived, proof-of-possession agent authentication contract under a qualified owner/root|Development design/prototype/qualification AUTHORIZED; production disabled|
 
-A2 does not itself authorize B1 or weaken reusable-key issuance. If B1 is chosen,
+A2 does not weaken reusable-key issuance. The founder separately authorized B1
+development qualification. The approved development design follows this boundary:
 the smallest candidate is an authority-bound authentication credential: issuer
 qualified by the selected policy; agent key possession verified; tenant,
 application, agent, root/delegation reference, audience, expiry and revocation
@@ -92,15 +97,19 @@ old credential/schema compatibility; genuine full25-stage fresh-PG journey.
 Use no fabricated IDENTITY_VERIFIED state or approval/grant/evidence fixture to
 claim customer acceptance. Separate component tests remain separately labeled.
 
-## Exact founder decision
+## Ratified boundary and remaining enablement requirements
 
-1. Ratify A1 or A2 for self-service root and specify required proofing promises,
-   enterprise override and freshness/recovery requirements.
-2. Choose B0 with an approved legitimate provider/onboarding contract, or explicitly
-   authorize design/qualification of B1 with issuer, audience, lifetime, key
-   possession, revocation and assurance requirements. Neither is implied by A2.
-3. Approve migration/compatibility handling before enabling policy-dependent APIs.
+1. A2 root requires verified mailbox, recent server-verified UV, active authenticated
+   tenant ownership, explicit consent, root PoP and lifecycle/epoch checks. Caller
+   assurance flags cannot bypass requirements; stricter enterprise requirements stay.
+2. B1 is isolated and default-disabled in development; production is unconditionally
+   unavailable. See SOVEREIGN_AUTHORITY_B1.md for issuer, audience, lifetime,
+   possession, replay, session, rotation, revocation and storage contract.
+3. Production activation requires separate founder authorization after independent
+   security qualification, schema/version/operations review, full customer evidence
+   and mandatory compliance gates. No current directive grants production GO.
 
-Until then: reusable key gate unchanged, stage17 BLOCKED, stages18–24
-NOT_EXECUTED. Existing17 genuine stages preserved. No request for production
+Reusable key gate unchanged. Production stage17 remains BLOCKED until approved
+enablement; development-prototype stage results must be separately reported.
+Existing17 genuine stages preserved. No request for production
 deployment, protected merge, package publication or M14 authorization.
