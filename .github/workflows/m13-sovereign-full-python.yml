@@ -1,0 +1,190 @@
+name: M13 Sovereign Full Python Matrix
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Lint · Type-check · Test
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+    # The full suite (~6.6k tests) takes 40-55m per interpreter on a shared runner; 3.12 hit the former
+    # 55m limit on 2026-10-11 (a cancelled job, not a failing test). Raised, not skipped.
+    timeout-minutes: 90
+    env:
+      PYTHONPATH: src:.
+      WHITEPACT_REDIS_URL: redis://127.0.0.1:6379/0
+      WHITEPACT_REQUIRE_REDIS: "1"
+    services:
+      postgres:
+        image: postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685
+        env:
+          POSTGRES_USER: wp
+          POSTGRES_PASSWORD: wp
+          POSTGRES_DB: whitepact_e2e
+        ports:
+          - 55432:5432
+        options: >-
+          --health-cmd "pg_isready -U wp -d whitepact_e2e"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine@sha256:ff02b58f971e7d7d156a1267e283fcbbeee91773b6aa36c49dac28ecfe28eadf
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: 265ab88479db71f7b063f6fb247bda495367d41d
+          persist-credentials: false
+      - name: Record tested source
+        run: |
+          git rev-parse HEAD 'HEAD^{tree}' 'HEAD^'
+          test "$(git rev-parse HEAD)" = 265ab88479db71f7b063f6fb247bda495367d41d
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip setuptools
+          pip install -e ".[dev,openai,anthropic,sso,sentiment,postgres,redis]"
+
+      - name: Lint with ruff
+        if: ${{ !cancelled() }}
+        run: ruff check src/ tests/ sdk/python/
+
+      - name: Check formatting with ruff
+        if: ${{ !cancelled() }}
+        run: ruff format --check src/ tests/ sdk/python/
+
+      - name: Type-check with mypy
+        if: ${{ !cancelled() }}
+        run: mypy src/responsibleai
+
+      - name: Scan dependencies for known vulnerabilities
+        if: ${{ !cancelled() }}
+        run: |
+          pip install --require-hashes -r requirements-security.lock
+          # PYSEC-2026-597: nltk path traversal in nltk.data.load()/find() via
+          # percent-encoded "../" sequences. PYSEC-2026-3740: path traversal
+          # in model-artifact import/export APIs. Neither has a fixed release.
+          # nltk is an opt-in extra ([sentiment]), not installed by a
+          # plain `pip install rai-governance-platform` — this CI run
+          # installs it explicitly to keep VADER sentiment tests real.
+          # Triaged as not exploitable even when installed: this codebase's
+          # only nltk call is nltk.download("vader_lexicon", quiet=True), a
+          # hardcoded literal resource name. It does not call nltk.data.load,
+          # TransitionParser, AveragedPerceptron, PerceptronTagger, or maxent
+          # parameter APIs. Re-check when nltk ships a patched release.
+          # --skip-editable: this project itself is installed via `pip install -e .`
+          # (see "Install dependencies" above) and isn't published to PyPI under
+          # this exact version yet, which otherwise makes pip-audit hard-fail
+          # trying to look up the local editable install as if it were a
+          # third-party dependency, rather than actually finding no vulnerability.
+          # No --strict here: verified locally that this pip-audit version treats
+          # --skip-editable's skip notices as fatal errors under --strict, which
+          # defeats the point of skipping; the default (non-strict) mode already
+          # fails on a real vulnerability finding, which is what this step is for.
+          pip-audit --skip-editable \
+            --ignore-vuln PYSEC-2026-597 \
+            --ignore-vuln PYSEC-2026-3740
+
+      - name: Install mandatory Linux security-test tools
+        if: ${{ !cancelled() }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nftables iproute2 nginx acl
+
+      - name: Security-fix inclusion gate
+        if: ${{ !cancelled() }}
+        run: python scripts/check_security_fix_inclusion.py
+
+      - name: Security regression behavior gate
+        if: ${{ !cancelled() }}
+        run: python scripts/check_security_regressions.py
+
+      - name: Build the isolated tool runtime image
+        if: ${{ !cancelled() }}
+        # Real-tool isolation tests need an image that contains WhitePact. The stock
+        # python image cannot run the trusted runner. Used only by
+        # tests/test_isolation_real_tool_e2e.py (WHITEPACT_TEST_RUNTIME_IMAGE).
+        run: |
+          docker build -f Dockerfile.isolation -t whitepact-isolated-runtime:ci .
+          echo "WHITEPACT_TEST_RUNTIME_IMAGE=whitepact-isolated-runtime:ci" >> "$GITHUB_ENV"
+
+      - name: Build TypeScript SDK
+        if: ${{ !cancelled() }}
+        run: |
+          npm --prefix sdk/typescript ci --ignore-scripts --no-audit --no-fund
+          npm --prefix sdk/typescript run build
+
+      - name: Run tests with coverage
+        if: ${{ !cancelled() }}
+        env:
+          # Designated Linux security CI: a missing Docker daemon must fail the
+          # real container-isolation tests, never skip them (see
+          # docs/launch/QUALIFICATION_SKIP_POLICY.md).
+          WHITEPACT_REQUIRE_DOCKER_ISOLATION: "1"
+        run: |
+          pytest tests/ \
+            --junitxml=/tmp/full-python.xml \
+            --cov=src/responsibleai \
+            --cov-branch \
+            --cov-report=term-missing \
+            --cov-report=xml:coverage.xml \
+            --cov-report=json:coverage.json \
+            --cov-fail-under=80 \
+            -q
+
+      - name: Enforce branch coverage (OpenSSF dynamic_analysis)
+        if: ${{ !cancelled() }}
+        run: |
+          # --cov-fail-under=80 above gates on the BLENDED statement+branch
+          # percentage coverage.py's own terminal report prints -- not the
+          # same metric as OpenSSF's dynamic_analysis criterion, which asks
+          # for pure branch coverage (covered_branches / num_branches),
+          # isolated from statement coverage. Real pure branch coverage
+          # reached 80.19% via genuine new tests (see
+          # compliance/OPENSSF_DYNAMIC_ANALYSIS.md) -- this is now a real,
+          # hard-failing gate rather than informational-only.
+          python scripts/check_branch_coverage.py --threshold 80 --fail
+
+      - name: Enforce statement coverage (OpenSSF Gold)
+        if: ${{ !cancelled() }}
+        run: |
+          # Gold requires pure statement coverage >=90%. The coverage.py
+          # terminal "Cover" value is blended when branch measurement is on,
+          # so use an explicit statement-only calculation from coverage.json.
+          python scripts/check_statement_coverage.py --threshold 90 --fail
+
+      - name: Check documentation consistency (OpenSSF Silver documentation_current)
+        if: ${{ !cancelled() }}
+        run: python scripts/check_doc_consistency.py
+
+      - name: Preserve full-suite evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: sovereign-full-python-${{ matrix.python-version }}-265ab884
+          path: |
+            /tmp/full-python.xml
+            coverage.json
+            coverage.xml
+
