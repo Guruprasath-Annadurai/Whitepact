@@ -373,24 +373,27 @@ async def emergency_containment(
         return _error_response(exc, _request_id(request))
 
 
-@router.post("/recovery/requests")
-async def create_recovery_request(
-    org_id: str, request: Request, body: CreateRecoveryRequestBody
-) -> Any:
+async def _blocked_customer_recovery(request: Request, org_id: str) -> Any:
+    """No customer mutation until the independent recovery contract qualifies."""
     try:
         actor = await _web_actor(request)
-        return await _svc().create_recovery_request(
-            actor,
-            org_id=org_id,
-            request_type=body.request_type,
-            target_root_id=body.target_root_id,
-            proposed_parameters=body.proposed_parameters,
-            required_quorum_m=body.required_quorum_m,
-            eligible_quorum_n=body.eligible_quorum_n,
-            ttl_seconds=body.ttl_seconds,
+        if actor.org_id != org_id:
+            raise EnterpriseError("FORBIDDEN", "Organization access denied.", 403)
+        raise EnterpriseError(
+            "RECOVERY_SECURITY_QUALIFICATION_REQUIRED",
+            "Customer recovery is blocked pending independent security qualification.",
+            503,
         )
     except EnterpriseError as exc:
         return _error_response(exc, _request_id(request))
+
+
+@router.post("/recovery/requests", summary="BLOCKED: recovery security qualification required")
+async def create_recovery_request(
+    org_id: str, request: Request, body: CreateRecoveryRequestBody
+) -> Any:
+    return await _blocked_customer_recovery(request, org_id)
+
 
 @router.get("/recovery/requests")
 async def list_recovery_requests(org_id: str, request: Request) -> Any:
@@ -417,19 +420,7 @@ async def vote_recovery_request(
     request: Request,
     body: VoteRecoveryRequestBody,
 ) -> Any:
-    try:
-        actor = await _web_actor(request)
-        return await _svc().vote_recovery_request(
-            actor,
-            org_id=org_id,
-            request_id=request_id,
-            decision=body.decision,
-            action_digest=body.action_digest,
-            notes=body.notes,
-            webauthn_assertion=body.webauthn_assertion,
-        )
-    except EnterpriseError as exc:
-        return _error_response(exc, _request_id(request))
+    return await _blocked_customer_recovery(request, org_id)
 
 
 @router.post("/recovery/requests/{request_id}/execute")
@@ -439,15 +430,4 @@ async def execute_recovery_request(
     request: Request,
     body: ExecuteRecoveryRequestBody,
 ) -> Any:
-    try:
-        actor = await _web_actor(request)
-        return await _svc().execute_recovery_request(
-            actor,
-            org_id=org_id,
-            request_id=request_id,
-            action_digest=body.action_digest,
-            webauthn_assertion=body.webauthn_assertion,
-        )
-    except EnterpriseError as exc:
-        return _error_response(exc, _request_id(request))
-
+    return await _blocked_customer_recovery(request, org_id)

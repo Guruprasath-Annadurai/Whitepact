@@ -85,7 +85,7 @@ async def owner(request):
         challenge=b64url_decode(assertion["challenge"]),
         private_key=key,
     )
-    _, _, session = await identity.authenticate_passkey(
+    uv_token, uv_csrf, session = await identity.authenticate_passkey(
         client_data_b64=c,
         authenticator_data_b64=a,
         signature_b64=signature,
@@ -95,7 +95,7 @@ async def owner(request):
     if "session_id" in Actor.__dataclass_fields__:
         actor = replace(actor, session_id=session.session_id)
     try:
-        yield engine, identity, actor, password, session, key, credential
+        yield engine, identity, actor, password, session, key, credential, uv_token, uv_csrf
     finally:
         await engine.close()
         if databases:
@@ -126,7 +126,7 @@ async def test_a2_legitimate_uv_forces_server_mandatory_flags(owner):
 
 
 async def root(owner, *, signature_required=True, prepare_only=False):
-    engine, _, actor, _, _, key, credential = owner
+    engine, _, actor, _, _, key, credential, *_ = owner
     service = CustomerAuthorityService(engine)
     boot = await service.initiate_root_bootstrap(actor, org_id=actor.org_id)
     private = Ed25519PrivateKey.generate()
@@ -217,6 +217,88 @@ async def test_a2_root_key_possession_is_mandatory(owner):
     with pytest.raises(EnterpriseError) as error:
         await root(owner, signature_required=False)
     assert error.value.code == "PROOF_OF_POSSESSION_INVALID"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("owner", ["postgres"], indirect=True)
+async def test_unqualified_customer_recovery_routes_are_blocked(owner, monkeypatch):
+    import httpx
+    from fastapi import FastAPI
+    from sqlalchemy import func
+
+    from responsibleai.db.engine import (
+        authority_recovery_requests,
+        governance_root_authority_records,
+    )
+    from responsibleai.enterprise import runtime
+    from responsibleai.enterprise.authority.router import router
+
+    await root(owner)
+    engine, _, actor, *_ = owner
+    monkeypatch.setattr(runtime, "_engine", engine)
+    app = FastAPI()
+    app.include_router(router)
+    async with engine.raw.connect() as conn:
+        target = await conn.scalar(select(governance_root_authority_records.c.root_id))
+        roots_before = await conn.scalar(
+            select(func.count()).select_from(governance_root_authority_records)
+        )
+        requests_before = await conn.scalar(
+            select(func.count()).select_from(authority_recovery_requests)
+        )
+    base = f"/api/enterprise/organizations/{actor.org_id}/authority/recovery/requests"
+    payload = dict(
+        request_type="ROOT_KEY_REPLACEMENT",
+        target_root_id=target,
+        proposed_parameters={
+            "new_root_public_key": Ed25519PrivateKey.generate()
+            .public_key()
+            .public_bytes_raw()
+            .hex()
+        },
+        required_quorum_m=1,
+        eligible_quorum_n=1,
+    )
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://localhost"
+    ) as client:
+        client.cookies.set("wp_session", owner[7])
+        client.cookies.set("wp_csrf", owner[8])
+        headers = {"X-WP-CSRF": owner[8]}
+        responses = [
+            await client.post(base, json=payload, headers=headers),
+            await client.post(
+                base + "/unqualified/vote",
+                json={"decision": "APPROVE", "action_digest": "unqualified"},
+                headers=headers,
+            ),
+            await client.post(
+                base + "/unqualified/execute",
+                json={"action_digest": "unqualified"},
+                headers=headers,
+            ),
+        ]
+        assert [r.status_code for r in responses] == [503, 503, 503]
+        assert all(
+            r.json()["error"] == "RECOVERY_SECURITY_QUALIFICATION_REQUIRED" for r in responses
+        )
+        assert (await client.get(base)).status_code == 200
+        other_tenant = base.replace(actor.org_id, str(uuid.uuid4()))
+        assert (await client.post(other_tenant, json=payload, headers=headers)).status_code == 403
+        assert (
+            await client.post(base, json=payload, headers={"X-WP-CSRF": "wrong"})
+        ).status_code == 403
+        client.cookies.clear()
+        assert (await client.post(base, json=payload)).status_code == 401
+    async with engine.raw.connect() as conn:
+        assert (
+            await conn.scalar(select(func.count()).select_from(governance_root_authority_records))
+            == roots_before
+        )
+        assert (
+            await conn.scalar(select(func.count()).select_from(authority_recovery_requests))
+            == requests_before
+        )
 
 
 @pytest.mark.asyncio
