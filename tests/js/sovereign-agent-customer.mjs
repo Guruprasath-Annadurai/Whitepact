@@ -82,8 +82,14 @@ export async function runDevelopmentAgent({ origin, call, expect, mark, setPhase
 
   set("revocation");
   const disabled = expect(await call(`${authority}/agents/${agent.agent_id}/disable`, "POST", { reason: "Actual prototype authority revocation" }), 200);
-  assert.equal(disabled.lifecycle_state, "DISABLED");
-  mark(phase, "PASS", { agent_id: agent.agent_id, lifecycle_state: disabled.lifecycle_state });
+  assert.equal(disabled.status, "DISABLED");
+  assert.equal(disabled.agent_id, agent.agent_id);
+  assert.ok(disabled.revoked_delegations >= 1);
+  const inventory = expect(await call(`${authority}/agents`), 200);
+  const persisted = inventory.agents.find(item => item.agent_id === agent.agent_id);
+  assert.equal(persisted.lifecycle_state, "DISABLED");
+  assert.equal(persisted.has_active_delegation, false);
+  mark(phase, "PASS", { agent_id: agent.agent_id, lifecycle_state: persisted.lifecycle_state, revoked_delegations: disabled.revoked_delegations, revocation_epoch: disabled.revocation_epoch });
   set("post_revocation_execution_attempt");
   const denied = await agentCall(intentPath, { audience, intent, challenge_id: stale.challenge_id, signature: staleProof });
   assert.ok(issued.expires_at > Date.now() / 1000, "Expired credential cannot prove revocation");
