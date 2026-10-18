@@ -84,7 +84,8 @@ export async function runDevelopmentAgent({ origin, call, expect, mark, setPhase
   const disabled = expect(await call(`${authority}/agents/${agent.agent_id}/disable`, "POST", { reason: "Actual prototype authority revocation" }), 200);
   assert.equal(disabled.status, "DISABLED");
   assert.equal(disabled.agent_id, agent.agent_id);
-  assert.ok(disabled.revoked_delegations >= 1);
+  assert.ok(Array.isArray(disabled.revoked_delegations));
+  assert.ok(disabled.revoked_delegations.length >= 1);
   const inventory = expect(await call(`${authority}/agents`), 200);
   const persisted = inventory.agents.find(item => item.agent_id === agent.agent_id);
   assert.equal(persisted.lifecycle_state, "DISABLED");
