@@ -56,7 +56,9 @@ def test_is_available_true_when_docker_info_succeeds(monkeypatch: pytest.MonkeyP
 def test_remove_containers_stable_zero_exits_immediately() -> None:
     backend = DockerContainerBackend(docker_cmd="docker")
     with patch.object(subprocess, "run") as run:
-        run.return_value = subprocess.CompletedProcess(args=[], returncode=1)
+        run.return_value = subprocess.CompletedProcess(
+            args=[], returncode=1, stderr="Error: No such container: c1"
+        )
         backend._remove_containers(["c1"], stable_seconds=0, wait_seconds=0.01)
 
 
@@ -67,7 +69,12 @@ def test_remove_containers_waits_until_gone(monkeypatch: pytest.MonkeyPatch) -> 
 
     def fake_run(cmd, **_k):
         if "inspect" in cmd:
-            return subprocess.CompletedProcess(args=cmd, returncode=next(states, 1))
+            code = next(states, 1)
+            return subprocess.CompletedProcess(
+                args=cmd,
+                returncode=code,
+                stderr="Error: No such container: c1" if code else "",
+            )
         return subprocess.CompletedProcess(args=cmd, returncode=0)
 
     monkeypatch.setattr(subprocess, "run", fake_run)
@@ -82,10 +89,11 @@ def test_remove_containers_waits_until_gone(monkeypatch: pytest.MonkeyPatch) -> 
     backend._remove_containers(["c1"], stable_seconds=0.5, wait_seconds=5.0)
 
 
-def test_remove_containers_inspect_exception_treats_as_gone(
+def test_remove_containers_inspect_exception_fails_closed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     backend = DockerContainerBackend(docker_cmd="docker")
+    import itertools
 
     def fake_run(cmd, **_k):
         if "inspect" in cmd:
@@ -93,11 +101,13 @@ def test_remove_containers_inspect_exception_treats_as_gone(
         return subprocess.CompletedProcess(args=cmd, returncode=0)
 
     monkeypatch.setattr(subprocess, "run", fake_run)
+    clock = itertools.count(100.0, 0.001)
     monkeypatch.setattr(
         "responsibleai.isolation.container_backend.time.monotonic",
-        lambda: 100.0,
+        lambda: next(clock),
     )
-    backend._remove_containers(["c1"], stable_seconds=0, wait_seconds=0.01)
+    with pytest.raises(RuntimeError, match="containment unconfirmed"):
+        backend._remove_containers(["c1"], stable_seconds=0, wait_seconds=0.01)
 
 
 @pytest.mark.asyncio

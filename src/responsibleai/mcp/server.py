@@ -1149,6 +1149,8 @@ def _build_http_app() -> Any:
         ctx, error = await _authenticate_or_error(request)
         if error is not None:
             return error
+        if ctx is None:
+            return JSONResponse({"error": "unauthorized"}, status_code=401)
 
         request.scope["user"] = _build_authenticated_user(ctx)
         org_token = _current_org.set(ctx)
@@ -1185,6 +1187,9 @@ def _build_http_app() -> Any:
             if error is not None:
                 await error(scope, receive, send)
                 return
+            if ctx is None:
+                await JSONResponse({"error": "unauthorized"}, status_code=401)(scope, receive, send)
+                return
 
             session_id_param = request.query_params.get("session_id")
             if not session_id_param:
@@ -1211,7 +1216,7 @@ def _build_http_app() -> Any:
                     if isinstance(owner, dict)
                     else getattr(owner, "client_id", None)
                 )
-                if owner_client_id and ctx.org_id and owner_client_id != ctx.org_id:
+                if owner_client_id and (not ctx.org_id or owner_client_id != ctx.org_id):
                     _logger.warning(
                         "cross_tenant_sse_post_rejected session_id=%s caller_org=%s owner_org=%s",
                         session_id,
@@ -1233,7 +1238,7 @@ def _build_http_app() -> Any:
                     if isinstance(owner, dict)
                     else getattr(owner, "subject", None)
                 )
-                if owner_subject and ctx.key_id and owner_subject != ctx.key_id:
+                if owner_subject and (not ctx.key_id or owner_subject != ctx.key_id):
                     _logger.warning(
                         "mismatched_key_sse_post_rejected session_id=%s caller_key=%s owner_key=%s",
                         session_id,
@@ -1272,6 +1277,9 @@ def _build_http_app() -> Any:
             ctx, error = await _authenticate_or_error(request)
             if error is not None:
                 await error(scope, receive, send)
+                return
+            if ctx is None:
+                await JSONResponse({"error": "unauthorized"}, status_code=401)(scope, receive, send)
                 return
 
             if request.method == "POST":

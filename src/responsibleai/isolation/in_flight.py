@@ -16,13 +16,18 @@ Features:
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import os
+import stat
+import struct
 import tempfile
 import time
-from collections.abc import Callable
-from dataclasses import dataclass
+import uuid
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -31,26 +36,76 @@ from sqlalchemy import select
 logger = logging.getLogger(__name__)
 
 _DISTRIBUTED_REGISTRY_DIR = Path(tempfile.gettempdir()) / "whitepact_inflight"
+_LOCK_CLOCK = time.monotonic
 
 
 def _ensure_distributed_dir() -> Path:
     _DISTRIBUTED_REGISTRY_DIR.mkdir(parents=True, exist_ok=True)
+    info = _DISTRIBUTED_REGISTRY_DIR.lstat()
+    if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o022:
+        raise PermissionError(
+            "Tracking directory must be an owned, non-writable-by-others directory"
+        )
     return _DISTRIBUTED_REGISTRY_DIR
+
+
+def _identity_digest(domain: bytes, value: str) -> str:
+    # Database identifiers are exact strings; NFC is not a database identity rule.
+    raw = value.encode("utf-8")
+    return hashlib.sha256(domain + struct.pack(">Q", len(raw)) + raw).hexdigest()
+
+
+@contextmanager
+def _registry_ownership(directory: Path) -> Iterator[None]:
+    """Serialize publication and compare/unlink across cooperating POSIX workers."""
+    import fcntl
+
+    descriptor = os.open(
+        directory / ".registry.lock", os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600
+    )
+    try:
+        info = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(info.st_mode)
+            or info.st_uid != os.getuid()
+            or info.st_mode & 0o022
+            or info.st_nlink != 1
+        ):
+            raise PermissionError("Untrusted registry ownership lock")
+        deadline = _LOCK_CLOCK() + 1.0
+        while True:
+            try:
+                fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if _LOCK_CLOCK() >= deadline:
+                    raise TimeoutError("Registry ownership lock unavailable") from None
+                time.sleep(0.01)
+        yield
+    finally:
+        os.close(descriptor)
+
+
+def _tracking_filename(organization_id: str, execution_id: str) -> str:
+    tenant = _identity_digest(b"WP-INFLIGHT-V2-TENANT\x00", organization_id)
+    execution = _identity_digest(b"WP-INFLIGHT-V2-EXEC\x00", execution_id)
+    return f"trk_v2_{tenant}_{execution}.json"
 
 
 def _record_cross_worker_registration(entry: InFlightExecution) -> None:
     d = _ensure_distributed_dir()
-    file_path = d / f"{entry.organization_id}_{entry.execution_id}.json"
+    file_path = d / _tracking_filename(entry.organization_id, entry.execution_id)
     data = {
-            "execution_id": entry.execution_id,
-            "organization_id": entry.organization_id,
-            "action_id": entry.action_id,
-            "authorization_id": entry.authorization_id,
-            "admission_epoch": entry.admission_epoch,
-            "pid": os.getpid(),
-            "created_at": time.time(),
-            "containment_status": entry.containment_status,
-        }
+        "execution_id": entry.execution_id,
+        "organization_id": entry.organization_id,
+        "action_id": entry.action_id,
+        "authorization_id": entry.authorization_id,
+        "admission_epoch": entry.admission_epoch,
+        "pid": os.getpid(),
+        "created_at": time.time(),
+        "containment_status": entry.containment_status,
+        "registration_id": entry.registration_id,
+    }
     temporary = None
     try:
         with tempfile.NamedTemporaryFile(mode="w", dir=d, prefix=".tracking-", delete=False) as out:
@@ -58,32 +113,57 @@ def _record_cross_worker_registration(entry: InFlightExecution) -> None:
             json.dump(data, out)
             out.flush()
             os.fsync(out.fileno())
-        os.replace(temporary, file_path)
-        directory_fd = os.open(d, os.O_RDONLY)
-        try:
-            os.fsync(directory_fd)
-        finally:
-            os.close(directory_fd)
+        # Atomic no-replace publication. Existing, corrupt, colliding and symlink
+        # records all retain ownership; no check-then-replace overwrite window.
+        with _registry_ownership(d):
+            os.link(temporary, file_path)
+            directory_fd = os.open(d, os.O_RDONLY)
+            try:
+                os.fsync(directory_fd)
+            finally:
+                os.close(directory_fd)
     finally:
         if temporary is not None:
             temporary.unlink(missing_ok=True)
 
 
-def _remove_cross_worker_registration(organization_id: str, execution_id: str) -> None:
+def _remove_cross_worker_registration(
+    organization_id: str, execution_id: str, *, registration_id: str | None = None
+) -> None:
     try:
-        file_path = _DISTRIBUTED_REGISTRY_DIR / f"{organization_id}_{execution_id}.json"
-        if file_path.exists():
-            file_path.unlink()
+        directory = _ensure_distributed_dir()
+        # Inspect actual directory entries, never construct a path from raw IDs.
+        with _registry_ownership(directory):
+            for file_path in directory.glob("*.json"):
+                if file_path.is_symlink():
+                    continue
+                try:
+                    data = json.loads(file_path.read_text(encoding="utf-8"))
+                except (OSError, ValueError):
+                    continue
+                if isinstance(data, dict) and (
+                    data.get("organization_id") == organization_id
+                    and data.get("execution_id") == execution_id
+                ):
+                    if (
+                        registration_id is not None
+                        and data.get("registration_id") != registration_id
+                    ):
+                        continue
+                    file_path.unlink()
     except Exception as exc:
         logger.debug("Failed to remove distributed execution tracking: %s", exc)
 
 
-def _check_remote_worker_active(organization_id: str | None) -> list[dict[str, Any]]:
+def _check_remote_worker_active(
+    organization_id: str | None, *, local_execution_ids: set[str] | None = None
+) -> list[dict[str, Any]]:
     unresolved_remote: list[dict[str, Any]] = []
     if not _DISTRIBUTED_REGISTRY_DIR.exists():
         return unresolved_remote
     current_pid = os.getpid()
     try:
+        _ensure_distributed_dir()
         entries: list[Path] = []
         with os.scandir(_DISTRIBUTED_REGISTRY_DIR) as it:
             for entry in it:
@@ -105,22 +185,30 @@ def _check_remote_worker_active(organization_id: str | None) -> list[dict[str, A
 
     for f in entries:
         filename = f.name
-        # Match tenant prefix if organization_id is provided
-        if organization_id is not None:
-            prefix = f"{organization_id}_"
-            if not filename.startswith(prefix):
-                # Preserves tenant-safe isolation: ignore files of other organizations
-                continue
-            file_org = organization_id
-            file_exec = filename[len(prefix) : -5]
-        else:
-            stem = filename[:-5]
-            parts = stem.split("_", 1)
-            file_org = parts[0] if len(parts) > 0 else "unknown"
-            file_exec = parts[1] if len(parts) > 1 else stem
+        file_org = organization_id or "unknown"
+        file_exec = filename[:-5]
+        if organization_id is not None and filename.startswith(f"{organization_id}_"):
+            # Legacy naming is only a diagnostic hint, never an ownership proof.
+            file_exec = filename[len(organization_id) + 1 : -5]
 
         try:
+            if f.is_symlink():
+                raise ValueError("Symbolic link tracking is not authoritative")
             data = json.loads(f.read_text(encoding="utf-8"))
+            if not isinstance(data, dict) or not isinstance(data.get("organization_id"), str):
+                raise ValueError("Missing tracking identity")
+            if not isinstance(data.get("execution_id"), str):
+                raise ValueError("Missing execution identity")
+            if filename.startswith("trk_v2_") and filename != _tracking_filename(
+                data["organization_id"], data["execution_id"]
+            ):
+                raise ValueError("Tracking digest and payload identity mismatch")
+            if organization_id is not None and data["organization_id"] != organization_id:
+                continue
+            if not isinstance(data.get("pid"), int) or data["pid"] <= 0:
+                raise ValueError("Missing worker identity")
+            if data.get("containment_status", "active") not in {"active", "unresolved"}:
+                raise ValueError("Unconfirmed containment state")
         except Exception as read_exc:
             # File is unreadable, locked, or corrupted; cannot authoritatively prove absence!
             unresolved_remote.append(
@@ -131,6 +219,7 @@ def _check_remote_worker_active(organization_id: str | None) -> list[dict[str, A
                     "pid": None,
                     "created_at": time.time(),
                     "error": f"Tracking file inaccessible: {read_exc}",
+                    "containment_status": "unresolved",
                 }
             )
             continue
@@ -152,9 +241,13 @@ def _check_remote_worker_active(organization_id: str | None) -> list[dict[str, A
             else:
                 # A dead worker cannot attest that its container was terminated.
                 # Retain legacy records too: they carry no contrary containment proof.
-                unresolved_remote.append({**data, "error": "Worker exited; containment unconfirmed"})
+                unresolved_remote.append(
+                    {**data, "error": "Worker exited; containment unconfirmed"}
+                )
         elif data.get("containment_status") == "unresolved":
             unresolved_remote.append(data)
+        elif data["execution_id"] not in (local_execution_ids or set()):
+            unresolved_remote.append({**data, "error": "Local runtime ownership unconfirmed"})
     return unresolved_remote
 
 
@@ -175,6 +268,7 @@ class InFlightExecution:
     termination_attempts: int = 0
     last_termination_error: str | None = None
     containment_status: str = "active"  # "active", "terminated", "unresolved"
+    registration_id: str = field(default_factory=lambda: uuid.uuid4().hex)
 
 
 class InFlightExecutionRegistry:
@@ -215,7 +309,10 @@ class InFlightExecutionRegistry:
         """Check if an organization has active unresolved containment failures."""
         if any(e.organization_id == organization_id for e in self._unresolved.values()):
             return True
-        return len(_check_remote_worker_active(organization_id)) > 0
+        local = {
+            e.execution_id for e in self._active.values() if e.organization_id == organization_id
+        }
+        return len(_check_remote_worker_active(organization_id, local_execution_ids=local)) > 0
 
     def is_revoked(self, organization_id: str, admission_epoch: int) -> bool:
         """Check if an admission epoch is superseded by a recorded revocation or blocked by unresolved containment."""
@@ -245,7 +342,14 @@ class InFlightExecutionRegistry:
             admission_epoch=admission_epoch,
         )
         async with self._lock:
-            rejected = self.is_revoked(organization_id, admission_epoch)
+            tracking_owned = False
+            duplicate = execution_id in self._active or execution_id in self._unresolved
+            if duplicate:
+                # Retain the original callback and authority. Track the rejected
+                # attempt separately until its own termination is established.
+                execution_id = f"{execution_id}:rejected:{uuid.uuid4().hex}"
+                entry.execution_id = execution_id
+            rejected = duplicate or self.is_revoked(organization_id, admission_epoch)
             if rejected:
                 # A process can already exist when admission is rejected. Track it
                 # before awaiting termination; discard only after confirmation.
@@ -256,6 +360,7 @@ class InFlightExecutionRegistry:
                 self._active[execution_id] = entry
             try:
                 _record_cross_worker_registration(entry)
+                tracking_owned = True
             except Exception as exc:
                 # The container may already exist. Deny admission and run the
                 # actual termination callback instead of losing its tracking.
@@ -288,7 +393,10 @@ class InFlightExecutionRegistry:
             if confirmed:
                 async with self._lock:
                     self._unresolved.pop(execution_id, None)
-                    _remove_cross_worker_registration(organization_id, execution_id)
+                    if tracking_owned:
+                        _remove_cross_worker_registration(
+                            organization_id, execution_id, registration_id=entry.registration_id
+                        )
             if task is not None and task is not asyncio.current_task() and not task.done():
                 task.cancel()
             raise PermissionError(
@@ -320,7 +428,9 @@ class InFlightExecutionRegistry:
                 return False
 
             if entry is not None:
-                _remove_cross_worker_registration(entry.organization_id, execution_id)
+                _remove_cross_worker_registration(
+                    entry.organization_id, execution_id, registration_id=entry.registration_id
+                )
             self._active.pop(execution_id, None)
             return True
 
@@ -362,7 +472,7 @@ class InFlightExecutionRegistry:
                 entry.organization_id,
                 entry.termination_attempts + 1,
             )
-            callback_failed = False
+            callback_failed = entry.terminate_callback is None and entry.task is not None
             last_err: str | None = None
 
             # 1. Invoke low-level container/process termination callback if registered
@@ -371,9 +481,9 @@ class InFlightExecutionRegistry:
                     res = entry.terminate_callback()
                     if asyncio.iscoroutine(res):
                         res = await res
-                    if res is False:
+                    if res is not True:
                         callback_failed = True
-                        last_err = "terminate_callback returned False (target still running)"
+                        last_err = "terminate_callback did not confirm target termination"
                 except Exception as exc:
                     callback_failed = True
                     last_err = str(exc)
@@ -405,11 +515,15 @@ class InFlightExecutionRegistry:
                 async with self._lock:
                     self._unresolved.pop(entry.execution_id, None)
                     self._active.pop(entry.execution_id, None)
-                _remove_cross_worker_registration(entry.organization_id, entry.execution_id)
+                _remove_cross_worker_registration(
+                    entry.organization_id, entry.execution_id, registration_id=entry.registration_id
+                )
                 terminated_ids.append(entry.execution_id)
 
         # Check cross-worker distributed tracking
-        remote_active = _check_remote_worker_active(organization_id)
+        remote_active = _check_remote_worker_active(
+            organization_id, local_execution_ids={e.execution_id for e in self._active.values()}
+        )
         for r in remote_active:
             exec_id = r["execution_id"]
             if exec_id not in self._unresolved:
@@ -466,7 +580,9 @@ class InFlightExecutionRegistry:
             for e in self._unresolved.values()
             if organization_id is None or e.organization_id == organization_id
         )
-        remote_active = _check_remote_worker_active(organization_id)
+        remote_active = _check_remote_worker_active(
+            organization_id, local_execution_ids={e.execution_id for e in self._active.values()}
+        )
         remote_ids = {
             r["execution_id"]
             for r in remote_active
@@ -490,11 +606,16 @@ class InFlightExecutionRegistry:
                     res = entry.terminate_callback()
                     if asyncio.iscoroutine(res):
                         res = await res
-                    if res is not False:
+                    if res is True:
                         entry.containment_status = "terminated"
                         async with self._lock:
                             self._unresolved.pop(entry.execution_id, None)
                             self._active.pop(entry.execution_id, None)
+                        _remove_cross_worker_registration(
+                            entry.organization_id,
+                            entry.execution_id,
+                            registration_id=entry.registration_id,
+                        )
                         resolved.append(entry.execution_id)
                 except Exception as exc:
                     entry.last_termination_error = str(exc)
@@ -516,7 +637,8 @@ class InFlightExecutionRegistry:
         try:
             async with engine.raw.connect() as conn:
                 stmt = select(epochs.c.organization_id, epochs.c.epoch).where(
-                    epochs.c.organization_id.in_(list(active_orgs))
+                    epochs.c.organization_id.in_(list(active_orgs)),
+                    epochs.c.scope == "governance",
                 )
                 result = await conn.execute(stmt)
                 db_epochs = {row[0]: row[1] for row in result}

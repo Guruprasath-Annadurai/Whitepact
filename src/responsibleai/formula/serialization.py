@@ -8,13 +8,15 @@ import hashlib
 import json
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from responsibleai.formula.authority.algebra import EffectiveAuthorityEvaluator
 from responsibleai.formula.authority.atoms import AuthorityTuple
 from responsibleai.formula.authority.models import AuthorityGrant, OrgAuthorityCeilingModel
-from responsibleai.formula.graph.snapshot import GraphSnapshot
 from responsibleai.formula.trace.trace import FormulaTrace, FormulaTraceEvent
+
+if TYPE_CHECKING:
+    from responsibleai.formula.graph.snapshot import GraphSnapshot
 
 
 def utc_iso(dt: datetime) -> str:

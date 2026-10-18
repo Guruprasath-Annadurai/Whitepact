@@ -8,6 +8,8 @@ on:
       - 'scripts/engineering/reproducers/test_m13_dual_titan_cancellation.py'
       - 'tests/test_m13_absolute_native_runtime.py'
       - 'scripts/engineering/reproducers/test_m13_convergence_tracking.py'
+      - 'scripts/engineering/reproducers/test_m13_fortress_restore_independent.py'
+      - 'tests/test_m13_convergence_tracking.py'
       - 'tests/test_m13_runtime_schema_compatibility.py'
       - 'tests/test_m13_apex_database_role_retirement.py'
       - 'src/responsibleai/db/runtime_compatibility.py'
@@ -58,14 +60,29 @@ jobs:
         env:
           PYTHONPATH: src:.
         run: |
-          python -m pytest scripts/engineering/reproducers/test_m13_convergence_tracking.py tests/test_m13_runtime_schema_compatibility.py tests/test_m13_apex_database_role_retirement.py -o addopts='' --tb=short -ra
+          python -m pytest scripts/engineering/reproducers/test_m13_convergence_tracking.py tests/test_m13_convergence_tracking.py tests/test_m13_runtime_schema_compatibility.py tests/test_m13_apex_database_role_retirement.py -o addopts='' --tb=short -ra
       - name: Unchanged counterexamples and neighboring runtime contracts
         env:
           PYTHONPATH: src:.
         run: |
           python -m pytest scripts/engineering/reproducers/test_m13_absolute_runtime.py scripts/engineering/reproducers/test_m13_dual_titan_cancellation.py scripts/engineering/reproducers/test_m13_corrective_authority.py::test_cleanup_error_does_not_erase_requested_cancellation scripts/engineering/reproducers/test_m13_apex_titan_acceptance.py::test_inspect_plugin_failure_does_not_prove_container_absence scripts/engineering/reproducers/test_m13_apex_titan_acceptance.py::test_directory_permission_failure_is_not_an_empty_registry tests/test_container_cleanup_race_adversarial.py tests/test_inflight_liveness_adversarial.py tests/test_in_flight_revocation.py tests/test_runtime_resilience_adversarial.py tests/test_revocation_kernel.py tests/test_delegation_revocation_verification.py -o addopts='' --junitxml=/tmp/runtime.xml --tb=short -ra
           python -c 'import xml.etree.ElementTree as E; r=E.parse("/tmp/runtime.xml"); assert not list(r.iter("skipped")) and not list(r.iter("failure")) and not list(r.iter("error"))'
-      - run: |
+      - name: Preserve PostgreSQL restore blockers as independent failures
+        if: always()
+        env:
+          PYTHONPATH: src:.
+        run: |
+          python -m pytest scripts/engineering/reproducers/test_m13_fortress_restore_independent.py -o addopts='' --junitxml=/tmp/restore.xml --tb=short -ra
+      - name: Retain independent runtime and restore receipts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: runtime-review-${{ matrix.python }}-${{ github.sha }}
+          path: |
+            /tmp/runtime.xml
+            /tmp/restore.xml
+      - if: always()
+        run: |
           ruff check src/responsibleai/isolation/container_backend.py src/responsibleai/isolation/in_flight.py scripts/engineering/reproducers/test_m13_absolute_runtime.py tests/test_m13_absolute_native_runtime.py tests/test_m13_apex_database_role_retirement.py
           python scripts/check_pinned_actions.py
           python scripts/manage_license_headers.py --check

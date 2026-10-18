@@ -706,7 +706,9 @@ def test_remove_containers_waits_for_stable_absence(monkeypatch: pytest.MonkeyPa
         seen[target] = seen.get(target, 0) + 1
         if seen[target] < 3:
             return subprocess.CompletedProcess(args=cmd, returncode=0)
-        return subprocess.CompletedProcess(args=cmd, returncode=1)
+        return subprocess.CompletedProcess(
+            args=cmd, returncode=1, stderr=f"Error: No such container: {target}"
+        )
 
     monkeypatch.setattr(subprocess, "run", fake_run)
     t0 = time.monotonic()
@@ -1161,7 +1163,9 @@ def test_remove_containers_exits_when_targets_absent(monkeypatch: pytest.MonkeyP
     backend = DockerContainerBackend(docker_cmd="docker")
 
     def fake_run(cmd, **_kwargs):
-        return subprocess.CompletedProcess(args=cmd, returncode=1)
+        return subprocess.CompletedProcess(
+            args=cmd, returncode=1, stderr=f"Error: No such container: {cmd[-1]}"
+        )
 
     monkeypatch.setattr(subprocess, "run", fake_run)
     backend._remove_containers(["wp_iso_absent"], stable_seconds=0.1, wait_seconds=0.2)
@@ -2144,7 +2148,9 @@ def test_remove_containers_stable_window_elapsed(monkeypatch: pytest.MonkeyPatch
         return clock["now"]
 
     def fake_run(cmd, **_kwargs):
-        return subprocess.CompletedProcess(args=cmd, returncode=1)
+        return subprocess.CompletedProcess(
+            args=cmd, returncode=1, stderr=f"Error: No such container: {cmd[-1]}"
+        )
 
     monkeypatch.setattr(time, "monotonic", fake_monotonic)
     monkeypatch.setattr(subprocess, "run", fake_run)

@@ -943,7 +943,11 @@ def test_is_available_true_for_executable_path(
     assert DockerContainerBackend(docker_cmd=str(fake)).is_available() is True
 
 
-def test_remove_containers_tolerates_rm_errors(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_remove_containers_fails_closed_on_rm_and_inspect_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import itertools
+
     backend = DockerContainerBackend(docker_cmd="docker")
 
     def fake_run(cmd, **_k):
@@ -952,11 +956,13 @@ def test_remove_containers_tolerates_rm_errors(monkeypatch: pytest.MonkeyPatch) 
         return subprocess.CompletedProcess(args=cmd, returncode=1)
 
     monkeypatch.setattr(subprocess, "run", fake_run)
+    clock = itertools.count(1000.0, 0.001)
     monkeypatch.setattr(
         "responsibleai.isolation.container_backend.time.monotonic",
-        lambda: 1000.0,
+        lambda: next(clock),
     )
-    backend._remove_containers(["c1"], stable_seconds=0, wait_seconds=0.01)
+    with pytest.raises(RuntimeError, match="containment unconfirmed"):
+        backend._remove_containers(["c1"], stable_seconds=0, wait_seconds=0.01)
 
 
 @pytest.mark.asyncio
