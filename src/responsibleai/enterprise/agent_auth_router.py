@@ -18,6 +18,7 @@ router = APIRouter(tags=["development-agent-auth"])
 
 # asyncpg may raise directly while opening a connection, before SQLAlchemy
 # has wrapped a database error. Keep SQLite-only installations importable.
+STORAGE_ERRORS: tuple[type[Exception], ...]
 try:
     from asyncpg import PostgresError
 except ImportError:
