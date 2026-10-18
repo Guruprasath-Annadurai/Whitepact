@@ -77,8 +77,8 @@ class TestOpsAndApiVersioning:
 
     async def test_restore_reconcile_returns_json(self, client: AsyncClient) -> None:
         r = await client.post("/api/restore/reconcile", json={})
-        assert r.status_code in (200, 500)
-        assert "status" in r.json() or "error" in r.json()
+        assert r.status_code == 503
+        assert r.json()["error"] == "RESTORE_SECURITY_QUALIFICATION_REQUIRED"
 
     async def test_k8s_readiness_probe(self, client: AsyncClient) -> None:
         r = await client.get("/readyz")
