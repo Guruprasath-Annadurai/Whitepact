@@ -1,0 +1,61 @@
+name: M13 Absolute SDK and Package Validation
+
+on:
+  push:
+    branches: [codex/whitepact-m13-absolute-convergence]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  go-sdk:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 2
+          persist-credentials: false
+      - name: Record tested source and Go toolchain
+        run: |
+          git rev-parse HEAD 'HEAD^{tree}' 'HEAD^'
+          go version
+      - name: Canonical Go formatting, vet and race tests
+        working-directory: sdk/go
+        run: |
+          test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
+          go vet ./...
+          go test ./... -race -count=1 -cover
+
+  wheel-smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.11', '3.12']
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 2
+          persist-credentials: false
+      - name: Record tested source
+        run: |
+          git rev-parse HEAD 'HEAD^{tree}' 'HEAD^'
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Canonical default wheel installation smoke
+        env:
+          PYTHON: python
+          PYTHONPATH: ''
+        run: bash scripts/wheel_default_install_smoke.sh
+      - name: Canonical dashboard wheel installation smoke
+        if: ${{ !cancelled() }}
+        env:
+          PYTHON: python
+          PYTHONPATH: ''
+        run: bash scripts/wheel_dashboard_install_smoke.sh
