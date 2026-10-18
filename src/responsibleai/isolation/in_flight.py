@@ -21,6 +21,7 @@ import logging
 import os
 import tempfile
 import time
+import urllib.parse
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -38,9 +39,20 @@ def _ensure_distributed_dir() -> Path:
     return _DISTRIBUTED_REGISTRY_DIR
 
 
+def _tracking_filename(organization_id: str, execution_id: str) -> str:
+    """Derive an injection-safe, unambiguous tracking filename.
+
+    Uses URL encoding to prevent directory traversal and double-underscore
+    delimiter '__' to prevent prefix collisions between tenants.
+    """
+    safe_org = urllib.parse.quote(str(organization_id), safe="")
+    safe_exec = urllib.parse.quote(str(execution_id), safe="")
+    return f"{safe_org}__{safe_exec}.json"
+
+
 def _record_cross_worker_registration(entry: InFlightExecution) -> None:
     d = _ensure_distributed_dir()
-    file_path = d / f"{entry.organization_id}_{entry.execution_id}.json"
+    file_path = d / _tracking_filename(entry.organization_id, entry.execution_id)
     data = {
             "execution_id": entry.execution_id,
             "organization_id": entry.organization_id,
@@ -71,9 +83,12 @@ def _record_cross_worker_registration(entry: InFlightExecution) -> None:
 
 def _remove_cross_worker_registration(organization_id: str, execution_id: str) -> None:
     try:
-        file_path = _DISTRIBUTED_REGISTRY_DIR / f"{organization_id}_{execution_id}.json"
+        file_path = _DISTRIBUTED_REGISTRY_DIR / _tracking_filename(organization_id, execution_id)
         if file_path.exists():
             file_path.unlink()
+        legacy_path = _DISTRIBUTED_REGISTRY_DIR / f"{organization_id}_{execution_id}.json"
+        if legacy_path.exists():
+            legacy_path.unlink()
     except Exception as exc:
         logger.debug("Failed to remove distributed execution tracking: %s", exc)
 
@@ -105,19 +120,43 @@ def _check_remote_worker_active(organization_id: str | None) -> list[dict[str, A
 
     for f in entries:
         filename = f.name
-        # Match tenant prefix if organization_id is provided
-        if organization_id is not None:
-            prefix = f"{organization_id}_"
-            if not filename.startswith(prefix):
+        stem = filename[:-5]
+        has_modern_delimiter = "__" in stem
+
+        if has_modern_delimiter:
+            parts = stem.split("__", 1)
+            raw_org = parts[0]
+            file_exec = urllib.parse.unquote(parts[1]) if len(parts) > 1 else stem
+            try:
+                file_org = urllib.parse.unquote(raw_org)
+            except Exception:
+                file_org = raw_org
+
+            if organization_id is not None and file_org != organization_id:
                 # Preserves tenant-safe isolation: ignore files of other organizations
                 continue
-            file_org = organization_id
-            file_exec = filename[len(prefix) : -5]
         else:
-            stem = filename[:-5]
-            parts = stem.split("_", 1)
-            file_org = parts[0] if len(parts) > 0 else "unknown"
-            file_exec = parts[1] if len(parts) > 1 else stem
+            # Legacy format with single underscore: inspect content before attributing
+            try:
+                data = json.loads(f.read_text(encoding="utf-8"))
+            except Exception as read_exc:
+                if organization_id is None:
+                    unresolved_remote.append(
+                        {
+                            "execution_id": stem,
+                            "organization_id": "unknown",
+                            "action_id": "unknown",
+                            "pid": None,
+                            "created_at": time.time(),
+                            "error": f"Tracking file inaccessible: {read_exc}",
+                        }
+                    )
+                continue
+
+            if organization_id is not None and data.get("organization_id") != organization_id:
+                continue
+            file_org = data.get("organization_id", "unknown")
+            file_exec = data.get("execution_id", stem)
 
         try:
             data = json.loads(f.read_text(encoding="utf-8"))

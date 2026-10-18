@@ -35,8 +35,14 @@ from responsibleai.db.engine import (
     eval_baselines,
     eval_runs,
     governance_approvals,
+    governance_consent_proofs,
+    governance_delegations,
+    governance_execution_authorizations,
+    governance_execution_nonces,
     governance_policies,
     governance_policy_versions,
+    governance_revocation_epochs,
+    governance_root_authority_records,
     iam_api_key_lineage,
     iam_scim_groups,
     iam_scim_users,
@@ -162,6 +168,10 @@ class CurrentLifecycleStateProvider(ABC):
     @abstractmethod
     def list_tombstones(self) -> list[LifecycleStateRecord]:
         """List all tombstones in the current lifecycle state store."""
+
+    @abstractmethod
+    def list_all(self) -> list[LifecycleStateRecord]:
+        """List all lifecycle records regardless of state."""
 
     @abstractmethod
     def verify_integrity(self) -> bool:
@@ -428,6 +438,31 @@ class SqliteDurableLifecycleStateProvider(CurrentLifecycleStateProvider):
         finally:
             conn.close()
 
+    def list_all(self) -> list[LifecycleStateRecord]:
+        if not self._available:
+            raise StoreBUnavailableError("CurrentLifecycleStateProvider is unavailable")
+        conn = self._get_connection()
+        try:
+            cursor = conn.execute(
+                "SELECT tenant_id, generation_id, state, effective_at, security_epoch, revocation_floor, erasure_request_ref, digest FROM durable_tenant_lifecycle_states"
+            )
+            rows = cursor.fetchall()
+            return [
+                LifecycleStateRecord(
+                    tenant_id=r[0],
+                    generation_id=r[1],
+                    state=LifecycleState(r[2]),
+                    effective_at=r[3],
+                    security_epoch=r[4],
+                    revocation_floor=r[5],
+                    erasure_request_ref=r[6],
+                    digest=r[7],
+                )
+                for r in rows
+            ]
+        finally:
+            conn.close()
+
     def verify_integrity(self) -> bool:
         if not self._available or self._corrupted:
             return False
@@ -587,6 +622,11 @@ class InMemoryLifecycleStateProvider(CurrentLifecycleStateProvider):
             for r in self._records.values()
             if r.state in (LifecycleState.DELETION_IN_PROGRESS, LifecycleState.TOMBSTONED)
         ]
+
+    def list_all(self) -> list[LifecycleStateRecord]:
+        if not self._available:
+            raise StoreBUnavailableError("CurrentLifecycleStateProvider is unavailable")
+        return list(self._records.values())
 
     def verify_integrity(self) -> bool:
         if not self._available or self._corrupted:
@@ -879,11 +919,14 @@ class RestoreReconciliationEngine:
                     ).fetchall()
 
                     for org in matching_orgs:
-                        # Force quarantine
+                        # Force quarantine with explicit governance_status
                         await conn.execute(
                             update(organizations)
                             .where(organizations.c.id == org.id)
-                            .values(name=f"{org.name}-RESTORE_QUARANTINED")
+                            .values(
+                                name=f"{org.name}-RESTORE_QUARANTINED",
+                                governance_status="QUARANTINED",
+                            )
                         )
                         quarantined_orgs.append(org.id)
 
@@ -907,7 +950,7 @@ class RestoreReconciliationEngine:
                         )
                         revoked_keys += (r_k.rowcount or 0) + (r_ik.rowcount or 0)
 
-                        # Cascade erase of all restored tenant operational/eval data
+                        # Cascade erase of all restored tenant operational/eval/authority data
                         for tbl, col in [
                             (eval_runs, "org_id"),
                             (eval_baselines, "org_id"),
@@ -916,6 +959,12 @@ class RestoreReconciliationEngine:
                             (governance_approvals, "org_id"),
                             (governance_policies, "org_id"),
                             (governance_policy_versions, "org_id"),
+                            (governance_delegations, "org_id"),
+                            (governance_root_authority_records, "organization_id"),
+                            (governance_consent_proofs, "organization_id"),
+                            (governance_execution_authorizations, "organization_id"),
+                            (governance_execution_nonces, "organization_id"),
+                            (governance_revocation_epochs, "organization_id"),
                             (iam_scim_users, "org_id"),
                             (iam_scim_groups, "org_id"),
                             (web_memberships, "org_id"),
@@ -942,6 +991,47 @@ class RestoreReconciliationEngine:
                                 )
                             )
                             existing_a_ids.add(tb.tenant_id)
+
+                # Synchronize revocation epochs from Store B to prevent stale grant/credential replay
+                all_b_records = self._provider.list_all()
+                advanced_epochs = 0
+                for rec in all_b_records:
+                    if rec.security_epoch > 0:
+                        db_epoch_row = (
+                            await conn.execute(
+                                select(governance_revocation_epochs).where(
+                                    governance_revocation_epochs.c.organization_id == rec.tenant_id,
+                                    governance_revocation_epochs.c.scope == "tenant_global",
+                                )
+                            )
+                        ).fetchone()
+                        if db_epoch_row is not None:
+                            if db_epoch_row.epoch < rec.security_epoch:
+                                await conn.execute(
+                                    update(governance_revocation_epochs)
+                                    .where(
+                                        governance_revocation_epochs.c.organization_id == rec.tenant_id,
+                                        governance_revocation_epochs.c.scope == "tenant_global",
+                                    )
+                                    .values(epoch=rec.security_epoch, updated_at=now)
+                                )
+                                advanced_epochs += 1
+                        else:
+                            org_exists = (
+                                await conn.execute(
+                                    select(organizations.c.id).where(organizations.c.id == rec.tenant_id)
+                                )
+                            ).fetchone()
+                            if org_exists and rec.tenant_id not in tombstoned_ids:
+                                await conn.execute(
+                                    insert(governance_revocation_epochs).values(
+                                        organization_id=rec.tenant_id,
+                                        scope="tenant_global",
+                                        epoch=rec.security_epoch,
+                                        updated_at=now,
+                                    )
+                                )
+                                advanced_epochs += 1
 
                 status = "RECONCILED"
                 details = {
