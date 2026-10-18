@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
-      max-parallel: 4
+      max-parallel: 8
       matrix:
         python-version: ["3.11", "3.12"]
         shard: [0, 1, 2, 3, 4, 5, 6, 7]
@@ -24,6 +24,7 @@ jobs:
       PLAYWRIGHT_BROWSERS_PATH: /tmp/whitepact-m13-full-chromium
       WHITEPACT_REDIS_URL: redis://127.0.0.1:6379/0
       WHITEPACT_REQUIRE_REDIS: "1"
+      WHITEPACT_ISOLATION_IMAGE: whitepact-isolated-runtime:ci
     services:
       postgres:
         image: postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685
@@ -65,7 +66,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip setuptools
+          python -m pip install --upgrade pip setuptools build
           pip install -e ".[dev,openai,anthropic,sso,sentiment,postgres,redis]"
           pip install -r tests/requirements-wave1-frameworks.txt
 
