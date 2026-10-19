@@ -8,6 +8,7 @@
 - **Branch:** `antigravity/whitepact-m13-recovery-zero` (PR #222)
 - **Target Branch:** `codex/whitepact-m13-absolute-convergence`
 - **Base Commit:** `7939341fd9d98d0f1fa39ce4421318dbc1dac33e`
+- **Exact Qualified HEAD:** `803c1ae665c175846efa5ffb588155291d555228`
 - **Parent Commit:** `b896b1efb4406c03205522dce7c69855391d305b`
 - **Final Verdict:** READY FOR INDEPENDENT INTEGRATION REVIEW
 
@@ -20,7 +21,7 @@ Antigravity FORTRESS has completed the Absolute Security Challenge for Milestone
 All identified vulnerabilities (P0-01, P0-02, P0-04, P0-05) have been:
 1. Re-verified under skeptical adversarial threat models against live PostgreSQL 16.
 2. Proven via deterministic pre-fix regression reproducers.
-3. Remediated with minimal, production-grade, non-breaking modifications in `src/responsibleai/data_governance/`.
+3. Remediated with minimal, production-grade, non-breaking modifications in `src/responsibleai/data_governance/` and `src/responsibleai/isolation/`.
 4. Fully qualified through 40 adversarial test scenarios across 3 independent test suites.
 5. Encapsulated in a dedicated GitHub CI workflow matrix (`.github/workflows/m13-recovery-zero-qualification.yml`) supporting Python 3.11 and 3.12.
 
@@ -57,6 +58,7 @@ All identified vulnerabilities (P0-01, P0-02, P0-04, P0-05) have been:
 ```
 modified:   src/responsibleai/data_governance/__init__.py
 modified:   src/responsibleai/data_governance/backup_defense.py
+modified:   src/responsibleai/isolation/in_flight.py
 modified:   tests/test_m13_recovery_zero_p0_reproducers.py
 created:    .github/workflows/m13-recovery-zero-qualification.yml
 created:    docs/engineering/m13-recovery-zero/M13_RECOVERY_ZERO_ABSOLUTE_SECURITY_CHALLENGE.md
