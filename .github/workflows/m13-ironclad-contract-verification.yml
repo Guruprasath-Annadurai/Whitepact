@@ -1,0 +1,57 @@
+name: M13 Ironclad Evidence Contracts
+
+on:
+  push:
+    branches: [codex/whitepact-m13-ironclad-evidence]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        python: ["3.11", "3.12"]
+    env:
+      PYTHONPATH: src:sdk/python:.
+      WHITEPACT_REQUIRE_DOCKER_ISOLATION: "1"
+      WHITEPACT_ISOLATION_IMAGE: whitepact-isolated-runtime:ci
+      WHITEPACT_TEST_RUNTIME_IMAGE: whitepact-isolated-runtime:ci
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Verify frozen implementation and preserve provenance
+        run: |
+          mkdir -p /tmp/ironclad-contracts
+          git rev-parse HEAD 'HEAD^{tree}' 'HEAD^' > /tmp/ironclad-contracts/provenance.txt
+          git diff --exit-code ccf4e8cc80f1de52a0a9b445298055ac581f53e1 -- src scripts sdk web migrations pyproject.toml Dockerfile.isolation
+          git diff --exit-code ccf4e8cc80f1de52a0a9b445298055ac581f53e1 -- scripts/engineering/reproducers tests/test_docker_container_lifecycle.py tests/test_h4_backup_recovery_adversarial.py
+          echo ccf4e8cc80f1de52a0a9b445298055ac581f53e1 > /tmp/ironclad-contracts/implementation-head.txt
+          python -m pip install -e ".[dev,postgres,redis]" 'pytest-timeout>=2.3,<3'
+          python -m pip freeze --all > /tmp/ironclad-contracts/dependencies.txt
+      - name: Prepare actual Linux Docker host
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y acl nftables iproute2
+          docker build -f Dockerfile.isolation -t whitepact-isolated-runtime:ci .
+          docker version > /tmp/ironclad-contracts/docker-version.txt
+          docker image inspect whitepact-isolated-runtime:ci --format '{{.Id}}' > /tmp/ironclad-contracts/image.txt
+      - name: Independently exercise actual Docker and shared cleanup contracts
+        run: |
+          python -m pytest tests/test_m13_ironclad_native_contracts.py tests/test_m13_ironclad_callback_contract.py -o addopts= --timeout=120 --timeout-method=signal --junitxml=/tmp/ironclad-contracts/contracts.xml -vv -ra --tb=short > /tmp/ironclad-contracts/contracts.log 2>&1
+      - name: Preserve independent evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ironclad-contracts-${{ matrix.python }}-${{ github.sha }}
+          path: /tmp/ironclad-contracts/
