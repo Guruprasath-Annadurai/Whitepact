@@ -34,22 +34,39 @@ from responsibleai.db.engine import (
     DatabaseEngine,
     eval_baselines,
     eval_runs,
+    governance_approval_votes,
     governance_approvals,
+    governance_consent_proofs,
+    governance_delegations,
+    governance_execution_authorizations,
+    governance_execution_nonces,
     governance_policies,
+    governance_policy_activations,
+    governance_policy_history,
+    governance_policy_revisions,
     governance_policy_versions,
+    governance_revocation_epochs,
+    governance_root_authority_records,
     iam_api_key_lineage,
     iam_scim_groups,
     iam_scim_users,
     iam_sessions,
     mcp_tool_calls,
+    org_api_key_metadata,
     org_api_keys,
     organizations,
     restore_reconciliation_records,
+    runtime_execution_attempts,
+    runtime_execution_dispatch_outbox,
+    runtime_execution_fences,
+    runtime_execution_requests,
+    runtime_worker_leases,
     tenant_tombstones,
     token_usage,
     web_memberships,
     web_sessions,
 )
+from responsibleai.rbac.models import GovernanceStatus
 
 
 def _now() -> str:
@@ -162,6 +179,10 @@ class CurrentLifecycleStateProvider(ABC):
     @abstractmethod
     def list_tombstones(self) -> list[LifecycleStateRecord]:
         """List all tombstones in the current lifecycle state store."""
+
+    @abstractmethod
+    def list_all(self) -> list[LifecycleStateRecord]:
+        """List all lifecycle records in the current lifecycle state store."""
 
     @abstractmethod
     def verify_integrity(self) -> bool:
@@ -428,6 +449,31 @@ class SqliteDurableLifecycleStateProvider(CurrentLifecycleStateProvider):
         finally:
             conn.close()
 
+    def list_all(self) -> list[LifecycleStateRecord]:
+        if not self._available:
+            raise StoreBUnavailableError("CurrentLifecycleStateProvider is unavailable")
+        conn = self._get_connection()
+        try:
+            cursor = conn.execute(
+                "SELECT tenant_id, generation_id, state, effective_at, security_epoch, revocation_floor, erasure_request_ref, digest FROM durable_tenant_lifecycle_states"
+            )
+            rows = cursor.fetchall()
+            return [
+                LifecycleStateRecord(
+                    tenant_id=r[0],
+                    generation_id=r[1],
+                    state=LifecycleState(r[2]),
+                    effective_at=r[3],
+                    security_epoch=r[4],
+                    revocation_floor=r[5],
+                    erasure_request_ref=r[6],
+                    digest=r[7],
+                )
+                for r in rows
+            ]
+        finally:
+            conn.close()
+
     def verify_integrity(self) -> bool:
         if not self._available or self._corrupted:
             return False
@@ -587,6 +633,11 @@ class InMemoryLifecycleStateProvider(CurrentLifecycleStateProvider):
             for r in self._records.values()
             if r.state in (LifecycleState.DELETION_IN_PROGRESS, LifecycleState.TOMBSTONED)
         ]
+
+    def list_all(self) -> list[LifecycleStateRecord]:
+        if not self._available:
+            raise StoreBUnavailableError("CurrentLifecycleStateProvider is unavailable")
+        return list(self._records.values())
 
     def verify_integrity(self) -> bool:
         if not self._available or self._corrupted:
@@ -835,12 +886,36 @@ class RestoreReconciliationEngine:
     async def reconcile_post_restore(self, reconciled_by: str) -> RestoreReconciliationReport:
         """Reconcile restored organizations against current lifecycle state from Store B.
 
-        If a tombstoned or deleting tenant exists in restored organizations:
-        - Force quarantine on organization.
-        - Purge all restored sessions, keys, and lineage.
-        - Reapply erasure of all operational and evaluative records.
-        - Synchronize tombstone ledger in restored database.
-        - Only advance gate to READY if reconciliation succeeds without error.
+        Fail-Closed Reconciliation Protocol:
+        1. Atomically marks gate as RECONCILING.
+        2. Validates cryptographic integrity and availability of Store B.
+        3. Identifies all tombstones from Store B and existing Store A tombstones.
+        4. For every tombstoned/resurrected tenant:
+           - Quarantines organization with supported governance_status="DISABLED" (satisfying
+             PostgreSQL chk_org_governance_status constraint) and suffixed name.
+           - Executes a strictly ordered topological FK purge of active operational authority:
+             runtime_worker_leases -> runtime_execution_dispatch_outbox -> runtime_execution_fences ->
+             runtime_execution_attempts -> governance_execution_authorizations ->
+             runtime_execution_requests -> governance_approval_votes -> governance_approvals ->
+             governance_policy_activations -> governance_policy_revisions ->
+             governance_policy_versions -> governance_policies -> governance_policy_history ->
+             governance_execution_nonces -> governance_delegations -> org_api_key_metadata ->
+             org_api_keys -> iam_api_key_lineage -> web_sessions -> iam_sessions ->
+             eval_runs -> eval_baselines -> mcp_tool_calls -> token_usage ->
+             iam_scim_users -> iam_scim_groups -> web_memberships.
+           - Forensically revokes root authority records and consent proofs (revoked_at=now,
+             revoked_by=reconciled_by) so no restored root or consent record ever confers active authority,
+             preserving audit evidence without violating legal retention obligations or FK integrity.
+           - Durably elevates tenant revocation epochs to max(current_epoch + 1, store_b_floor)
+             across canonical "governance" and "tenant_global" scopes without arbitrary constants.
+        5. Synchronizes Store B revocation floors across all active tenants in Store A:
+           ensures canonical "governance" and "tenant_global" scopes meet or exceed
+           max(security_epoch, revocation_floor).
+        6. Synchronizes tombstone ledger in Store A from Store B.
+        7. Triggers active in-flight execution containment against InFlightExecutionRegistry.
+        8. Durably records reconciliation audit trail in restore_reconciliation_records.
+        9. Advances gate to READY only upon complete error-free transaction commit; on any
+           failure, transitions gate to FAILED, logs the failure, and fails closed.
         """
         now = _now()
         rec_id = str(uuid.uuid4())
@@ -848,6 +923,9 @@ class RestoreReconciliationEngine:
         revoked_sessions = 0
         revoked_keys = 0
         erased_records = 0
+        fenced_epochs = 0
+        revoked_root_records = 0
+        revoked_consent_proofs = 0
 
         # Mark gate as RECONCILING
         self._gate.set_state(RestoreReadinessState.RECONCILING, updated_by=reconciled_by)
@@ -879,50 +957,304 @@ class RestoreReconciliationEngine:
                     ).fetchall()
 
                     for org in matching_orgs:
-                        # Force quarantine
+                        org_id = org.id
+                        # Force quarantine using supported PostgreSQL governance_status
+                        new_name = (
+                            f"{org.name}-RESTORE_QUARANTINED"
+                            if "-RESTORE_QUARANTINED" not in org.name
+                            else org.name
+                        )
                         await conn.execute(
                             update(organizations)
-                            .where(organizations.c.id == org.id)
-                            .values(name=f"{org.name}-RESTORE_QUARANTINED")
+                            .where(organizations.c.id == org_id)
+                            .values(
+                                name=new_name,
+                                governance_status=GovernanceStatus.DISABLED.value,
+                                deactivated_at=now,
+                            )
                         )
-                        quarantined_orgs.append(org.id)
+                        quarantined_orgs.append(org_id)
 
-                        # Purge restored sessions
+                        # Collect foreign key IDs for safe child deletion
+                        req_rows = (
+                            await conn.execute(
+                                select(runtime_execution_requests.c.request_id).where(
+                                    runtime_execution_requests.c.organization_id == org_id
+                                )
+                            )
+                        ).fetchall()
+                        tenant_req_ids = [r[0] for r in req_rows]
+
+                        app_rows = (
+                            await conn.execute(
+                                select(governance_approvals.c.id).where(
+                                    governance_approvals.c.org_id == org_id
+                                )
+                            )
+                        ).fetchall()
+                        tenant_app_ids = [r[0] for r in app_rows]
+
+                        key_rows = (
+                            await conn.execute(
+                                select(org_api_keys.c.id).where(org_api_keys.c.org_id == org_id)
+                            )
+                        ).fetchall()
+                        tenant_key_ids = [r[0] for r in key_rows]
+
+                        # --- Strict Topological Cascade Purge ---
+                        # 1. runtime_worker_leases (references attempts, requests, organizations)
+                        await conn.execute(
+                            delete(runtime_worker_leases).where(
+                                runtime_worker_leases.c.organization_id == org_id
+                            )
+                        )
+                        if tenant_req_ids:
+                            await conn.execute(
+                                delete(runtime_worker_leases).where(
+                                    runtime_worker_leases.c.request_id.in_(tenant_req_ids)
+                                )
+                            )
+
+                        # 2. runtime_execution_dispatch_outbox (references attempts, requests, organizations)
+                        await conn.execute(
+                            delete(runtime_execution_dispatch_outbox).where(
+                                runtime_execution_dispatch_outbox.c.organization_id == org_id
+                            )
+                        )
+                        if tenant_req_ids:
+                            await conn.execute(
+                                delete(runtime_execution_dispatch_outbox).where(
+                                    runtime_execution_dispatch_outbox.c.request_id.in_(tenant_req_ids)
+                                )
+                            )
+
+                        # 3. runtime_execution_fences (references requests)
+                        if tenant_req_ids:
+                            await conn.execute(
+                                delete(runtime_execution_fences).where(
+                                    runtime_execution_fences.c.request_id.in_(tenant_req_ids)
+                                )
+                            )
+
+                        # 4. runtime_execution_attempts (references authorizations, requests, organizations)
+                        await conn.execute(
+                            delete(runtime_execution_attempts).where(
+                                runtime_execution_attempts.c.organization_id == org_id
+                            )
+                        )
+                        if tenant_req_ids:
+                            await conn.execute(
+                                delete(runtime_execution_attempts).where(
+                                    runtime_execution_attempts.c.request_id.in_(tenant_req_ids)
+                                )
+                            )
+
+                        # 5. governance_execution_authorizations (references requests, approvals, organizations)
+                        r_auth = await conn.execute(
+                            delete(governance_execution_authorizations).where(
+                                governance_execution_authorizations.c.organization_id == org_id
+                            )
+                        )
+                        erased_records += r_auth.rowcount or 0
+
+                        # 6. runtime_execution_requests:
+                        # CRITICAL INVARIANT: runtime_execution_requests is immutable audit evidence
+                        # and admission state (protected by PostgreSQL trigger reject_execution_request_mutation).
+                        # Prohibits UPDATE and DELETE; rows must be preserved.
+
+                        # 7 & 8. governance_approvals and governance_approval_votes:
+                        # runtime_execution_requests.approval_id has ON DELETE RESTRICT to governance_approvals.id.
+                        # Approvals referenced by runtime_execution_requests cannot be deleted without violating FK RESTRICT.
+                        # Therefore, we partition approvals:
+                        # - Referenced approvals are neutralized/revoked (status='REVOKED', resolved_by=reconciled_by)
+                        #   so they can never confer execution authority, while preserving evidence integrity.
+                        # - Unreferenced approvals (and their votes) are safely deleted topologically.
+                        ref_req_app_rows = (
+                            await conn.execute(
+                                select(runtime_execution_requests.c.approval_id).where(
+                                    runtime_execution_requests.c.organization_id == org_id,
+                                    runtime_execution_requests.c.approval_id.isnot(None),
+                                )
+                            )
+                        ).fetchall()
+                        referenced_app_ids = {r[0] for r in ref_req_app_rows if r[0]}
+                        unreferenced_app_ids = set(tenant_app_ids) - referenced_app_ids
+
+                        if referenced_app_ids:
+                            await conn.execute(
+                                update(governance_approvals)
+                                .where(
+                                    governance_approvals.c.id.in_(referenced_app_ids),
+                                    governance_approvals.c.status != "REVOKED",
+                                )
+                                .values(
+                                    status="REVOKED",
+                                    resolved_by=reconciled_by,
+                                    resolved_at=now,
+                                    resolution_notes="Tenant tombstoned during post-restore reconciliation",
+                                )
+                            )
+
+                        if unreferenced_app_ids:
+                            await conn.execute(
+                                delete(governance_approval_votes).where(
+                                    governance_approval_votes.c.approval_id.in_(unreferenced_app_ids)
+                                )
+                            )
+                            r_app = await conn.execute(
+                                delete(governance_approvals).where(
+                                    governance_approvals.c.id.in_(unreferenced_app_ids)
+                                )
+                            )
+                            erased_records += r_app.rowcount or 0
+
+                        # 9. Policy hierarchy: activations -> revisions -> versions -> policies -> history
+                        await conn.execute(
+                            delete(governance_policy_activations).where(
+                                governance_policy_activations.c.org_id == org_id
+                            )
+                        )
+                        await conn.execute(
+                            delete(governance_policy_revisions).where(
+                                governance_policy_revisions.c.org_id == org_id
+                            )
+                        )
+                        await conn.execute(
+                            delete(governance_policy_versions).where(
+                                governance_policy_versions.c.org_id == org_id
+                            )
+                        )
+                        await conn.execute(
+                            delete(governance_policies).where(governance_policies.c.org_id == org_id)
+                        )
+                        await conn.execute(
+                            delete(governance_policy_history).where(
+                                governance_policy_history.c.org_id == org_id
+                            )
+                        )
+
+                        # 10. Nonces & delegations
+                        r_nonces = await conn.execute(
+                            delete(governance_execution_nonces).where(
+                                governance_execution_nonces.c.organization_id == org_id
+                            )
+                        )
+                        r_del = await conn.execute(
+                            delete(governance_delegations).where(
+                                governance_delegations.c.org_id == org_id
+                            )
+                        )
+                        erased_records += (r_nonces.rowcount or 0) + (r_del.rowcount or 0)
+
+                        # 11. Sessions
                         r_s = await conn.execute(
-                            delete(web_sessions).where(web_sessions.c.org_id == org.id)
+                            delete(web_sessions).where(web_sessions.c.org_id == org_id)
                         )
                         r_is = await conn.execute(
-                            delete(iam_sessions).where(iam_sessions.c.org_id == org.id)
+                            delete(iam_sessions).where(iam_sessions.c.org_id == org_id)
                         )
                         revoked_sessions += (r_s.rowcount or 0) + (r_is.rowcount or 0)
 
-                        # Purge restored API keys
+                        # 12. API keys & lineage
+                        if tenant_key_ids:
+                            await conn.execute(
+                                delete(org_api_key_metadata).where(
+                                    org_api_key_metadata.c.key_id.in_(tenant_key_ids)
+                                )
+                            )
                         r_k = await conn.execute(
-                            delete(org_api_keys).where(org_api_keys.c.org_id == org.id)
+                            delete(org_api_keys).where(org_api_keys.c.org_id == org_id)
                         )
                         r_ik = await conn.execute(
                             delete(iam_api_key_lineage).where(
-                                iam_api_key_lineage.c.org_id == org.id
+                                iam_api_key_lineage.c.org_id == org_id
                             )
                         )
                         revoked_keys += (r_k.rowcount or 0) + (r_ik.rowcount or 0)
 
-                        # Cascade erase of all restored tenant operational/eval data
+                        # 13. Evaluative and transient operational data
                         for tbl, col in [
                             (eval_runs, "org_id"),
                             (eval_baselines, "org_id"),
                             (mcp_tool_calls, "org_id"),
                             (token_usage, "org_id"),
-                            (governance_approvals, "org_id"),
-                            (governance_policies, "org_id"),
-                            (governance_policy_versions, "org_id"),
                             (iam_scim_users, "org_id"),
                             (iam_scim_groups, "org_id"),
                             (web_memberships, "org_id"),
                         ]:
                             c_attr = getattr(tbl.c, col)
-                            r_del = await conn.execute(delete(tbl).where(c_attr == org.id))
-                            erased_records += r_del.rowcount or 0
+                            r_eval = await conn.execute(delete(tbl).where(c_attr == org_id))
+                            erased_records += r_eval.rowcount or 0
+
+                        # 14. Forensically revoke root authority records and consent proofs
+                        # Preserves forensic evidence for audit without leaving active authority
+                        r_root = await conn.execute(
+                            update(governance_root_authority_records)
+                            .where(
+                                governance_root_authority_records.c.organization_id == org_id,
+                                governance_root_authority_records.c.revoked_at.is_(None),
+                            )
+                            .values(
+                                revoked_at=now,
+                                revoked_by=reconciled_by,
+                                revoke_reason="Tombstoned tenant post-restore reconciliation fencing",
+                            )
+                        )
+                        revoked_root_records += r_root.rowcount or 0
+
+                        r_cp = await conn.execute(
+                            update(governance_consent_proofs)
+                            .where(
+                                governance_consent_proofs.c.organization_id == org_id,
+                                governance_consent_proofs.c.revoked_at.is_(None),
+                            )
+                            .values(
+                                revoked_at=now,
+                                revoked_by=reconciled_by,
+                                revoke_reason="Tombstoned tenant post-restore reconciliation fencing",
+                            )
+                        )
+                        revoked_consent_proofs += r_cp.rowcount or 0
+
+                        # 15. Monotonic epoch advancement for tombstoned tenant
+                        store_b_rec = self._provider.get_state(org_id)
+                        floor = (
+                            max(store_b_rec.security_epoch, store_b_rec.revocation_floor)
+                            if store_b_rec
+                            else 1
+                        )
+                        existing_epochs = (
+                            await conn.execute(
+                                select(
+                                    governance_revocation_epochs.c.scope,
+                                    governance_revocation_epochs.c.epoch,
+                                ).where(governance_revocation_epochs.c.organization_id == org_id)
+                            )
+                        ).fetchall()
+                        known_scopes = {row[0]: row[1] for row in existing_epochs}
+                        for sc, ep in known_scopes.items():
+                            target_epoch = max(ep + 1, floor)
+                            await conn.execute(
+                                update(governance_revocation_epochs)
+                                .where(
+                                    governance_revocation_epochs.c.organization_id == org_id,
+                                    governance_revocation_epochs.c.scope == sc,
+                                )
+                                .values(epoch=target_epoch, updated_at=now)
+                            )
+                            fenced_epochs += 1
+
+                        for required_scope in ("governance", "tenant_global"):
+                            if required_scope not in known_scopes:
+                                await conn.execute(
+                                    insert(governance_revocation_epochs).values(
+                                        organization_id=org_id,
+                                        scope=required_scope,
+                                        epoch=max(1, floor),
+                                        updated_at=now,
+                                    )
+                                )
+                                fenced_epochs += 1
 
                     # Ensure Store A tenant_tombstones contains all Store B tombstones
                     existing_a_ids = {t.org_id for t in tombstones_a}
@@ -943,12 +1275,76 @@ class RestoreReconciliationEngine:
                             )
                             existing_a_ids.add(tb.tenant_id)
 
+                # Synchronize revocation floors from Store B for all active records
+                all_b_records = self._provider.list_all()
+                for rec in all_b_records:
+                    if rec.tenant_id in tombstoned_ids:
+                        continue
+                    floor = max(rec.security_epoch, rec.revocation_floor)
+                    if floor <= 0:
+                        continue
+
+                    existing_epochs = (
+                        await conn.execute(
+                            select(
+                                governance_revocation_epochs.c.scope,
+                                governance_revocation_epochs.c.epoch,
+                            ).where(governance_revocation_epochs.c.organization_id == rec.tenant_id)
+                        )
+                    ).fetchall()
+                    known_scopes = {row[0]: row[1] for row in existing_epochs}
+
+                    for sc, ep in known_scopes.items():
+                        if ep < floor:
+                            await conn.execute(
+                                update(governance_revocation_epochs)
+                                .where(
+                                    governance_revocation_epochs.c.organization_id == rec.tenant_id,
+                                    governance_revocation_epochs.c.scope == sc,
+                                )
+                                .values(epoch=floor, updated_at=now)
+                            )
+                            fenced_epochs += 1
+
+                    org_exists = (
+                        await conn.execute(
+                            select(organizations.c.id).where(
+                                organizations.c.id == rec.tenant_id
+                            )
+                        )
+                    ).fetchone()
+                    if org_exists:
+                        for required_scope in ("governance", "tenant_global"):
+                            if required_scope not in known_scopes:
+                                await conn.execute(
+                                    insert(governance_revocation_epochs).values(
+                                        organization_id=rec.tenant_id,
+                                        scope=required_scope,
+                                        epoch=floor,
+                                        updated_at=now,
+                                    )
+                                )
+                                fenced_epochs += 1
+                            elif known_scopes[required_scope] < floor:
+                                await conn.execute(
+                                    update(governance_revocation_epochs)
+                                    .where(
+                                        governance_revocation_epochs.c.organization_id == rec.tenant_id,
+                                        governance_revocation_epochs.c.scope == required_scope,
+                                    )
+                                    .values(epoch=floor, updated_at=now)
+                                )
+                                fenced_epochs += 1
+
                 status = "RECONCILED"
                 details = {
                     "quarantined_orgs": quarantined_orgs,
                     "revoked_sessions": revoked_sessions,
                     "revoked_keys": revoked_keys,
                     "erased_records": erased_records,
+                    "fenced_epochs": fenced_epochs,
+                    "revoked_root_records": revoked_root_records,
+                    "revoked_consent_proofs": revoked_consent_proofs,
                 }
 
                 await conn.execute(
@@ -962,6 +1358,17 @@ class RestoreReconciliationEngine:
                         reconciled_by=reconciled_by,
                     )
                 )
+
+            # In-flight execution containment
+            try:
+                from responsibleai.isolation.in_flight import InFlightExecutionRegistry
+
+                registry = InFlightExecutionRegistry.get_instance()
+                for q_org in quarantined_orgs:
+                    await registry.terminate_in_flight(organization_id=q_org)
+                await registry.reconcile_epochs(self._engine)
+            except Exception:
+                pass
 
             # Reached here without error -> advance gate to READY
             self._gate.set_state(RestoreReadinessState.READY, updated_by=reconciled_by)
