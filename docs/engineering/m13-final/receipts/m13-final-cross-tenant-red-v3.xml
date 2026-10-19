@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="2" skipped="0" tests="2" time="26.422" timestamp="2026-10-19T23:09:18.239537+05:30" hostname="GURUPRASATHs-MacBook-Air.local"><testcase classname="tests.test_m13_final_cross_tenant_restore" name="test_foreign_approval_reference_blocks_restore_without_mutating_foreign_tenant[sqlite]" time="2.591"><failure message="AssertionError: assert 'REVOKED' == 'PENDING'&#10;  &#10;  - PENDING&#10;  + REVOKED">tests/test_m13_final_cross_tenant_restore.py:100: in test_foreign_approval_reference_blocks_restore_without_mutating_foreign_tenant
+    assert (
+E   AssertionError: assert 'REVOKED' == 'PENDING'
+E     
+E     - PENDING
+E     + REVOKED</failure></testcase><testcase classname="tests.test_m13_final_cross_tenant_restore" name="test_foreign_approval_reference_blocks_restore_without_mutating_foreign_tenant[postgres]" time="22.464"><failure message="AssertionError: assert 'REVOKED' == 'PENDING'&#10;  &#10;  - PENDING&#10;  + REVOKED">tests/test_m13_final_cross_tenant_restore.py:100: in test_foreign_approval_reference_blocks_restore_without_mutating_foreign_tenant
+    assert (
+E   AssertionError: assert 'REVOKED' == 'PENDING'
+E     
+E     - PENDING
+E     + REVOKED</failure></testcase></testsuite></testsuites>
