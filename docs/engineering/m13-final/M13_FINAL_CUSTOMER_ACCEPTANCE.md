@@ -1,5 +1,16 @@
 # M13 customer acceptance
 
+## Current checkpoint: 851f5288 (2026-10-19)
+
+The authoritative current evidence and limitations are in
+[M13_FINAL_CORRECTIVE_CHECKPOINT.md](M13_FINAL_CORRECTIVE_CHECKPOINT.md).
+Candidate HEAD is `851f52888a57df35619b9d75ab3d6f61c4f53bc7`, tree
+`c66bed85ac9bbaff54af9c5a08e29f82f441ec99`, parent
+`39461fec883aeb18a14f486ba9d65a2c02b20d06`. New exact-head CI is pending;
+completed predecessor receipts must not be transferred to it. Subsequent
+historical/interim sections retain their original checkpoint scope.
+**BLOCKED — ENGINEERING OR SECURITY GATES REMAIN. M13 OPEN. GLOBAL PRODUCTION NO-GO.**
+
 Candidate under qualification: HEAD `bb6e263fc271a07f58484ce1fd1445cc201b24b0`, tree `93f36747cd00610850c8cf0ace13de107b145da5`, parent `2bde48d4abe20312dd6408cf62366d68ca69746e`. [Draft PR223](https://github.com/Guruprasath-Annadurai/Whitepact/pull/223). Reports/evidence are maintained separately from the tested implementation. M13 OPEN. GLOBAL PRODUCTION NO-GO.
 
 [Exact-head Sovereign39253680878](https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/39253680878): IN PROGRESS. [Product39253712365](https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/39253712365), [SDK/package39253718808](https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/39253718808): queued/in progress. No old source receipt is promoted to current acceptance.

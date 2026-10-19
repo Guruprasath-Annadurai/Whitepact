@@ -1,5 +1,16 @@
 # M13 original test disposition register
 
+## Current checkpoint: 851f5288 (2026-10-19)
+
+The authoritative current evidence and limitations are in
+[M13_FINAL_CORRECTIVE_CHECKPOINT.md](M13_FINAL_CORRECTIVE_CHECKPOINT.md).
+Candidate HEAD is `851f52888a57df35619b9d75ab3d6f61c4f53bc7`, tree
+`c66bed85ac9bbaff54af9c5a08e29f82f441ec99`, parent
+`39461fec883aeb18a14f486ba9d65a2c02b20d06`. New exact-head CI is pending;
+completed predecessor receipts must not be transferred to it. Subsequent
+historical/interim sections retain their original checkpoint scope.
+**BLOCKED — ENGINEERING OR SECURITY GATES REMAIN. M13 OPEN. GLOBAL PRODUCTION NO-GO.**
+
 Status: IN PROGRESS. M13 OPEN. GLOBAL PRODUCTION NO-GO.
 
 Candidate under qualification: HEAD `bb6e263fc271a07f58484ce1fd1445cc201b24b0`,
