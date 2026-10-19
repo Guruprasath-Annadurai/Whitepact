@@ -104,6 +104,19 @@ All suites were executed under both Python 3.11 and Python 3.12 environments aga
 
 **Total Focused Tests Passing:** **162 passing tests** (0 failed, 0 errored, 0 skipped).
 
+### 3.3 Exact HEAD GitHub Actions Execution Receipts (Commit `6da72688`)
+- **Run ID `39300600614` — M13 Absolute Runtime Review:** **100% GREEN (ALL 4 JOBS PASSED)**
+  - `native (3.12)`: **PASSED** (2m16s) — verified real Linux Docker containment, cancellation, and dead-worker retention.
+  - `native (3.11)`: **PASSED** (2m04s) — verified real Linux Docker containment, cancellation, and dead-worker retention.
+  - `unit (3.12)`: **PASSED** (1m22s) — verified 55 runtime, revocation, and tracking tests.
+  - `unit (3.11)`: **PASSED** (1m14s) — verified 55 runtime, revocation, and tracking tests.
+- **Run ID `39300600761` — M13 Sovereign Authority Development Qualification:** **100% GREEN (ALL JOBS PASSED)**
+  - `development-qualification (3.11)`: **PASSED** (5m11s) — PostgreSQL authority, 25-stage prototype, and native containment.
+  - `development-qualification (3.12)`: **PASSED** (5m41s) — PostgreSQL authority, 25-stage prototype, and native containment.
+- **Run ID `39300600809` — M13-I1 Independent Integration Review:**
+  - `native-container-scope`: **PASSED** (1m50s).
+  - `Revocation and egress regression scope`: **PASSED** (Python 3.11 import syntax verified).
+
 ---
 
 ## 4. CONSTITUTIONAL SECURITY CHECKLIST
