@@ -117,7 +117,7 @@ jobs:
       - name: Independent final integration admission and original owner counterexamples
         if: ${{ !cancelled() }}
         run: |
-          python -m pytest tests/test_m13_final_admission.py tests/test_m13_final_detached_identity.py tests/test_m13_final_container_identity.py scripts/engineering/reproducers/test_m13_final_owner_review.py -o addopts= --timeout=120 --timeout-method=signal --junitxml=/tmp/ironclad/final-contracts.xml -vv -ra --tb=short > /tmp/ironclad/final-contracts.log 2>&1
+          python -m pytest tests/test_m13_final_admission.py tests/test_m13_final_http_admission.py tests/test_m13_final_detached_identity.py tests/test_m13_final_container_identity.py scripts/engineering/reproducers/test_m13_final_owner_review.py -o addopts= --timeout=120 --timeout-method=signal --junitxml=/tmp/ironclad/final-contracts.xml -vv -ra --tb=short > /tmp/ironclad/final-contracts.log 2>&1
       - name: Replay unchanged recovery tests and imported owner-focused contracts
         if: ${{ !cancelled() }}
         shell: bash

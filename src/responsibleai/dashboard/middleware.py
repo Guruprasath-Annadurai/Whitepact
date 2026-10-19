@@ -398,9 +398,15 @@ class RestoreReadinessMiddleware(BaseHTTPMiddleware):
         )
 
         gate = get_restore_readiness_gate()
-        current_state = gate.state
+        path = request.url.path
+        if path not in self.ALLOWED_RECOVERY_PATHS:
+            try:
+                current_state = await gate.check_database_authority()
+            except Exception:
+                current_state = RestoreReadinessState.FAILED
+        else:
+            current_state = gate.state
         if current_state != RestoreReadinessState.READY:
-            path = request.url.path
             if path not in self.ALLOWED_RECOVERY_PATHS:
                 return JSONResponse(
                     status_code=503,

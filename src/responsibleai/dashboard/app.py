@@ -3430,13 +3430,17 @@ async def k8s_readiness() -> JSONResponse:
 @app.get("/api/v1/restore/status", tags=["ops"])
 async def restore_status() -> JSONResponse:
     """Read-only restore admission status probe."""
-    from responsibleai.data_governance.backup_defense import get_restore_readiness_gate
+    from responsibleai.data_governance.backup_defense import (
+        RestoreReadinessState,
+        get_restore_readiness_gate,
+    )
 
     gate = get_restore_readiness_gate()
+    current_state = await gate.check_database_authority()
     return JSONResponse(
         content={
-            "status": gate.state.value,
-            "is_admitted": gate.is_admitted(),
+            "status": current_state.value,
+            "is_admitted": current_state == RestoreReadinessState.READY,
         },
         status_code=200,
     )
