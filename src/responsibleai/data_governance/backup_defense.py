@@ -1223,6 +1223,48 @@ class RestoreReconciliationEngine:
                 store_a_orgs = (await conn.execute(select(organizations))).fetchall()
                 store_a_org_map = {org.id: org for org in store_a_orgs}
 
+                # Restored ID-only foreign keys do not establish tenant ownership.
+                # Reject malformed graphs before any purge, revocation or quarantine
+                # mutation, rather than following a tenant's reference into another
+                # tenant's authority records. The enclosing transaction rolls back.
+                foreign_approval = await conn.scalar(
+                    select(runtime_execution_requests.c.request_id)
+                    .join(
+                        governance_approvals,
+                        runtime_execution_requests.c.approval_id == governance_approvals.c.id,
+                    )
+                    .where(
+                        runtime_execution_requests.c.organization_id
+                        != governance_approvals.c.org_id
+                    )
+                    .limit(1)
+                )
+                if foreign_approval is not None:
+                    raise RestoreReconciliationError(
+                        "Cross-tenant approval reference in restored authority graph."
+                    )
+                for child in (
+                    runtime_worker_leases,
+                    runtime_execution_dispatch_outbox,
+                    runtime_execution_attempts,
+                    governance_execution_authorizations,
+                ):
+                    foreign_child = await conn.scalar(
+                        select(child.c.request_id)
+                        .join(
+                            runtime_execution_requests,
+                            child.c.request_id == runtime_execution_requests.c.request_id,
+                        )
+                        .where(
+                            child.c.organization_id != runtime_execution_requests.c.organization_id
+                        )
+                        .limit(1)
+                    )
+                    if foreign_child is not None:
+                        raise RestoreReconciliationError(
+                            "Cross-tenant runtime reference in restored authority graph."
+                        )
+
                 # Evaluate Store B lifecycle completeness for EVERY tenant in Store A
                 # An active organization in Store A without an authoritative Store B lifecycle record
                 # is unverified and cannot be trusted.
@@ -1394,6 +1436,7 @@ class RestoreReconciliationEngine:
                                 update(governance_approvals)
                                 .where(
                                     governance_approvals.c.id.in_(referenced_app_ids),
+                                    governance_approvals.c.org_id == org_id,
                                     governance_approvals.c.status != "REVOKED",
                                 )
                                 .values(

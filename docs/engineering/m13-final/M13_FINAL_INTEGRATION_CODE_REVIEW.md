@@ -1,5 +1,29 @@
 # M13 Final Convergence: independent source review
 
+## Independent cross-tenant correction after 39461fec
+
+The completed 39461fec matrix is rejected for acceptance: 7,960 PASS / 83 FAIL /
+34 SKIP / zero ERROR on each Python version, complete 8,077-case accounting.
+It is predecessor evidence, not evidence for the subsequent correction.
+
+Independent negative SQLite and actual PostgreSQL fixtures reproduced a restored
+request for deleted tenant A revoking a PENDING approval belonging to active
+tenant B. The schema's ID-only FK permits that malformed graph. Two unchanged
+negative assertions were RED (`REVOKED` versus `PENDING`) in
+`/private/tmp/m13-final-cross-tenant-red-v3.xml`; no positive customer authority
+was manufactured. Initial setup import error and an earlier two-case RED that
+asserted rejection are retained separately.
+
+Reconciliation now checks approval/request ownership and runtime child/request
+ownership before mutating restored tenant data. A mismatch aborts the database
+transaction and persists FAILED readiness. Approval revocation also requires
+the explicit owning tenant. Existing protected reproducer bytes are unchanged.
+Native cold restart with every tracking/receipt association lost remains
+unqualified; the passing late-ACK native regression does not establish it.
+
+M13 remains OPEN; GLOBAL PRODUCTION NO-GO. Full current-head qualification and
+independent Antigravity cross-review remain mandatory.
+
 Status: IN PROGRESS. M13 OPEN. GLOBAL PRODUCTION NO-GO.
 
 ## Verified source provenance
