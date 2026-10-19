@@ -1,10 +1,10 @@
 # M13 Final Convergence: independent source review
 
-Current candidate:bb6e263fc271a07f58484ce1fd1445cc201b24b0;
+Historical interim candidate:bb6e263fc271a07f58484ce1fd1445cc201b24b0;
 tree93f36747cd00610850c8cf0ace13de107b145da5;
 parent2bde48d4abe20312dd6408cf62366d68ca69746e.
 https://github.com/Guruprasath-Annadurai/Whitepact/pull/223
-Exact-head full/native/customer/security matrices are pending extraction.
+Its matrices have since completed and are superseded below.
 
 Further boundary review reproduced HTTP mutation200 instead of503 after a
 post-startup durable pending marker (1FAIL2.66s), and stale read-only READY on
@@ -14,6 +14,29 @@ queries live DB before non-recovery paths, and operator status reports current
 DB admission. Original narrow recovery allowlist and disabled public restore
 remain unchanged. Prior2bde broad jobs were superseded/canceled; canceled is not
 a completed matrix or a quota denial.
+## Independent cross-tenant correction after 39461fec
+
+The completed 39461fec matrix is rejected for acceptance: 7,960 PASS / 83 FAIL /
+34 SKIP / zero ERROR on each Python version, complete 8,077-case accounting.
+It is predecessor evidence, not evidence for the subsequent correction.
+
+Independent negative SQLite and actual PostgreSQL fixtures reproduced a restored
+request for deleted tenant A revoking a PENDING approval belonging to active
+tenant B. The schema's ID-only FK permits that malformed graph. Two unchanged
+negative assertions were RED (`REVOKED` versus `PENDING`) in
+`/private/tmp/m13-final-cross-tenant-red-v3.xml`; no positive customer authority
+was manufactured. Initial setup import error and an earlier two-case RED that
+asserted rejection are retained separately.
+
+Reconciliation now checks approval/request ownership and runtime child/request
+ownership before mutating restored tenant data. A mismatch aborts the database
+transaction and persists FAILED readiness. Approval revocation also requires
+the explicit owning tenant. Existing protected reproducer bytes are unchanged.
+Native cold restart with every tracking/receipt association lost remains
+unqualified; the passing late-ACK native regression does not establish it.
+
+M13 remains OPEN; GLOBAL PRODUCTION NO-GO. Full current-head qualification and
+independent Antigravity cross-review remain mandatory.
 
 Status: IN PROGRESS. M13 OPEN. GLOBAL PRODUCTION NO-GO.
 
