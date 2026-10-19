@@ -1,5 +1,20 @@
 # M13 Final Convergence: independent source review
 
+Current candidate:bb6e263fc271a07f58484ce1fd1445cc201b24b0;
+tree93f36747cd00610850c8cf0ace13de107b145da5;
+parent2bde48d4abe20312dd6408cf62366d68ca69746e.
+https://github.com/Guruprasath-Annadurai/Whitepact/pull/223
+Exact-head full/native/customer/security matrices are pending extraction.
+
+Further boundary review reproduced HTTP mutation200 instead of503 after a
+post-startup durable pending marker (1FAIL2.66s), and stale read-only READY on
+SQLite/PostgreSQL (2FAIL14.04s). Corrected HTTP/status4PASS25.54s across both
+databases; modified two HTTP source files mypyPASS. Customer middleware now
+queries live DB before non-recovery paths, and operator status reports current
+DB admission. Original narrow recovery allowlist and disabled public restore
+remain unchanged. Prior2bde broad jobs were superseded/canceled; canceled is not
+a completed matrix or a quota denial.
+
 Status: IN PROGRESS. M13 OPEN. GLOBAL PRODUCTION NO-GO.
 
 ## Verified source provenance
