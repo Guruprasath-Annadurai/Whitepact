@@ -189,7 +189,6 @@ def _check_remote_worker_active(
     for f in entries:
         filename = f.name
         file_exec = filename[:-5]
-        file_org = "unknown"
 
         try:
             if f.is_symlink():
