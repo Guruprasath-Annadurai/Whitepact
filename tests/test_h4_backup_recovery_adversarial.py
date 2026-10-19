@@ -90,10 +90,21 @@ from responsibleai.governance.evidence_publication import (
     publish_evidence_head,
     verify_published_head,
 )
+from responsibleai.isolation import in_flight as tracking
 from responsibleai.isolation.in_flight import (
     InFlightExecution,
     InFlightExecutionRegistry,
 )
+
+
+@pytest.fixture(autouse=True)
+def reset_in_flight_registry(tmp_path, monkeypatch):
+    t_dir = tmp_path / "tracking"
+    t_dir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(tracking, "_DISTRIBUTED_REGISTRY_DIR", t_dir)
+    InFlightExecutionRegistry.reset_instance()
+    yield
+    InFlightExecutionRegistry.reset_instance()
 
 
 @pytest.fixture()

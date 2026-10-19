@@ -700,6 +700,7 @@ class RestoreReadinessGate:
         self._local_state = initial_state
         self._provider_error: str | None = None
         self._db_engine = db_engine
+        self._db_authority_status: str | None = None
         if provider is None:
             store_b_path = os.environ.get("WHITEPACT_STORE_B_PATH") or os.environ.get(
                 "WHITEPACT_LIFECYCLE_STORE_PATH"
@@ -710,6 +711,10 @@ class RestoreReadinessGate:
                 except Exception as exc:
                     self._provider_error = str(exc)
                     provider = None
+            elif is_restore_pending_default():
+                self._provider_error = "Recovery startup requires durable Store B provider"
+            elif is_production_environment():
+                self._provider_error = "Production environment requires durable Store B provider"
         self._provider = provider
 
     @property
@@ -778,8 +783,11 @@ class RestoreReadinessGate:
             return self.state
         try:
             await assert_database_restore_consistent(eng)
-        except Exception:
+            self._db_authority_status = "RECONCILED"
+        except Exception as exc:
             self._local_state = RestoreReadinessState.FAILED
+            self._db_authority_status = "FAILED"
+            self._provider_error = f"Database restore inconsistency: {exc}"
             if self._provider is not None:
                 try:
                     self._provider.set_readiness_state(
@@ -820,11 +828,23 @@ def get_restore_readiness_gate() -> RestoreReadinessGate:
             except Exception as exc:
                 provider = None
                 provider_error = str(exc)
+        elif is_restore_pending_default():
+            provider_error = "Recovery startup requires durable Store B provider (WHITEPACT_STORE_B_PATH missing)"
+        elif is_production_environment():
+            provider_error = "Production environment requires durable Store B provider (WHITEPACT_STORE_B_PATH missing)"
+
         gate = RestoreReadinessGate(initial_state=initial, provider=provider)
         if provider_error is not None:
             gate._provider_error = provider_error
+            gate._local_state = RestoreReadinessState.FAILED
         _GLOBAL_RESTORE_GATE = gate
     return _GLOBAL_RESTORE_GATE
+
+
+def bind_restore_gate_engine(engine: DatabaseEngine) -> None:
+    """Bind application database engine to the global restore gate."""
+    gate = get_restore_readiness_gate()
+    gate._db_engine = engine
 
 
 def set_restore_readiness_gate(gate: RestoreReadinessGate | None) -> None:
@@ -863,6 +883,8 @@ async def assert_database_restore_consistent(engine: DatabaseEngine) -> None:
 
 def evaluate_startup_authority(
     gate: RestoreReadinessGate | None = None,
+    engine: DatabaseEngine | None = None,
+    db_status: str | None = None,
 ) -> StartupAuthorityEvaluation:
     """Evaluate and categorize system startup authority into NORMAL, RECOVERY, or UNCERTAIN."""
     g = gate or get_restore_readiness_gate()
@@ -872,6 +894,16 @@ def evaluate_startup_authority(
             readiness_state=RestoreReadinessState.FAILED,
             reason=f"Store B provider initialization failure: {g.provider_error}",
             durable_provider_present=False,
+            integrity_verified=False,
+        )
+
+    recorded_db_status = db_status or getattr(g, "_db_authority_status", None)
+    if recorded_db_status in ("CONTAINMENT_PENDING", "FAILED", "RECONCILING"):
+        return StartupAuthorityEvaluation(
+            mode=StartupAuthorityMode.RECOVERY,
+            readiness_state=RestoreReadinessState.FAILED,
+            reason=f"Database persists unreconciled recovery event: status={recorded_db_status}",
+            durable_provider_present=g.provider is not None,
             integrity_verified=False,
         )
 
@@ -927,11 +959,11 @@ def evaluate_startup_authority(
 
     if is_restore_pending_default():
         return StartupAuthorityEvaluation(
-            mode=StartupAuthorityMode.RECOVERY,
-            readiness_state=RestoreReadinessState.RESTORE_PENDING,
-            reason="Restore environment flag active",
+            mode=StartupAuthorityMode.UNCERTAIN if provider is None else StartupAuthorityMode.RECOVERY,
+            readiness_state=RestoreReadinessState.FAILED if provider is None else RestoreReadinessState.RESTORE_PENDING,
+            reason="Restore environment flag active without Store B" if provider is None else "Restore environment flag active",
             durable_provider_present=provider is not None,
-            integrity_verified=True,
+            integrity_verified=provider is not None,
         )
 
     return StartupAuthorityEvaluation(
@@ -941,6 +973,44 @@ def evaluate_startup_authority(
         durable_provider_present=provider is not None,
         integrity_verified=True,
     )
+
+
+async def evaluate_startup_authority_async(
+    gate: RestoreReadinessGate | None = None,
+    engine: DatabaseEngine | None = None,
+) -> StartupAuthorityEvaluation:
+    """Asynchronously evaluate startup authority including live database check."""
+    g = gate or get_restore_readiness_gate()
+    eng = engine or getattr(g, "_db_engine", None)
+    db_status = None
+    if eng is not None:
+        try:
+            await assert_database_restore_consistent(eng)
+            db_status = "RECONCILED"
+            g._db_authority_status = "RECONCILED"
+        except RestoreQuarantineError as rqe:
+            g._local_state = RestoreReadinessState.FAILED
+            g._db_authority_status = "FAILED"
+            g._provider_error = f"Database restore inconsistency: {rqe}"
+            return StartupAuthorityEvaluation(
+                mode=StartupAuthorityMode.RECOVERY,
+                readiness_state=RestoreReadinessState.FAILED,
+                reason=f"Database persists unreconciled recovery event: {rqe}",
+                durable_provider_present=g.provider is not None,
+                integrity_verified=False,
+            )
+        except Exception as exc:
+            g._local_state = RestoreReadinessState.FAILED
+            g._db_authority_status = "FAILED"
+            g._provider_error = f"Database authority verification error: {exc}"
+            return StartupAuthorityEvaluation(
+                mode=StartupAuthorityMode.UNCERTAIN,
+                readiness_state=RestoreReadinessState.FAILED,
+                reason=f"Database authority verification error: {exc}",
+                durable_provider_present=g.provider is not None,
+                integrity_verified=False,
+            )
+    return evaluate_startup_authority(gate=g, engine=eng, db_status=db_status)
 
 
 @dataclass(frozen=True)

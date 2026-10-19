@@ -1199,3 +1199,304 @@ async def test_reproducer_p0_05_multiprocess_authority_consistency(tmp_path, mon
     assert gate_worker_b.is_admitted() is True
     assert gate_worker_c.is_admitted() is True
 
+
+@pytest.mark.asyncio
+async def test_adversarial_p0_01_detached_alive_container_without_tracking_fails_closed(pg_engine, tmp_path, monkeypatch):
+    """Adversarial P0-01: Proves that a detached container whose tracking file disappears
+    remains in _unresolved and blocks READY until Docker authoritatively establishes termination.
+    """
+    tracking_dir = tmp_path / "tracking_p0_01"
+    tracking_dir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(tracking, "_DISTRIBUTED_REGISTRY_DIR", tracking_dir)
+    tracking.InFlightExecutionRegistry.reset_instance()
+
+    now = datetime.now(UTC)
+    async with pg_engine.raw.begin() as conn:
+        await conn.execute(
+            insert(organizations).values(
+                id="tenant-adv-p01",
+                name="Adv P01 Org",
+                slug="adv-p01",
+                created_at=now.isoformat(),
+                governance_status="ACTIVE",
+            )
+        )
+
+    provider = InMemoryLifecycleStateProvider()
+    provider.record_state(
+        LifecycleStateRecord(
+            tenant_id="tenant-adv-p01",
+            generation_id="gen-1",
+            state=LifecycleState.ACTIVE,
+            effective_at=now.isoformat(),
+            security_epoch=1,
+            revocation_floor=1,
+        )
+    )
+
+    registry = tracking.InFlightExecutionRegistry.get_instance()
+    container_id = "wp-sandbox-detached-1234"
+
+    # Register in-flight execution with container_name
+    await registry.register(
+        execution_id="exec-adv-p01",
+        organization_id="tenant-adv-p01",
+        action_id="action-adv-p01",
+        container_name=container_id,
+    )
+
+    # 1. Simulate worker crash/exit: tracking file disappears from disk, task & callback are None
+    entry = registry._active.pop("exec-adv-p01")
+    entry.task = None
+    entry.terminate_callback = None
+    registry._active["exec-adv-p01"] = entry
+
+    # Mock docker calls: container is currently ALIVE
+    docker_running_output = json.dumps([{"State": {"Running": True, "Status": "running"}}])
+    docker_dead_output = json.dumps([{"State": {"Running": False, "Status": "exited"}}])
+
+    def mock_subprocess_run(cmd, *args, **kwargs):
+        if "inspect" in cmd:
+            if mock_state["running"]:
+                return subprocess.CompletedProcess(cmd, 0, stdout=docker_running_output, stderr="")
+            else:
+                return subprocess.CompletedProcess(cmd, 0, stdout=docker_dead_output, stderr="")
+        elif "rm" in cmd:
+            mock_state["running"] = False
+            return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    mock_state = {"running": True}
+    monkeypatch.setattr(subprocess, "run", mock_subprocess_run)
+
+    # 2. Terminate in flight is invoked (or cleanup scan)
+    # If Docker rm fails or container remains running, it MUST NOT be resolved
+    def mock_failing_rm(cmd, *args, **kwargs):
+        if "inspect" in cmd:
+            return subprocess.CompletedProcess(cmd, 0, stdout=docker_running_output, stderr="")
+        if "rm" in cmd:
+            raise subprocess.CalledProcessError(1, cmd, stderr="Docker daemon error on rm")
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", mock_failing_rm)
+    await registry.terminate_in_flight(organization_id="tenant-adv-p01")
+
+    # Execution MUST be in _unresolved!
+    assert "exec-adv-p01" in registry._unresolved
+    assert registry.get_unresolved_containments("tenant-adv-p01")
+
+    # Reconciliation MUST fail closed
+    gate = RestoreReadinessGate(initial_state=RestoreReadinessState.RESTORE_PENDING)
+    reconciler = RestoreReconciliationEngine(pg_engine, lifecycle_provider=provider, gate=gate)
+
+    with pytest.raises(RestoreReconciliationError, match="[Uu]nresolved containment"):
+        await reconciler.reconcile_post_restore("adv-p01-test")
+
+    assert gate.state == RestoreReadinessState.FAILED
+    assert gate.is_admitted() is False
+
+    # 3. Now let Docker confirm container is dead / removed
+    monkeypatch.setattr(subprocess, "run", mock_subprocess_run)
+    mock_state["running"] = False
+
+    resolved = await registry.retry_unresolved()
+    assert len(resolved) == 1
+    assert "exec-adv-p01" in resolved
+    assert "exec-adv-p01" not in registry._unresolved
+
+    # Now reconciliation must succeed
+    gate.set_state(RestoreReadinessState.RESTORE_PENDING)
+    await reconciler.reconcile_post_restore("adv-p01-test")
+    assert gate.state == RestoreReadinessState.READY
+    assert gate.is_admitted() is True
+
+    tracking.InFlightExecutionRegistry.reset_instance()
+
+
+@pytest.mark.asyncio
+async def test_adversarial_p0_01_docker_timeout_daemon_failure_fails_closed(tmp_path, monkeypatch):
+    """Adversarial P0-01: Proves that Docker timeouts and daemon connection errors
+    fail closed and maintain unresolved tracking.
+    """
+    tracking_dir = tmp_path / "tracking_p0_01_timeout"
+    tracking_dir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(tracking, "_DISTRIBUTED_REGISTRY_DIR", tracking_dir)
+    tracking.InFlightExecutionRegistry.reset_instance()
+
+    registry = tracking.InFlightExecutionRegistry.get_instance()
+    container_id = "wp-sandbox-timeout-test"
+
+    registry._unresolved["exec-timeout"] = tracking.InFlightExecution(
+        execution_id="exec-timeout",
+        organization_id="tenant-timeout",
+        action_id="act-1",
+        authorization_id=None,
+        task=None,
+        terminate_callback=None,
+        created_at=time.time(),
+        container_name=container_id,
+        termination_attempts=1,
+    )
+
+    # 1. Simulate Docker timeout
+    def mock_timeout(cmd, *args, **kwargs):
+        raise subprocess.TimeoutExpired(cmd=cmd, timeout=5)
+
+    monkeypatch.setattr(subprocess, "run", mock_timeout)
+
+    is_contained = await tracking.verify_authoritative_container_containment(container_id)
+    assert is_contained is False
+
+    resolved = await registry.retry_unresolved()
+    assert len(resolved) == 0
+    assert "exec-timeout" in registry._unresolved
+
+    # 2. Simulate Docker daemon error
+    def mock_daemon_error(cmd, *args, **kwargs):
+        raise subprocess.CalledProcessError(1, cmd, stderr="Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?")
+
+    monkeypatch.setattr(subprocess, "run", mock_daemon_error)
+
+    is_contained = await tracking.verify_authoritative_container_containment(container_id)
+    assert is_contained is False
+
+    resolved = await registry.retry_unresolved()
+    assert len(resolved) == 0
+    assert "exec-timeout" in registry._unresolved
+
+    tracking.InFlightExecutionRegistry.reset_instance()
+
+
+@pytest.mark.asyncio
+async def test_adversarial_p0_02_startup_authority_matrix(pg_engine, tmp_path, monkeypatch):
+    """Adversarial P0-02: Exhaustively verifies startup authority evaluation across
+    NORMAL, RECOVERY, and UNCERTAIN modes.
+    """
+    from responsibleai.data_governance.backup_defense import (
+        StartupAuthorityMode,
+        bind_restore_gate_engine,
+        evaluate_startup_authority,
+        evaluate_startup_authority_async,
+        get_restore_readiness_gate,
+        set_restore_readiness_gate,
+    )
+
+    # Clean state
+    set_restore_readiness_gate(None)
+    bind_restore_gate_engine(None)
+
+    # -------------------------------------------------------------
+    # 1. NORMAL mode: clean startup without restore flags
+    # -------------------------------------------------------------
+    monkeypatch.delenv("WHITEPACT_RESTORE_MODE", raising=False)
+    monkeypatch.delenv("WHITEPACT_RESTORE_PENDING", raising=False)
+    monkeypatch.delenv("WHITEPACT_STORE_B_PATH", raising=False)
+
+    bind_restore_gate_engine(pg_engine)
+    res = await evaluate_startup_authority_async(engine=pg_engine)
+    assert res.mode == StartupAuthorityMode.NORMAL
+    gate = get_restore_readiness_gate()
+    assert gate.state == RestoreReadinessState.READY
+    assert gate.is_admitted() is True
+
+    # -------------------------------------------------------------
+    # 2. Database authority violation in NORMAL mode:
+    # If the database has an unreconciled recovery record in FAILED
+    # -------------------------------------------------------------
+    now = datetime.now(UTC)
+    async with pg_engine.raw.begin() as conn:
+        await conn.execute(
+            insert(restore_reconciliation_records).values(
+                id=str(uuid.uuid4()),
+                restored_at=now.isoformat(),
+                status="FAILED",
+                tombstones_detected=1,
+                tenants_quarantined=1,
+                details_json=json.dumps({"error": "Unfinished restore attempt"}),
+                reconciled_by="admin-1",
+            )
+        )
+
+    set_restore_readiness_gate(None)
+    res = await evaluate_startup_authority_async(engine=pg_engine)
+    assert res.mode in (StartupAuthorityMode.RECOVERY, StartupAuthorityMode.UNCERTAIN)
+    assert res.readiness_state == RestoreReadinessState.FAILED
+    gate = get_restore_readiness_gate()
+    assert gate.state == RestoreReadinessState.FAILED
+    assert gate.is_admitted() is False
+
+    # Clean up that record so we can test other branches
+    async with pg_engine.raw.begin() as conn:
+        await conn.execute(
+            update(restore_reconciliation_records)
+            .where(restore_reconciliation_records.c.reconciled_by == "admin-1")
+            .values(status="RECONCILED")
+        )
+
+    # -------------------------------------------------------------
+    # 3. RECOVERY mode: flags set, valid Store B file present and READY
+    # -------------------------------------------------------------
+    store_b_file = tmp_path / "store_b_valid.db"
+    provider = DurableLifecycleStateProvider(store_b_file)
+    provider.set_readiness_state(RestoreReadinessState.READY, updated_by="test-orch")
+
+    monkeypatch.setenv("WHITEPACT_RESTORE_MODE", "1")
+    monkeypatch.setenv("WHITEPACT_STORE_B_PATH", str(store_b_file))
+
+    set_restore_readiness_gate(None)
+    res = await evaluate_startup_authority_async(engine=pg_engine)
+    assert res.readiness_state == RestoreReadinessState.READY
+    gate = get_restore_readiness_gate()
+    assert gate.state == RestoreReadinessState.READY
+    assert gate.is_admitted() is True
+
+    # -------------------------------------------------------------
+    # 4. UNCERTAIN mode under recovery conditions:
+    # 4a. Missing WHITEPACT_STORE_B_PATH
+    # -------------------------------------------------------------
+    monkeypatch.delenv("WHITEPACT_STORE_B_PATH", raising=False)
+    set_restore_readiness_gate(None)
+    res = evaluate_startup_authority()
+    assert res.mode == StartupAuthorityMode.UNCERTAIN
+    gate = get_restore_readiness_gate()
+    assert gate.state == RestoreReadinessState.FAILED
+    assert gate.is_admitted() is False
+
+    # 4b. Forbidden Store B filename
+    forbidden_store_b = tmp_path / "whitepact_store_b_lifecycle.db"
+    monkeypatch.setenv("WHITEPACT_STORE_B_PATH", str(forbidden_store_b))
+    set_restore_readiness_gate(None)
+    res = evaluate_startup_authority()
+    assert res.mode == StartupAuthorityMode.UNCERTAIN
+    gate = get_restore_readiness_gate()
+    assert gate.state == RestoreReadinessState.FAILED
+    assert gate.is_admitted() is False
+
+    # 4c. Corrupt Store B file
+    corrupt_file = tmp_path / "corrupt_store_b.db"
+    corrupt_file.write_bytes(b"NOT A SQLITE FILE HEADER")
+    monkeypatch.setenv("WHITEPACT_STORE_B_PATH", str(corrupt_file))
+    set_restore_readiness_gate(None)
+    res = evaluate_startup_authority()
+    assert res.mode == StartupAuthorityMode.UNCERTAIN
+    gate = get_restore_readiness_gate()
+    assert gate.state == RestoreReadinessState.FAILED
+    assert gate.is_admitted() is False
+
+    # 4d. Store B file in FAILED state
+    failed_store_b = tmp_path / "failed_store_b.db"
+    prov_failed = DurableLifecycleStateProvider(failed_store_b)
+    prov_failed.set_readiness_state(RestoreReadinessState.FAILED, updated_by="test-orch")
+    monkeypatch.setenv("WHITEPACT_STORE_B_PATH", str(failed_store_b))
+    set_restore_readiness_gate(None)
+    res = evaluate_startup_authority()
+    assert res.readiness_state == RestoreReadinessState.FAILED
+    gate = get_restore_readiness_gate()
+    assert gate.state == RestoreReadinessState.FAILED
+    assert gate.is_admitted() is False
+
+    # Reset gate for subsequent tests
+    set_restore_readiness_gate(None)
+    bind_restore_gate_engine(None)
+
+

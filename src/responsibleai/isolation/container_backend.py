@@ -525,6 +525,7 @@ class DockerContainerBackend(IsolationBackend):
                         task=asyncio.current_task(),
                         terminate_callback=_terminate_container,
                         admission_epoch=request.admission_epoch,
+                        container_name=container_name,
                     )
                 except PermissionError as exc:
                     return ExecutionOutcome(

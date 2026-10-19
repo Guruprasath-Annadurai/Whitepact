@@ -541,6 +541,13 @@ async def lifespan(application: FastAPI):
 
     bind_counter_engine(_db_engine)
     bind_sovereign_engine(_db_engine)
+    from responsibleai.data_governance import bind_restore_gate_engine, get_restore_readiness_gate
+
+    bind_restore_gate_engine(_db_engine)
+    try:
+        await get_restore_readiness_gate().check_database_authority(_db_engine)
+    except Exception as _auth_exc:
+        logger.warning("startup_database_authority_check_failed: %s", _auth_exc)
     _in_flight_registry = InFlightExecutionRegistry.get_instance()
     _in_flight_registry.start_reconciliation_watcher(_db_engine, interval=0.1)
     _plan_rate_limiter = PlanRateLimiter(redis_url=settings.redis_url)
