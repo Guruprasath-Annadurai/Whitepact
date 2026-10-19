@@ -553,6 +553,7 @@ class DockerContainerBackend(IsolationBackend):
                         admission_epoch=request.admission_epoch,
                         container_name=container_name,
                         container_id=creation_receipt(),
+                        container_receipt=str(cid_file),
                     )
                     # No await between registry acceptance and owner transfer.
                     # Rejection must see the registration task as its own caller,
