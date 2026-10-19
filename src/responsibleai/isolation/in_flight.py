@@ -20,8 +20,10 @@ import hashlib
 import json
 import logging
 import os
+import shutil
 import stat
 import struct
+import subprocess
 import tempfile
 import time
 import uuid
@@ -105,6 +107,7 @@ def _record_cross_worker_registration(entry: InFlightExecution) -> None:
         "created_at": time.time(),
         "containment_status": entry.containment_status,
         "registration_id": entry.registration_id,
+        "container_name": entry.container_name,
     }
     temporary = None
     try:
@@ -185,11 +188,7 @@ def _check_remote_worker_active(
 
     for f in entries:
         filename = f.name
-        file_org = organization_id or "unknown"
         file_exec = filename[:-5]
-        if organization_id is not None and filename.startswith(f"{organization_id}_"):
-            # Legacy naming is only a diagnostic hint, never an ownership proof.
-            file_exec = filename[len(organization_id) + 1 : -5]
 
         try:
             if f.is_symlink():
@@ -211,10 +210,29 @@ def _check_remote_worker_active(
                 raise ValueError("Unconfirmed containment state")
         except Exception as read_exc:
             # File is unreadable, locked, or corrupted; cannot authoritatively prove absence!
+            unreadable_org = "unknown"
+            if filename.startswith("trk_v2_"):
+                if organization_id is not None and organization_id != "unknown":
+                    expected_hash = _identity_digest(b"WP-INFLIGHT-V2-TENANT\x00", organization_id)
+                    if filename.startswith(f"trk_v2_{expected_hash}_"):
+                        unreadable_org = organization_id
+            elif organization_id is not None and filename.startswith(f"{organization_id}_"):
+                unreadable_org = organization_id
+            elif "_" in filename and not filename.startswith("corrupted"):
+                cand_org, cand_exec = filename[:-5].split("_", 1)
+                unreadable_org = cand_org
+                file_exec = cand_exec
+
+            if organization_id is not None and organization_id != "unknown":
+                if unreadable_org != organization_id:
+                    continue
+            if organization_id == "unknown" and unreadable_org != "unknown":
+                continue
+
             unresolved_remote.append(
                 {
                     "execution_id": file_exec,
-                    "organization_id": file_org,
+                    "organization_id": unreadable_org if organization_id is None else organization_id,
                     "action_id": "unknown",
                     "pid": None,
                     "created_at": time.time(),
@@ -251,6 +269,85 @@ def _check_remote_worker_active(
     return unresolved_remote
 
 
+async def verify_authoritative_container_containment(
+    container_name: str,
+    *,
+    docker_cmd: str | None = None,
+    timeout_seconds: float = 5.0,
+) -> bool:
+    """Authoritatively inspect and verify that a container is terminated or absent via Docker.
+
+    Returns True ONLY if Docker authoritatively confirms the container is absent
+    ('no such container' / 'no such object') or stopped/dead ('exited' / 'dead' and not running).
+    Returns False if the container is still running, or if Docker is unreachable /
+    inspect fails, failing closed.
+    """
+    cmd = docker_cmd or shutil.which("docker") or "docker"
+    if not shutil.which(cmd) and not os.path.exists(cmd):
+        return False
+
+    loop = asyncio.get_running_loop()
+
+    def _sync_inspect_and_terminate() -> bool:
+        # First attempt termination
+        try:
+            rm_res = subprocess.run(
+                [cmd, "rm", "-f", container_name],
+                capture_output=True,
+                text=True,
+                timeout=timeout_seconds,
+                check=False,
+            )
+            rm_err = rm_res.stderr.lower()
+            if (
+                "no such container" in rm_err or "no such object" in rm_err
+            ) and "plugin" not in rm_err and "daemon unavailable" not in rm_err:
+                return True
+        except Exception:
+            pass
+
+        # Inspect state authoritatively
+        try:
+            inspect_res = subprocess.run(
+                [cmd, "inspect", "-f", "{{.State.Status}} {{.State.Running}}", container_name],
+                capture_output=True,
+                text=True,
+                timeout=timeout_seconds,
+                check=False,
+            )
+            if inspect_res.returncode == 0:
+                raw_out = inspect_res.stdout.strip()
+                if raw_out.startswith(("[", "{")):
+                    try:
+                        data = json.loads(raw_out)
+                        if isinstance(data, list) and data:
+                            data = data[0]
+                        st = data.get("State", {})
+                        if st.get("Running") is False:
+                            return True
+                    except Exception:
+                        pass
+                parts = raw_out.lower().split()
+                status = parts[0] if parts else ""
+                is_running = parts[1] if len(parts) > 1 else ""
+                if is_running == "false" and status in {"exited", "dead"}:
+                    return True
+                return False
+            insp_err = inspect_res.stderr.lower()
+            if (
+                "no such container" in insp_err or "no such object" in insp_err
+            ) and "plugin" not in insp_err and "daemon unavailable" not in insp_err:
+                return True
+            return False
+        except Exception:
+            return False
+
+    try:
+        return await loop.run_in_executor(None, _sync_inspect_and_terminate)
+    except Exception:
+        return False
+
+
 class DatabaseReconciliationError(RuntimeError):
     """Raised when distributed revocation epoch reconciliation cannot query database."""
 
@@ -269,6 +366,7 @@ class InFlightExecution:
     last_termination_error: str | None = None
     containment_status: str = "active"  # "active", "terminated", "unresolved"
     registration_id: str = field(default_factory=lambda: uuid.uuid4().hex)
+    container_name: str | None = None
 
 
 class InFlightExecutionRegistry:
@@ -330,6 +428,7 @@ class InFlightExecutionRegistry:
         task: asyncio.Task[Any] | None = None,
         terminate_callback: Callable[[], Any] | None = None,
         admission_epoch: int = 0,
+        container_name: str | None = None,
     ) -> InFlightExecution:
         entry = InFlightExecution(
             execution_id=execution_id,
@@ -340,6 +439,7 @@ class InFlightExecutionRegistry:
             terminate_callback=terminate_callback,
             created_at=time.monotonic(),
             admission_epoch=admission_epoch,
+            container_name=container_name,
         )
         async with self._lock:
             tracking_owned = False
@@ -472,7 +572,7 @@ class InFlightExecutionRegistry:
                 entry.organization_id,
                 entry.termination_attempts + 1,
             )
-            callback_failed = entry.terminate_callback is None and entry.task is not None
+            callback_failed = False
             last_err: str | None = None
 
             # 1. Invoke low-level container/process termination callback if registered
@@ -492,6 +592,18 @@ class InFlightExecutionRegistry:
                         entry.execution_id,
                         exc,
                     )
+            elif entry.container_name:
+                try:
+                    is_contained = await verify_authoritative_container_containment(entry.container_name)
+                    if not is_contained:
+                        callback_failed = True
+                        last_err = f"Container {entry.container_name} is alive or could not be verified terminated"
+                except Exception as exc:
+                    callback_failed = True
+                    last_err = f"Container containment check failed: {exc}"
+            elif entry.task is not None:
+                callback_failed = True
+                last_err = "No termination callback for active task"
 
             # 2. Cancel the asyncio task running the communicate call
             if entry.task is not None and not entry.task.done():
@@ -504,6 +616,7 @@ class InFlightExecutionRegistry:
                 entry.last_termination_error = last_err
                 async with self._lock:
                     self._unresolved[entry.execution_id] = entry
+                    self._active.pop(entry.execution_id, None)
                 logger.critical(
                     "CONTAINMENT_UNRESOLVED_ALERT: %s for org: %s failed termination: %s",
                     entry.execution_id,
@@ -537,11 +650,17 @@ class InFlightExecutionRegistry:
                     created_at=r.get("created_at", time.monotonic()),
                     admission_epoch=r.get("admission_epoch", 0),
                     termination_attempts=1,
-                    last_termination_error=f"Remote worker (pid {r.get('pid')}) still active; distributed termination unconfirmed",
+                    last_termination_error=r.get("error")
+                    or f"Remote worker (pid {r.get('pid')}) still active; distributed termination unconfirmed",
                     containment_status="unresolved",
+                    container_name=r.get("container_name"),
                 )
                 async with self._lock:
                     self._unresolved[exec_id] = entry
+
+        # Attempt authoritative container verification and termination for unresolved records
+        resolved_retry = await self.retry_unresolved(organization_id=organization_id)
+        terminated_ids.extend([eid for eid in resolved_retry if eid not in terminated_ids])
 
         return terminated_ids
 
@@ -601,24 +720,49 @@ class InFlightExecutionRegistry:
         resolved: list[str] = []
         for entry in targets:
             entry.termination_attempts += 1
+            confirmed = False
             if entry.terminate_callback is not None:
                 try:
                     res = entry.terminate_callback()
                     if asyncio.iscoroutine(res):
                         res = await res
                     if res is True:
-                        entry.containment_status = "terminated"
-                        async with self._lock:
-                            self._unresolved.pop(entry.execution_id, None)
-                            self._active.pop(entry.execution_id, None)
-                        _remove_cross_worker_registration(
-                            entry.organization_id,
-                            entry.execution_id,
-                            registration_id=entry.registration_id,
+                        confirmed = True
+                    else:
+                        entry.last_termination_error = (
+                            "terminate_callback did not confirm target termination"
                         )
-                        resolved.append(entry.execution_id)
                 except Exception as exc:
                     entry.last_termination_error = str(exc)
+            elif entry.container_name:
+                cname = entry.container_name
+                try:
+                    if await verify_authoritative_container_containment(cname):
+                        confirmed = True
+                    else:
+                        entry.last_termination_error = (
+                            f"Container {cname} containment unconfirmed; target may still be active"
+                        )
+                except Exception as exc:
+                    entry.last_termination_error = (
+                        f"Container {cname} inspect verification failed: {exc}"
+                    )
+            else:
+                entry.last_termination_error = (
+                    "No termination callback, task, or authoritative container identifier available"
+                )
+
+            if confirmed:
+                entry.containment_status = "terminated"
+                async with self._lock:
+                    self._unresolved.pop(entry.execution_id, None)
+                    self._active.pop(entry.execution_id, None)
+                _remove_cross_worker_registration(
+                    entry.organization_id,
+                    entry.execution_id,
+                    registration_id=entry.registration_id,
+                )
+                resolved.append(entry.execution_id)
         return resolved
 
     async def reconcile_epochs(self, engine: Any) -> list[str]:

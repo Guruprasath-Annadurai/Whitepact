@@ -26,6 +26,9 @@ from tests.pg_test_url import isolated_pg_url
 
 @pytest.fixture
 async def restored():
+    from responsibleai.isolation.in_flight import InFlightExecutionRegistry
+
+    InFlightExecutionRegistry.reset_instance()
     databases = isolated_pg_url("wp_convergence_restore")
     database = await anext(databases)
     await _run_alembic(_find_alembic_ini(), _migration_env(database), "upgrade", "head")
@@ -45,6 +48,7 @@ async def restored():
     finally:
         await engine.close()
         await databases.aclose()
+        InFlightExecutionRegistry.reset_instance()
 
 
 @pytest.mark.asyncio
