@@ -524,6 +524,7 @@ class InFlightExecutionRegistry:
         remote_active = _check_remote_worker_active(
             organization_id, local_execution_ids={e.execution_id for e in self._active.values()}
         )
+        active_remote_ids = {r["execution_id"] for r in remote_active}
         for r in remote_active:
             exec_id = r["execution_id"]
             if exec_id not in self._unresolved:
@@ -542,6 +543,21 @@ class InFlightExecutionRegistry:
                 )
                 async with self._lock:
                     self._unresolved[exec_id] = entry
+
+        # Prune remote tracking entries that are no longer active in distributed tracking
+        async with self._lock:
+            stale_remote = [
+                eid
+                for eid, e in self._unresolved.items()
+                if (organization_id is None or e.organization_id == organization_id)
+                and e.terminate_callback is None
+                and e.task is None
+                and e.last_termination_error
+                and "still active; distributed termination unconfirmed" in e.last_termination_error
+                and eid not in active_remote_ids
+            ]
+            for eid in stale_remote:
+                self._unresolved.pop(eid, None)
 
         return terminated_ids
 

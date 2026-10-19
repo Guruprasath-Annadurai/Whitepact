@@ -51,7 +51,7 @@ jobs:
           python -m pip install '.[dashboard,postgres,mcp]' alembic ruff==0.17.0
       - name: Hygiene checks
         run: |
-          ruff check src/responsibleai/data_governance/ tests/test_m13_recovery_zero_p0_reproducers.py
+          ruff check src/responsibleai/data_governance/ src/responsibleai/isolation/in_flight.py tests/test_m13_recovery_zero_p0_reproducers.py
           python scripts/check_pinned_actions.py
           python scripts/manage_license_headers.py --check
       - name: H4 Adversarial Recovery Suite
