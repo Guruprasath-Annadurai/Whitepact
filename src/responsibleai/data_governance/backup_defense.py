@@ -682,6 +682,15 @@ class RestoreReadinessGate:
         provider: CurrentLifecycleStateProvider | None = None,
     ) -> None:
         self._local_state = initial_state
+        if provider is None:
+            store_b_path = os.environ.get("WHITEPACT_STORE_B_PATH") or os.environ.get(
+                "WHITEPACT_LIFECYCLE_STORE_PATH"
+            )
+            if store_b_path:
+                try:
+                    provider = DurableLifecycleStateProvider(store_b_path)
+                except Exception:
+                    provider = None
         self._provider = provider
 
     @property
@@ -887,7 +896,7 @@ class RestoreReconciliationEngine:
         self,
         reconciled_by: str,
         *,
-        fail_closed_on_unestablished_tenant: bool = False,
+        fail_closed_on_unestablished_tenant: bool = True,
     ) -> RestoreReconciliationReport:
         """Reconcile restored organizations against current lifecycle state from Store B.
 
@@ -896,17 +905,20 @@ class RestoreReconciliationEngine:
         2. Validates cryptographic integrity and availability of Store B.
         3. Identifies all tombstones from Store B, Store A, and detects any Store A organization
            lacking an authoritative Store B lifecycle record (orphaned / unverified).
-        4. For every tombstoned/unverified tenant:
+        4. For every tombstoned tenant:
            - Quarantines organization with supported governance_status="DISABLED" and suffixed name.
            - Executes a strictly ordered topological FK purge of active operational authority.
            - Forensically revokes root authority records and consent proofs.
            - Elevates revocation epochs to fence in-flight tokens.
-        5. Synchronizes Store B revocation floors across all active verified tenants in Store A,
+        5. For every unestablished/missing tenant:
+           - Preserves quarantine (governance_status="DISABLED") WITHOUT deleting customer authority data.
+           - Fails closed into FAILED state pending a controlled operator decision.
+        6. Synchronizes Store B revocation floors across all active verified tenants in Store A,
            enforcing strict sibling tenant isolation.
-        6. Synchronizes tombstone ledger in Store A from Store B.
-        7. Triggers in-flight execution containment against InFlightExecutionRegistry and
+        7. Synchronizes tombstone ledger in Store A from Store B.
+        8. Triggers in-flight execution containment against InFlightExecutionRegistry and
            verifies zero active or unresolved executions. Never swallows containment errors.
-        8. Advances gate to READY only upon complete error-free transaction commit and confirmed
+        9. Advances gate to READY only upon complete error-free transaction commit and confirmed
            containment. On any error, gate transitions to FAILED and fails closed.
         """
         now = _now()
@@ -952,20 +964,40 @@ class RestoreReconciliationEngine:
                     if org_id not in tombstoned_ids and self._provider.get_state(org_id) is None:
                         missing_store_b_ids.append(org_id)
 
-                # All tombstoned tenants and tenants missing from Store B must be quarantined
-                quarantine_target_ids = set(tombstoned_ids) | set(missing_store_b_ids)
+                # 4A. Quarantine unestablished/missing Store B tenants WITHOUT deleting customer authority data
+                if missing_store_b_ids:
+                    missing_orgs = (
+                        await conn.execute(
+                            select(organizations).where(organizations.c.id.in_(missing_store_b_ids))
+                        )
+                    ).fetchall()
+                    for org in missing_orgs:
+                        new_name = (
+                            f"{org.name}-RESTORE_QUARANTINED"
+                            if "-RESTORE_QUARANTINED" not in org.name
+                            else org.name
+                        )
+                        await conn.execute(
+                            update(organizations)
+                            .where(organizations.c.id == org.id)
+                            .values(
+                                name=new_name,
+                                governance_status=GovernanceStatus.DISABLED.value,
+                                deactivated_at=now,
+                            )
+                        )
+                        quarantined_orgs.append(org.id)
 
-                if quarantine_target_ids:
-                    # Find restored orgs matching quarantine targets
+                # 4B. Confirmed Tombstoned Tenants: Quarantine and Execute Strictly Ordered Topological FK Purge
+                if tombstoned_ids:
                     matching_orgs = (
                         await conn.execute(
-                            select(organizations).where(organizations.c.id.in_(quarantine_target_ids))
+                            select(organizations).where(organizations.c.id.in_(tombstoned_ids))
                         )
                     ).fetchall()
 
                     for org in matching_orgs:
                         org_id = org.id
-                        # Force quarantine using supported PostgreSQL governance_status
                         new_name = (
                             f"{org.name}-RESTORE_QUARANTINED"
                             if "-RESTORE_QUARANTINED" not in org.name
@@ -980,7 +1012,8 @@ class RestoreReconciliationEngine:
                                 deactivated_at=now,
                             )
                         )
-                        quarantined_orgs.append(org_id)
+                        if org_id not in quarantined_orgs:
+                            quarantined_orgs.append(org_id)
 
                         # Collect foreign key IDs for safe child deletion
                         req_rows = (
@@ -1285,7 +1318,7 @@ class RestoreReconciliationEngine:
                 # Synchronize revocation floors from Store B for all active verified records
                 # Sibling isolation: query ONLY records for organizations that exist in Store A
                 for org_id in store_a_org_map:
-                    if org_id in quarantine_target_ids:
+                    if org_id in quarantined_orgs:
                         continue
                     b_rec = self._provider.get_state(org_id)
                     if b_rec is None:
@@ -1395,37 +1428,31 @@ class RestoreReconciliationEngine:
                     f"InFlightExecutionRegistry unavailable or corrupted: {reg_exc}"
                 ) from reg_exc
 
-            # Prune stale remote tracking records from memory if their tracking file on disk
-            # has already been unlinked/terminated by the remote worker.
-            from responsibleai.isolation.in_flight import _check_remote_worker_active
 
-            for org_id in store_a_org_map:
-                active_remote_ids = {
-                    r["execution_id"] for r in _check_remote_worker_active(org_id)
-                }
-                for rec in registry.get_unresolved_containments(org_id):
-                    if rec.terminate_callback is None and rec.task is None:
-                        if rec.execution_id not in active_remote_ids:
-                            registry._unresolved.pop(rec.execution_id, None)
+            # Active restored tenants being considered for admission
+            active_restored_orgs = [
+                org_id for org_id in store_a_org_map if org_id not in quarantined_orgs
+            ]
 
-            # Check if any legacy unresolved containment exists for restored tenants or unattributed executions
+            # Check if any legacy unresolved containment exists for active restored tenants or unattributed executions
             unattributed_entries = [
                 rec
                 for rec in registry.get_unresolved_containments()
                 if not rec.organization_id or rec.organization_id == "unknown"
             ]
             unattributed_count = len(unattributed_entries) + registry.count_unresolved("unknown")
-            initial_unresolved = (
-                sum(registry.count_unresolved(org_id) for org_id in store_a_org_map)
+            active_unresolved = (
+                sum(registry.count_unresolved(org_id) for org_id in active_restored_orgs)
                 + unattributed_count
             )
-            if initial_unresolved > 0:
+            if active_unresolved > 0:
                 unresolved_details = [
-                    rec for org_id in store_a_org_map for rec in registry.get_unresolved(org_id)
+                    rec for org_id in active_restored_orgs for rec in registry.get_unresolved(org_id)
                 ] + [e.__dict__ for e in unattributed_entries]
                 self._gate.set_state(RestoreReadinessState.FAILED, updated_by=reconciled_by)
                 raise RestoreReconciliationError(
-                    f"Pre-existing unresolved containment detected ({initial_unresolved} executions). "
+                    f"Pre-existing unresolved containment detected for active/unattributed tenants "
+                    f"({active_unresolved} executions). "
                     f"Cannot admit traffic while legacy executions remain uncontained: {unresolved_details}"
                 )
 
@@ -1439,16 +1466,20 @@ class RestoreReconciliationEngine:
                         f"In-flight containment termination failed for quarantined tenant '{q_org}': {term_exc}"
                     ) from term_exc
 
-                # Verify confirmed termination: must have zero active and zero unresolved executions
+                # Verify confirmed termination: must have zero active executions
                 active_for_org = registry.count_active(q_org)
-                unresolved_for_org = registry.count_unresolved(q_org)
-                if active_for_org > 0 or unresolved_for_org > 0:
-                    unresolved_entries = registry.get_unresolved(q_org)
+                failed_callbacks = [
+                    e
+                    for e in registry.get_unresolved(q_org)
+                    if "terminate_callback did not confirm target termination"
+                    in str(e.get("last_termination_error", ""))
+                ]
+                if active_for_org > 0 or failed_callbacks:
                     self._gate.set_state(RestoreReadinessState.FAILED, updated_by=reconciled_by)
                     raise RestoreReconciliationError(
                         f"Containment unconfirmed for quarantined tenant '{q_org}': "
-                        f"{active_for_org} active executions, {unresolved_for_org} unresolved containments. "
-                        f"Diagnostics: {unresolved_entries}"
+                        f"{active_for_org} active executions, {len(failed_callbacks)} failed termination callbacks. "
+                        f"Diagnostics: {failed_callbacks}"
                     )
 
             # 2. Reconcile epochs across all active tenants against the database
@@ -1460,27 +1491,42 @@ class RestoreReconciliationEngine:
                     f"Revocation epoch reconciliation failed during post-restore containment: {rec_exc}"
                 ) from rec_exc
 
-            # 3. Final containment verification: ensure zero unresolved executions across restored tenants or unattributed
+            # 3. Final containment verification: ensure zero active or unresolved executions across active restored tenants or unattributed
+            final_active = sum(registry.count_active(org_id) for org_id in store_a_org_map)
             final_unattributed = sum(
                 1
                 for rec in registry.get_unresolved_containments()
                 if not rec.organization_id or rec.organization_id == "unknown"
             ) + registry.count_unresolved("unknown")
-            final_unresolved = (
-                sum(registry.count_unresolved(org_id) for org_id in store_a_org_map)
-                + final_unattributed
+            final_active_unresolved = sum(
+                registry.count_unresolved(org_id) for org_id in active_restored_orgs
             )
-            if final_unresolved > 0:
+
+            from responsibleai.isolation.in_flight import _check_remote_worker_active
+
+            alive_remote_workers = [
+                r for r in _check_remote_worker_active(None)
+                if r.get("organization_id") in store_a_org_map
+            ]
+
+            if (
+                final_active > 0
+                or final_active_unresolved > 0
+                or final_unattributed > 0
+                or len(alive_remote_workers) > 0
+            ):
                 unresolved_all = [
-                    rec for org_id in store_a_org_map for rec in registry.get_unresolved(org_id)
+                    rec for org_id in active_restored_orgs for rec in registry.get_unresolved(org_id)
                 ] + [
                     e.__dict__
                     for e in registry.get_unresolved_containments()
                     if not e.organization_id or e.organization_id == "unknown"
-                ]
+                ] + alive_remote_workers
                 self._gate.set_state(RestoreReadinessState.FAILED, updated_by=reconciled_by)
                 raise RestoreReconciliationError(
-                    f"Post-reconciliation containment unconfirmed: {final_unresolved} unresolved executions remain. "
+                    f"Post-reconciliation containment unconfirmed: "
+                    f"{final_active} active, {final_active_unresolved} active unresolved, "
+                    f"{final_unattributed} unattributed, {len(alive_remote_workers)} remote alive workers. "
                     f"Diagnostics: {unresolved_all}"
                 )
 

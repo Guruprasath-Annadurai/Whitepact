@@ -12,9 +12,11 @@ import pytest
 from sqlalchemy import insert, select, update
 
 from responsibleai.data_governance.backup_defense import (
+    DurableLifecycleStateProvider,
     InMemoryLifecycleStateProvider,
     LifecycleState,
     LifecycleStateRecord,
+    RestoreQuarantineError,
     RestoreReadinessGate,
     RestoreReadinessState,
     RestoreReconciliationEngine,
@@ -24,7 +26,9 @@ from responsibleai.db.engine import (
     create_engine,
     governance_approvals,
     governance_execution_authorizations,
+    governance_policies,
     governance_revocation_epochs,
+    org_api_keys,
     organizations,
     runtime_execution_attempts,
     runtime_execution_requests,
@@ -753,3 +757,251 @@ async def test_reproducer_credential_fencing_matrix_full_verification(pg_engine,
         await kernel.admit(request_id=issued_7.request_id, worker_id="w-7", organization_id="org-s7-stale")
 
     tracking.InFlightExecutionRegistry.reset_instance()
+
+
+@pytest.mark.asyncio
+async def test_reproducer_task1_unresolved_execution_file_absent_fails_closed(pg_engine, tmp_path, monkeypatch):
+    """Task 1: Unresolved execution with absent tracking file and no callback MUST fail closed.
+
+    Ensures that file absence, PID death, and callback absence are NOT treated as containment
+    evidence, and private registry state is never popped or manipulated.
+    """
+    tracking_dir = tmp_path / "tracking_task1"
+    tracking_dir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(tracking, "_DISTRIBUTED_REGISTRY_DIR", tracking_dir)
+    tracking.InFlightExecutionRegistry.reset_instance()
+
+    now = datetime.now(UTC)
+    async with pg_engine.raw.begin() as conn:
+        await conn.execute(
+            insert(organizations).values(
+                id="tenant-task1-active",
+                name="Task 1 Active Org",
+                slug="task1-active",
+                created_at=now.isoformat(),
+                governance_status="ACTIVE",
+            )
+        )
+
+    provider = InMemoryLifecycleStateProvider()
+    provider.record_state(
+        LifecycleStateRecord(
+            tenant_id="tenant-task1-active",
+            generation_id="gen-1",
+            state=LifecycleState.ACTIVE,
+            effective_at=now.isoformat(),
+            security_epoch=1,
+            revocation_floor=1,
+        )
+    )
+
+    registry = tracking.InFlightExecutionRegistry.get_instance()
+    unresolved_entry = tracking.InFlightExecution(
+        execution_id="exec-task1-unresolved",
+        organization_id="tenant-task1-active",
+        action_id="action-task1",
+        authorization_id=None,
+        task=None,
+        terminate_callback=None,  # No callback!
+        created_at=time.time(),
+        termination_attempts=1,
+        last_termination_error="Unconfirmed remote container",
+        containment_status="unresolved",
+    )
+    # Registry contains unresolved execution owned by tenant-task1-active
+    registry._unresolved["exec-task1-unresolved"] = unresolved_entry
+
+    # On-disk tracking file is ABSENT
+    assert len(list(tracking_dir.glob("*.json"))) == 0
+
+    gate = RestoreReadinessGate(initial_state=RestoreReadinessState.RESTORE_PENDING)
+    reconciler = RestoreReconciliationEngine(pg_engine, lifecycle_provider=provider, gate=gate)
+
+    # Reconciliation MUST fail closed and MUST NOT transition to READY
+    with pytest.raises(RestoreReconciliationError, match="[Uu]nresolved containment"):
+        await reconciler.reconcile_post_restore("task1-test")
+
+    assert gate.state != RestoreReadinessState.READY
+    assert gate.state == RestoreReadinessState.FAILED
+
+    # Private registry state must NOT have been manipulated or popped!
+    assert "exec-task1-unresolved" in registry._unresolved
+    assert len(registry.get_unresolved_containments("tenant-task1-active")) == 1
+    tracking.InFlightExecutionRegistry.reset_instance()
+
+
+@pytest.mark.asyncio
+async def test_reproducer_task2_store_b_empty_fails_closed_preserves_authority_data(pg_engine):
+    """Task 2: Restored Store A with active orgs when Store B is valid but empty MUST fail closed.
+
+    Customer authority data (policies, API keys, approvals) must be preserved intact (not deleted),
+    while tenant is placed in quarantine (governance_status=DISABLED) and admission fails closed.
+    """
+    now = datetime.now(UTC)
+    async with pg_engine.raw.begin() as conn:
+        await conn.execute(
+            insert(organizations).values(
+                id="tenant-task2-active",
+                name="Task 2 Active Org",
+                slug="task2-active",
+                created_at=now.isoformat(),
+                governance_status="ACTIVE",
+            )
+        )
+        await conn.execute(
+            insert(governance_policies).values(
+                id="policy-task2",
+                org_id="tenant-task2-active",
+                rule_id="rule-task2",
+                reason_code="REASON_KEEP_INTACT",
+                effect="ALLOW",
+                position=0,
+                created_at=now.isoformat(),
+                updated_at=now.isoformat(),
+            )
+        )
+        await conn.execute(
+            insert(org_api_keys).values(
+                id="key-task2",
+                org_id="tenant-task2-active",
+                key_hash="hash-task2",
+                name="Task 2 Key",
+                created_at=now.isoformat(),
+                role="admin",
+                revoked=0,
+            )
+        )
+        await conn.execute(
+            insert(governance_approvals).values(
+                id="app-task2",
+                org_id="tenant-task2-active",
+                action_id="act-task2",
+                action_type="test",
+                target="data",
+                reason_codes="[]",
+                status="PENDING",
+                requested_at=now.isoformat(),
+            )
+        )
+
+    # Store B is valid but completely EMPTY (no records, no tombstones)
+    provider = InMemoryLifecycleStateProvider()
+    assert provider.verify_integrity() is True
+    assert len(provider.list_all()) == 0
+    assert len(provider.list_tombstones()) == 0
+
+    gate = RestoreReadinessGate(initial_state=RestoreReadinessState.RESTORE_PENDING)
+    reconciler = RestoreReconciliationEngine(pg_engine, lifecycle_provider=provider, gate=gate)
+
+    # Default call to reconcile_post_restore (fail_closed_on_unestablished_tenant=True by default)
+    with pytest.raises(RestoreReconciliationError, match="lacking authoritative Store B lifecycle record"):
+        await reconciler.reconcile_post_restore("task2-test")
+
+    assert gate.state != RestoreReadinessState.READY
+    assert gate.state == RestoreReadinessState.FAILED
+
+    # Verify that tenant was quarantined (governance_status=DISABLED)
+    async with pg_engine.raw.begin() as conn:
+        org_row = (
+            await conn.execute(
+                select(organizations.c.governance_status, organizations.c.name)
+                .where(organizations.c.id == "tenant-task2-active")
+            )
+        ).fetchone()
+        assert org_row[0] == "DISABLED"
+        assert "RESTORE_QUARANTINED" in org_row[1]
+
+        # CRITICAL SAFETY CHECK: Customer authority data MUST be preserved (NOT deleted!)
+        policy_row = (
+            await conn.execute(
+                select(governance_policies.c.id).where(governance_policies.c.org_id == "tenant-task2-active")
+            )
+        ).fetchone()
+        assert policy_row is not None and policy_row[0] == "policy-task2"
+
+        key_row = (
+            await conn.execute(
+                select(org_api_keys.c.id).where(org_api_keys.c.org_id == "tenant-task2-active")
+            )
+        ).fetchone()
+        assert key_row is not None and key_row[0] == "key-task2"
+
+        app_row = (
+            await conn.execute(
+                select(governance_approvals.c.id).where(governance_approvals.c.org_id == "tenant-task2-active")
+            )
+        ).fetchone()
+        assert app_row is not None and app_row[0] == "app-task2"
+
+
+@pytest.mark.asyncio
+async def test_reproducer_task3_persistent_admission_proof_across_restart(tmp_path, monkeypatch):
+    """Task 3: Unfinished or failed restore cannot become admitted across crash/restart.
+
+    Tests that independent readiness gates initialized as READY, as well as production admission callers,
+    strictly fail closed and block traffic when Store B persists FAILED or RECONCILING state.
+    """
+    store_b_file = tmp_path / "store_b_persistent_admission.db"
+    provider = DurableLifecycleStateProvider(store_b_file)
+    monkeypatch.setenv("WHITEPACT_STORE_B_PATH", str(store_b_file))
+
+    # Simulate a restore failure in Store B
+    provider.set_readiness_state(RestoreReadinessState.FAILED, updated_by="supervisor")
+    assert provider.get_readiness_state() == RestoreReadinessState.FAILED
+
+    # Simulate process crash and restart: reset global gate
+    from responsibleai.data_governance import backup_defense
+    backup_defense.set_restore_readiness_gate(None)
+
+    # 1. Independent gate initialized as READY by a new process must NOT admit traffic!
+    independent_gate = RestoreReadinessGate(initial_state=RestoreReadinessState.READY)
+    assert independent_gate.state == RestoreReadinessState.FAILED
+    assert independent_gate.is_admitted() is False
+    with pytest.raises(RestoreQuarantineError, match="FAILED"):
+        independent_gate.assert_traffic_admitted()
+
+    # 2. Production admission callers must fail closed
+    with pytest.raises(RestoreQuarantineError, match="FAILED"):
+        backup_defense.assert_restore_readiness_admitted()
+
+    # 3. Test production callers from other subsystems
+    # Subsystem A: IAM PrivilegedSurfaceGuard
+    from responsibleai.iam.guard import PrivilegedSurfaceGuard
+    from responsibleai.iam.enums import PrivilegedAction
+    from responsibleai.iam.models import PrivilegedCallerContext
+    from responsibleai.rbac.models import Role
+    with pytest.raises(RestoreQuarantineError, match="FAILED"):
+        iam_guard = PrivilegedSurfaceGuard.__new__(PrivilegedSurfaceGuard)
+        caller = PrivilegedCallerContext(
+            principal_id="usr-1",
+            org_id="org-any",
+            role=Role.OWNER,
+            session_id="sess-1",
+        )
+        await iam_guard.authorize_privileged_operation(
+            caller=caller,
+            target_org_id="org-any",
+            action=PrivilegedAction.REVOKE_API_KEY,
+        )
+
+    # Subsystem B: Data Governance TenantDeletionOrchestrator
+    from responsibleai.data_governance.deletion_orchestrator import TenantDeletionOrchestrator
+    with pytest.raises(RestoreQuarantineError, match="FAILED"):
+        del_orch = TenantDeletionOrchestrator.__new__(TenantDeletionOrchestrator)
+        await del_orch.delete_tenant(
+            org_id="org-any",
+            deleted_by="operator-1",
+            reason="test deletion under quarantine",
+        )
+
+    # 4. Also verify unfinished restore (RECONCILING state)
+    provider.set_readiness_state(RestoreReadinessState.RECONCILING, updated_by="reconciler")
+    backup_defense.set_restore_readiness_gate(None)
+    independent_gate_2 = RestoreReadinessGate(initial_state=RestoreReadinessState.READY)
+    assert independent_gate_2.state == RestoreReadinessState.RECONCILING
+    assert independent_gate_2.is_admitted() is False
+    with pytest.raises(RestoreQuarantineError, match="RECONCILING"):
+        independent_gate_2.assert_traffic_admitted()
+
+    with pytest.raises(RestoreQuarantineError, match="RECONCILING"):
+        backup_defense.assert_restore_readiness_admitted()
