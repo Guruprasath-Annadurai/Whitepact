@@ -27,6 +27,7 @@ import struct
 import subprocess
 import tempfile
 import time
+import unicodedata
 import uuid
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
@@ -53,8 +54,7 @@ def _ensure_distributed_dir() -> Path:
 
 
 def _identity_digest(domain: bytes, value: str) -> str:
-    # Database identifiers are exact strings; NFC is not a database identity rule.
-    raw = value.encode("utf-8")
+    raw = unicodedata.normalize("NFC", value).encode("utf-8")
     return hashlib.sha256(domain + struct.pack(">Q", len(raw)) + raw).hexdigest()
 
 
@@ -63,8 +63,9 @@ def _registry_ownership(directory: Path) -> Iterator[None]:
     """Serialize publication and compare/unlink across cooperating POSIX workers."""
     import fcntl
 
+    lock_file = directory.parent / f".{directory.name}.lock"
     descriptor = os.open(
-        directory / ".registry.lock", os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600
+        lock_file, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600
     )
     try:
         info = os.fstat(descriptor)
@@ -191,6 +192,13 @@ def _check_remote_worker_active(
 
     for f in entries:
         filename = f.name
+        if organization_id is not None:
+            v2_prefix = f"trk_v2_{_identity_digest(b'WP-INFLIGHT-V2-TENANT\x00', organization_id)}_"
+            if filename.startswith("trk_v2_"):
+                if not filename.startswith(v2_prefix):
+                    continue
+            elif not filename.startswith(f"{organization_id}_"):
+                continue
         file_org = organization_id or "unknown"
         file_exec = filename[:-5]
         if organization_id is not None and filename.startswith(f"{organization_id}_"):
@@ -245,11 +253,18 @@ def _check_remote_worker_active(
             if is_alive:
                 unresolved_remote.append(data)
             else:
-                # A dead worker cannot attest that its container was terminated.
-                # Retain legacy records too: they carry no contrary containment proof.
-                unresolved_remote.append(
-                    {**data, "error": "Worker exited; containment unconfirmed"}
-                )
+                has_container = bool(data.get("container_name") or data.get("container_id"))
+                if not has_container and data.get("containment_status") != "unresolved" and not filename.startswith("trk_v2_"):
+                    try:
+                        f.unlink(missing_ok=True)
+                    except Exception:
+                        pass
+                else:
+                    # A dead worker cannot attest that its container was terminated.
+                    # Retain modern and container records: they carry no contrary containment proof.
+                    unresolved_remote.append(
+                        {**data, "error": "Worker exited; containment unconfirmed"}
+                    )
         elif data.get("containment_status") == "unresolved":
             unresolved_remote.append(data)
         elif data["execution_id"] not in (local_execution_ids or set()):

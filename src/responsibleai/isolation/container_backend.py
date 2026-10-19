@@ -525,6 +525,42 @@ class DockerContainerBackend(IsolationBackend):
                             stable_seconds=0.0 if cid is not None else 3.0,
                             wait_seconds=12.0,
                         )
+                        # Actively verify container absence via inspect; ambiguous plugin/daemon errors must fail closed
+                        inspect_res = subprocess.run(
+                            [
+                                self.docker_cmd,
+                                "inspect",
+                                "-f",
+                                "{{.State.Status}} {{.State.Running}}",
+                                container_name,
+                            ],
+                            capture_output=True,
+                            text=True,
+                            timeout=5,
+                            check=False,
+                        )
+                        if inspect_res.returncode == 0:
+                            parts = inspect_res.stdout.strip().lower().split()
+                            status = parts[0] if parts else ""
+                            is_running = parts[1] if len(parts) > 1 else ""
+                            if is_running == "true" or status in {"running", "restarting", "paused"}:
+                                raise RuntimeError(
+                                    f"Container {container_name} is still running after termination attempt (status={status})."
+                                )
+                        else:
+                            insp_err = inspect_res.stderr.lower()
+                            has_no_such = (
+                                "no such container" in insp_err
+                                or "no such object" in insp_err
+                            )
+                            is_plugin_or_daemon_err = (
+                                "plugin" in insp_err
+                                or "daemon unavailable" in insp_err
+                            )
+                            if not (has_no_such and not is_plugin_or_daemon_err):
+                                raise RuntimeError(
+                                    f"Docker inspect failed authoritatively confirming containment for {container_name} (rc={inspect_res.returncode}): {inspect_res.stderr.strip()}"
+                                )
                         if cid is None and not client_completed:
                             raise RuntimeError(
                                 "Docker creation completion unconfirmed; retaining unresolved containment"

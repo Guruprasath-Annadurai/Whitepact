@@ -883,6 +883,7 @@ def assert_restore_readiness_admitted() -> None:
 
 
 async def assert_current_restore_readiness_admitted() -> None:
+    assert_restore_readiness_admitted()
     await get_restore_readiness_gate().assert_current_traffic_admitted()
 
 
