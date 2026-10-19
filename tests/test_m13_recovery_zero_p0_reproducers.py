@@ -2,12 +2,12 @@
 # SPDX-License-Identifier: MIT
 """Regression reproducers for P0 recovery containment, Store B completeness, and verifiers."""
 
-from datetime import UTC, datetime, timedelta
 import json
-import os
 import subprocess
 import time
 import uuid
+from datetime import UTC, datetime, timedelta
+
 import pytest
 from sqlalchemy import insert, select, update
 
@@ -21,6 +21,8 @@ from responsibleai.data_governance.backup_defense import (
     RestoreReadinessState,
     RestoreReconciliationEngine,
     RestoreReconciliationError,
+    StartupAuthorityMode,
+    evaluate_startup_authority,
 )
 from responsibleai.db.engine import (
     create_engine,
@@ -30,22 +32,19 @@ from responsibleai.db.engine import (
     governance_revocation_epochs,
     org_api_keys,
     organizations,
+    restore_reconciliation_records,
     runtime_execution_attempts,
-    runtime_execution_requests,
-    runtime_worker_leases,
 )
 from responsibleai.db.migrate import _find_alembic_ini, _migration_env, _run_alembic
 from responsibleai.isolation import in_flight as tracking
 from responsibleai.runtime.authority_kernel import (
-    AuthorizationIneligibleError,
     AuthorityKernelError,
+    AuthorizationIneligibleError,
     Phase7AAuthorityKernel,
 )
 from responsibleai.runtime.models import (
     AttemptState,
     AuthorizationStatus,
-    EffectState,
-    LeaseStatus,
 )
 from tests.pg_test_url import isolated_pg_url
 
@@ -966,8 +965,8 @@ async def test_reproducer_task3_persistent_admission_proof_across_restart(tmp_pa
 
     # 3. Test production callers from other subsystems
     # Subsystem A: IAM PrivilegedSurfaceGuard
-    from responsibleai.iam.guard import PrivilegedSurfaceGuard
     from responsibleai.iam.enums import PrivilegedAction
+    from responsibleai.iam.guard import PrivilegedSurfaceGuard
     from responsibleai.iam.models import PrivilegedCallerContext
     from responsibleai.rbac.models import Role
     with pytest.raises(RestoreQuarantineError, match="FAILED"):
@@ -1005,3 +1004,198 @@ async def test_reproducer_task3_persistent_admission_proof_across_restart(tmp_pa
 
     with pytest.raises(RestoreQuarantineError, match="RECONCILING"):
         backup_defense.assert_restore_readiness_admitted()
+
+
+@pytest.mark.asyncio
+async def test_reproducer_p0_01_corrupt_store_b_at_startup_fails_closed(tmp_path, monkeypatch):
+    """Proves that when Store B is corrupt or unreadable at startup, gate strictly evaluates to FAILED."""
+    corrupt_file = tmp_path / "corrupt_store_b_startup.db"
+    corrupt_file.write_bytes(b"NOT_A_VALID_SQLITE_DATABASE_HEADER")
+    monkeypatch.setenv("WHITEPACT_STORE_B_PATH", str(corrupt_file))
+    monkeypatch.delenv("WHITEPACT_RESTORE_MODE", raising=False)
+    monkeypatch.delenv("WHITEPACT_RESTORE_PENDING", raising=False)
+
+    from responsibleai.data_governance import backup_defense
+    backup_defense.set_restore_readiness_gate(None)
+
+    gate = backup_defense.get_restore_readiness_gate()
+    assert gate.state == RestoreReadinessState.FAILED
+    assert gate.is_admitted() is False
+    assert gate.provider_error is not None
+
+    eval_result = evaluate_startup_authority(gate)
+    assert eval_result.mode == StartupAuthorityMode.UNCERTAIN
+    assert eval_result.readiness_state == RestoreReadinessState.FAILED
+    assert eval_result.integrity_verified is False
+
+    with pytest.raises(RestoreQuarantineError, match="FAILED"):
+        gate.assert_traffic_admitted()
+    with pytest.raises(RestoreQuarantineError, match="FAILED"):
+        backup_defense.assert_restore_readiness_admitted()
+
+
+@pytest.mark.asyncio
+async def test_reproducer_p0_02_quarantined_tenant_detached_unresolved_blocks_ready(pg_engine):
+    """Proves that an unresolved execution for a quarantined tenant strictly blocks READY even with no callback or dead PID."""
+    now = datetime.now(UTC).isoformat()
+    org_id = f"org-q-detached-{uuid.uuid4().hex[:8]}"
+
+    async with pg_engine.raw.begin() as conn:
+        await conn.execute(
+            insert(organizations).values(
+                id=org_id,
+                name="Tombstoned Detached Org",
+                slug=f"slug-{org_id}",
+                created_at=now,
+                governance_status="ACTIVE",
+            )
+        )
+
+    provider = InMemoryLifecycleStateProvider()
+    provider.record_state(
+        LifecycleStateRecord(
+            tenant_id=org_id,
+            generation_id="gen-q1",
+            state=LifecycleState.TOMBSTONED,
+            effective_at=now,
+            security_epoch=1,
+            revocation_floor=1,
+        )
+    )
+
+    tracking.InFlightExecutionRegistry.reset_instance()
+    registry = tracking.InFlightExecutionRegistry.get_instance()
+
+    rec = tracking.InFlightExecution(
+        execution_id=f"exec-detached-{uuid.uuid4().hex[:8]}",
+        organization_id=org_id,
+        action_id="act-detached",
+        authorization_id="auth-detached",
+        task=None,
+        terminate_callback=None,
+        created_at=time.time(),
+        last_termination_error="Worker process detached and absent from process table",
+        containment_status="unresolved",
+    )
+    registry._unresolved[rec.execution_id] = rec
+
+    gate = RestoreReadinessGate(initial_state=RestoreReadinessState.RESTORE_PENDING)
+    reconciler = RestoreReconciliationEngine(pg_engine, lifecycle_provider=provider, gate=gate)
+
+    with pytest.raises(RestoreReconciliationError, match="Containment unconfirmed for quarantined tenant"):
+        await reconciler.reconcile_post_restore("p0-02-auditor")
+
+    assert gate.state != RestoreReadinessState.READY
+    assert gate.state == RestoreReadinessState.FAILED
+    assert gate.is_admitted() is False
+
+
+@pytest.mark.asyncio
+async def test_reproducer_p0_04_crash_consistency_database_status_never_prematurely_reconciled(pg_engine, monkeypatch):
+    """Proves that PostgreSQL status is never marked RECONCILED before containment completes, and failures record FAILED cleanly."""
+    now = datetime.now(UTC).isoformat()
+    org_id = f"org-crash-{uuid.uuid4().hex[:8]}"
+
+    async with pg_engine.raw.begin() as conn:
+        await conn.execute(
+            insert(organizations).values(
+                id=org_id,
+                name="Crash Consist Org",
+                slug=f"slug-{org_id}",
+                created_at=now,
+                governance_status="ACTIVE",
+            )
+        )
+
+    provider = InMemoryLifecycleStateProvider()
+    provider.record_state(
+        LifecycleStateRecord(
+            tenant_id=org_id,
+            generation_id="gen-c1",
+            state=LifecycleState.ACTIVE,
+            effective_at=now,
+            security_epoch=1,
+            revocation_floor=1,
+        )
+    )
+
+    tracking.InFlightExecutionRegistry.reset_instance()
+    registry = tracking.InFlightExecutionRegistry.get_instance()
+
+    async def _failing_reconcile_epochs(*args, **kwargs):
+        raise RuntimeError("Simulated crash/network failure during in-flight epoch reconciliation")
+
+    monkeypatch.setattr(registry, "reconcile_epochs", _failing_reconcile_epochs)
+
+    gate = RestoreReadinessGate(initial_state=RestoreReadinessState.RESTORE_PENDING)
+    reconciler = RestoreReconciliationEngine(pg_engine, lifecycle_provider=provider, gate=gate)
+
+    with pytest.raises(RestoreReconciliationError, match="Revocation epoch reconciliation failed"):
+        await reconciler.reconcile_post_restore("crash-auditor")
+
+    assert gate.state == RestoreReadinessState.FAILED
+    assert gate.is_admitted() is False
+
+    # Check database record: must be exactly 1 record and its status must be FAILED, NEVER RECONCILED
+    async with pg_engine.raw.connect() as conn:
+        records = (
+            await conn.execute(
+                select(restore_reconciliation_records).order_by(
+                    restore_reconciliation_records.c.restored_at.desc()
+                )
+            )
+        ).fetchall()
+        matching = [r for r in records if r.reconciled_by == "crash-auditor"]
+        assert len(matching) == 1
+        assert matching[0].status == "FAILED"
+        assert "Simulated crash" in matching[0].details_json
+
+
+@pytest.mark.asyncio
+async def test_reproducer_p0_05_multiprocess_authority_consistency(tmp_path, monkeypatch):
+    """Proves that multiple independent worker processes observing Store B maintain identical fail-closed admission."""
+    store_b_file = tmp_path / "store_b_multiprocess.db"
+    provider = DurableLifecycleStateProvider(store_b_file)
+    monkeypatch.setenv("WHITEPACT_STORE_B_PATH", str(store_b_file))
+    monkeypatch.delenv("WHITEPACT_RESTORE_MODE", raising=False)
+    monkeypatch.delenv("WHITEPACT_RESTORE_PENDING", raising=False)
+
+    from responsibleai.data_governance import backup_defense
+
+    # 1. Store B set to FAILED by Recovery Orchestrator
+    provider.set_readiness_state(RestoreReadinessState.FAILED, updated_by="orch-1")
+
+    # Worker A initializes fresh gate
+    gate_worker_a = RestoreReadinessGate(initial_state=RestoreReadinessState.READY)
+    # Worker B initializes fresh gate
+    gate_worker_b = RestoreReadinessGate(initial_state=RestoreReadinessState.READY)
+
+    assert gate_worker_a.state == RestoreReadinessState.FAILED
+    assert gate_worker_b.state == RestoreReadinessState.FAILED
+    assert gate_worker_a.is_admitted() is False
+    assert gate_worker_b.is_admitted() is False
+
+    # 2. Worker C starts up with global getter
+    backup_defense.set_restore_readiness_gate(None)
+    gate_worker_c = backup_defense.get_restore_readiness_gate()
+    assert gate_worker_c.state == RestoreReadinessState.FAILED
+    assert gate_worker_c.is_admitted() is False
+
+    # 3. Store B updated to RECONCILING
+    provider.set_readiness_state(RestoreReadinessState.RECONCILING, updated_by="orch-2")
+    assert gate_worker_a.state == RestoreReadinessState.RECONCILING
+    assert gate_worker_b.state == RestoreReadinessState.RECONCILING
+    assert gate_worker_c.state == RestoreReadinessState.RECONCILING
+    assert gate_worker_a.is_admitted() is False
+    assert gate_worker_b.is_admitted() is False
+    assert gate_worker_c.is_admitted() is False
+
+    # 4. Store B successfully updated to READY
+    provider.set_readiness_state(RestoreReadinessState.READY, updated_by="orch-3")
+    assert gate_worker_a.state == RestoreReadinessState.READY
+    assert gate_worker_b.state == RestoreReadinessState.READY
+    assert gate_worker_c.state == RestoreReadinessState.READY
+    assert gate_worker_a.is_admitted() is True
+    assert gate_worker_b.is_admitted() is True
+    assert gate_worker_c.is_admitted() is True
+

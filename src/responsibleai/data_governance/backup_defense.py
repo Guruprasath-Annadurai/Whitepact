@@ -673,6 +673,21 @@ class InMemoryLifecycleStateProvider(CurrentLifecycleStateProvider):
         self._readiness_state = state
 
 
+class StartupAuthorityMode(StrEnum):
+    NORMAL = "NORMAL"
+    RECOVERY = "RECOVERY"
+    UNCERTAIN = "UNCERTAIN"
+
+
+@dataclass(frozen=True)
+class StartupAuthorityEvaluation:
+    mode: StartupAuthorityMode
+    readiness_state: RestoreReadinessState
+    reason: str
+    durable_provider_present: bool
+    integrity_verified: bool
+
+
 class RestoreReadinessGate:
     """Operational readiness admission gate for restored environments."""
 
@@ -680,8 +695,11 @@ class RestoreReadinessGate:
         self,
         initial_state: RestoreReadinessState = RestoreReadinessState.RESTORE_PENDING,
         provider: CurrentLifecycleStateProvider | None = None,
+        db_engine: DatabaseEngine | None = None,
     ) -> None:
         self._local_state = initial_state
+        self._provider_error: str | None = None
+        self._db_engine = db_engine
         if provider is None:
             store_b_path = os.environ.get("WHITEPACT_STORE_B_PATH") or os.environ.get(
                 "WHITEPACT_LIFECYCLE_STORE_PATH"
@@ -689,23 +707,52 @@ class RestoreReadinessGate:
             if store_b_path:
                 try:
                     provider = DurableLifecycleStateProvider(store_b_path)
-                except Exception:
+                except Exception as exc:
+                    self._provider_error = str(exc)
                     provider = None
         self._provider = provider
 
     @property
+    def provider(self) -> CurrentLifecycleStateProvider | None:
+        return self._provider
+
+    @property
+    def provider_error(self) -> str | None:
+        return self._provider_error
+
+    @property
     def state(self) -> RestoreReadinessState:
+        # If Store B was configured but could not be initialized (corrupt, unreadable, permission denied)
+        if self._provider_error is not None:
+            return RestoreReadinessState.FAILED
+
+        # If provider is present, consult durable state with integrity verification
         if self._provider is not None:
             try:
+                if hasattr(self._provider, "verify_integrity") and not self._provider.verify_integrity():
+                    return RestoreReadinessState.FAILED
                 shared = self._provider.get_readiness_state()
                 if shared is not None:
                     return shared
             except Exception:
                 return RestoreReadinessState.FAILED
+
+        # If restore mode is active via environment, gate must be at least RESTORE_PENDING
+        if is_restore_pending_default():
+            return (
+                self._local_state
+                if self._local_state != RestoreReadinessState.READY
+                else RestoreReadinessState.RESTORE_PENDING
+            )
+
         return self._local_state
 
     def set_state(self, state: RestoreReadinessState, updated_by: str = "") -> None:
         self._local_state = state
+        if self._provider_error is not None and state != RestoreReadinessState.FAILED:
+            raise StoreBUnavailableError(
+                f"Cannot transition state: Store B provider failed to initialize: {self._provider_error}"
+            )
         if self._provider is not None:
             try:
                 self._provider.set_readiness_state(state, updated_by=updated_by)
@@ -723,6 +770,25 @@ class RestoreReadinessGate:
             raise RestoreQuarantineError(
                 f"Operational traffic blocked: system is in {current_state.value} state."
             )
+
+    async def check_database_authority(self, engine: DatabaseEngine | None = None) -> RestoreReadinessState:
+        """Validate database-level restore consistency alongside durable provider."""
+        eng = engine or self._db_engine
+        if eng is None:
+            return self.state
+        try:
+            await assert_database_restore_consistent(eng)
+        except Exception:
+            self._local_state = RestoreReadinessState.FAILED
+            if self._provider is not None:
+                try:
+                    self._provider.set_readiness_state(
+                        RestoreReadinessState.FAILED, updated_by="db_consistency_check"
+                    )
+                except Exception:
+                    pass
+            return RestoreReadinessState.FAILED
+        return self.state
 
 
 _GLOBAL_RESTORE_GATE: RestoreReadinessGate | None = None
@@ -744,15 +810,20 @@ def get_restore_readiness_gate() -> RestoreReadinessGate:
             else RestoreReadinessState.READY
         )
         provider = None
+        provider_error = None
         store_b_path = os.environ.get("WHITEPACT_STORE_B_PATH") or os.environ.get(
             "WHITEPACT_LIFECYCLE_STORE_PATH"
         )
         if store_b_path:
             try:
                 provider = DurableLifecycleStateProvider(store_b_path)
-            except Exception:
+            except Exception as exc:
                 provider = None
-        _GLOBAL_RESTORE_GATE = RestoreReadinessGate(initial_state=initial, provider=provider)
+                provider_error = str(exc)
+        gate = RestoreReadinessGate(initial_state=initial, provider=provider)
+        if provider_error is not None:
+            gate._provider_error = provider_error
+        _GLOBAL_RESTORE_GATE = gate
     return _GLOBAL_RESTORE_GATE
 
 
@@ -772,6 +843,104 @@ def reset_restore_readiness_gate(
 
 def assert_restore_readiness_admitted() -> None:
     get_restore_readiness_gate().assert_traffic_admitted()
+
+
+async def assert_database_restore_consistent(engine: DatabaseEngine) -> None:
+    """Assert that the database does not contain an unreconciled or failed recovery state."""
+    async with engine.raw.connect() as conn:
+        row = (
+            await conn.execute(
+                select(restore_reconciliation_records.c.status)
+                .order_by(restore_reconciliation_records.c.restored_at.desc())
+                .limit(1)
+            )
+        ).fetchone()
+        if row and row[0] not in ("RECONCILED", None):
+            raise RestoreQuarantineError(
+                f"Database restore state is {row[0]}; authority reconciliation is required."
+            )
+
+
+def evaluate_startup_authority(
+    gate: RestoreReadinessGate | None = None,
+) -> StartupAuthorityEvaluation:
+    """Evaluate and categorize system startup authority into NORMAL, RECOVERY, or UNCERTAIN."""
+    g = gate or get_restore_readiness_gate()
+    if g.provider_error is not None:
+        return StartupAuthorityEvaluation(
+            mode=StartupAuthorityMode.UNCERTAIN,
+            readiness_state=RestoreReadinessState.FAILED,
+            reason=f"Store B provider initialization failure: {g.provider_error}",
+            durable_provider_present=False,
+            integrity_verified=False,
+        )
+
+    provider = g.provider
+    if provider is not None:
+        try:
+            if hasattr(provider, "verify_integrity") and not provider.verify_integrity():
+                return StartupAuthorityEvaluation(
+                    mode=StartupAuthorityMode.UNCERTAIN,
+                    readiness_state=RestoreReadinessState.FAILED,
+                    reason="Store B cryptographic integrity verification failed",
+                    durable_provider_present=True,
+                    integrity_verified=False,
+                )
+            shared = provider.get_readiness_state()
+            if shared in (
+                RestoreReadinessState.FAILED,
+                RestoreReadinessState.RECONCILING,
+                RestoreReadinessState.RESTORE_PENDING,
+            ):
+                return StartupAuthorityEvaluation(
+                    mode=StartupAuthorityMode.RECOVERY,
+                    readiness_state=shared,
+                    reason=f"Durable Store B persists {shared.value} recovery state",
+                    durable_provider_present=True,
+                    integrity_verified=True,
+                )
+            if shared == RestoreReadinessState.READY:
+                return StartupAuthorityEvaluation(
+                    mode=StartupAuthorityMode.NORMAL,
+                    readiness_state=RestoreReadinessState.READY,
+                    reason="Durable Store B confirms READY admission",
+                    durable_provider_present=True,
+                    integrity_verified=True,
+                )
+        except Exception as exc:
+            return StartupAuthorityEvaluation(
+                mode=StartupAuthorityMode.UNCERTAIN,
+                readiness_state=RestoreReadinessState.FAILED,
+                reason=f"Store B provider communication error: {exc}",
+                durable_provider_present=True,
+                integrity_verified=False,
+            )
+
+    if is_production_environment() and provider is None:
+        return StartupAuthorityEvaluation(
+            mode=StartupAuthorityMode.UNCERTAIN,
+            readiness_state=RestoreReadinessState.FAILED,
+            reason="Durable Store B is required in production environment",
+            durable_provider_present=False,
+            integrity_verified=False,
+        )
+
+    if is_restore_pending_default():
+        return StartupAuthorityEvaluation(
+            mode=StartupAuthorityMode.RECOVERY,
+            readiness_state=RestoreReadinessState.RESTORE_PENDING,
+            reason="Restore environment flag active",
+            durable_provider_present=provider is not None,
+            integrity_verified=True,
+        )
+
+    return StartupAuthorityEvaluation(
+        mode=StartupAuthorityMode.NORMAL,
+        readiness_state=g.state,
+        reason="Normal startup with established authority",
+        durable_provider_present=provider is not None,
+        integrity_verified=True,
+    )
 
 
 @dataclass(frozen=True)
@@ -1381,7 +1550,7 @@ class RestoreReconciliationEngine:
                 has_missing_b_failure = bool(
                     missing_store_b_ids and (store_b_has_records or fail_closed_on_unestablished_tenant)
                 )
-                status = "FAILED" if has_missing_b_failure else "RECONCILED"
+                status = "FAILED" if has_missing_b_failure else "CONTAINMENT_PENDING"
                 details = {
                     "quarantined_orgs": quarantined_orgs,
                     "missing_store_b_tenants": missing_store_b_ids,
@@ -1428,7 +1597,6 @@ class RestoreReconciliationEngine:
                     f"InFlightExecutionRegistry unavailable or corrupted: {reg_exc}"
                 ) from reg_exc
 
-
             # Active restored tenants being considered for admission
             active_restored_orgs = [
                 org_id for org_id in store_a_org_map if org_id not in quarantined_orgs
@@ -1466,20 +1634,16 @@ class RestoreReconciliationEngine:
                         f"In-flight containment termination failed for quarantined tenant '{q_org}': {term_exc}"
                     ) from term_exc
 
-                # Verify confirmed termination: must have zero active executions
+                # Strict containment verification: must have zero active AND zero unresolved executions
                 active_for_org = registry.count_active(q_org)
-                failed_callbacks = [
-                    e
-                    for e in registry.get_unresolved(q_org)
-                    if "terminate_callback did not confirm target termination"
-                    in str(e.get("last_termination_error", ""))
-                ]
-                if active_for_org > 0 or failed_callbacks:
+                unresolved_for_org = registry.count_unresolved(q_org)
+                unresolved_records = registry.get_unresolved(q_org)
+                if active_for_org > 0 or unresolved_for_org > 0 or len(unresolved_records) > 0:
                     self._gate.set_state(RestoreReadinessState.FAILED, updated_by=reconciled_by)
                     raise RestoreReconciliationError(
                         f"Containment unconfirmed for quarantined tenant '{q_org}': "
-                        f"{active_for_org} active executions, {len(failed_callbacks)} failed termination callbacks. "
-                        f"Diagnostics: {failed_callbacks}"
+                        f"{active_for_org} active executions, {unresolved_for_org} unresolved executions. "
+                        f"Diagnostics: {unresolved_records}"
                     )
 
             # 2. Reconcile epochs across all active tenants against the database
@@ -1491,16 +1655,14 @@ class RestoreReconciliationEngine:
                     f"Revocation epoch reconciliation failed during post-restore containment: {rec_exc}"
                 ) from rec_exc
 
-            # 3. Final containment verification: ensure zero active or unresolved executions across active restored tenants or unattributed
+            # 3. Final containment verification: ensure zero active or unresolved executions across ALL tenants in Store A or unattributed
             final_active = sum(registry.count_active(org_id) for org_id in store_a_org_map)
+            final_unresolved = sum(registry.count_unresolved(org_id) for org_id in store_a_org_map)
             final_unattributed = sum(
                 1
                 for rec in registry.get_unresolved_containments()
                 if not rec.organization_id or rec.organization_id == "unknown"
             ) + registry.count_unresolved("unknown")
-            final_active_unresolved = sum(
-                registry.count_unresolved(org_id) for org_id in active_restored_orgs
-            )
 
             from responsibleai.isolation.in_flight import _check_remote_worker_active
 
@@ -1511,12 +1673,12 @@ class RestoreReconciliationEngine:
 
             if (
                 final_active > 0
-                or final_active_unresolved > 0
+                or final_unresolved > 0
                 or final_unattributed > 0
                 or len(alive_remote_workers) > 0
             ):
                 unresolved_all = [
-                    rec for org_id in active_restored_orgs for rec in registry.get_unresolved(org_id)
+                    rec for org_id in store_a_org_map for rec in registry.get_unresolved(org_id)
                 ] + [
                     e.__dict__
                     for e in registry.get_unresolved_containments()
@@ -1525,9 +1687,20 @@ class RestoreReconciliationEngine:
                 self._gate.set_state(RestoreReadinessState.FAILED, updated_by=reconciled_by)
                 raise RestoreReconciliationError(
                     f"Post-reconciliation containment unconfirmed: "
-                    f"{final_active} active, {final_active_unresolved} active unresolved, "
+                    f"{final_active} active, {final_unresolved} unresolved, "
                     f"{final_unattributed} unattributed, {len(alive_remote_workers)} remote alive workers. "
                     f"Diagnostics: {unresolved_all}"
+                )
+
+            # Update database record to RECONCILED now that containment is verified
+            async with self._engine.raw.begin() as conn:
+                await conn.execute(
+                    update(restore_reconciliation_records)
+                    .where(restore_reconciliation_records.c.id == rec_id)
+                    .values(
+                        status="RECONCILED",
+                        details_json=json.dumps(details),
+                    )
                 )
 
             # All containment proven, confirmed, and verified -> advance gate to READY
@@ -1536,7 +1709,7 @@ class RestoreReconciliationEngine:
             return RestoreReconciliationReport(
                 id=rec_id,
                 restored_at=now,
-                status=status,
+                status="RECONCILED",
                 tombstones_detected=len(tombstoned_ids),
                 tenants_quarantined=len(quarantined_orgs),
                 reconciled_by=reconciled_by,
@@ -1548,17 +1721,26 @@ class RestoreReconciliationEngine:
             self._gate.set_state(RestoreReadinessState.FAILED, updated_by=reconciled_by)
             try:
                 async with self._engine.raw.begin() as conn:
-                    await conn.execute(
-                        insert(restore_reconciliation_records).values(
-                            id=rec_id,
-                            restored_at=now,
+                    res = await conn.execute(
+                        update(restore_reconciliation_records)
+                        .where(restore_reconciliation_records.c.id == rec_id)
+                        .values(
                             status="FAILED",
-                            tombstones_detected=0,
-                            tenants_quarantined=0,
-                            details_json=json.dumps({"error": str(exc)}),
-                            reconciled_by=reconciled_by,
+                            details_json=json.dumps({"error": str(exc), "stage": "failed"}),
                         )
                     )
+                    if (res.rowcount or 0) == 0:
+                        await conn.execute(
+                            insert(restore_reconciliation_records).values(
+                                id=rec_id,
+                                restored_at=now,
+                                status="FAILED",
+                                tombstones_detected=0,
+                                tenants_quarantined=0,
+                                details_json=json.dumps({"error": str(exc)}),
+                                reconciled_by=reconciled_by,
+                            )
+                        )
             except Exception:
                 pass
             if isinstance(exc, RestoreReconciliationError):
