@@ -53,10 +53,11 @@ from responsibleai.db.engine import (
 from responsibleai.db.revocation_epoch_repository import (
     RevocationEpochRepository,
     bump_epoch_on_connection,
+    current_epoch_on_connection,
     lock_epoch,
 )
 from responsibleai.enterprise.audit import EnterpriseAuditLog
-from responsibleai.enterprise.authority.assurance import require_recent_owner
+from responsibleai.enterprise.authority.assurance import lock_owner_context, require_recent_owner
 from responsibleai.enterprise.authority.errors import (
     agent_not_found,
     already_voted,
@@ -892,7 +893,7 @@ class CustomerAuthorityService:
             # Acquire the revocable owner context before taking identity snapshots.
             # Reading a pending principal before these locks can otherwise promote
             # a principal revoked while this transaction was waiting for the owner.
-            await require_recent_owner(conn, actor, org_id)
+            await lock_owner_context(conn, actor, org_id)
             # Organization precedes epoch, as in governed execution admission.
             current_epoch = await lock_epoch(conn, org_id)
 
@@ -968,6 +969,9 @@ class CustomerAuthorityService:
                     f"Account verification status {u_status!r} does not satisfy root authority requirements."
                 )
 
+            # Preserve explicit account/organization denial precedence while
+            # validating A2 before reading and locking the principal snapshot.
+            await require_recent_owner(conn, actor, org_id)
             # Enforce principal is not revoked in trust fabric if registered
             p_row = (
                 await conn.execute(
@@ -1472,7 +1476,7 @@ class CustomerAuthorityService:
                         )
                     ).first()
 
-            epoch = await self._epochs.current(org_id)
+            epoch = await current_epoch_on_connection(conn, org_id)
 
         root_valid = (
             _is_temporally_valid(root_row.not_before, root_row.expires_at, now_dt)[0]
@@ -2884,7 +2888,7 @@ class CustomerAuthorityService:
                     )
                 ).first()
 
-                epoch = await self._epochs.current(org_id)
+                epoch = await current_epoch_on_connection(conn, org_id)
 
                 if canon_root:
                     return {
