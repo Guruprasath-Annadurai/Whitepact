@@ -30,10 +30,8 @@ def timestamp(value):
     return result.replace(tzinfo=UTC) if result.tzinfo is None else result
 
 
-async def require_recent_owner(conn, actor, org_id):
-    """Recheck persisted facts under write locks; never trust caller assurance flags."""
-    if not actor.session_id:
-        raise denied()
+async def lock_owner_context(conn, actor, org_id):
+    """Acquire context locks in a shared order; acquisition itself grants no authority."""
     rows = []
     for table, conditions in (
         (web_users, (web_users.c.id == actor.user_id,)),
@@ -47,6 +45,14 @@ async def require_recent_owner(conn, actor, org_id):
         rows.append(
             (await conn.execute(select(table).where(*conditions).with_for_update())).first()
         )
+    return rows
+
+
+async def require_recent_owner(conn, actor, org_id):
+    """Recheck persisted facts under write locks; never trust caller assurance flags."""
+    if not actor.session_id:
+        raise denied()
+    rows = await lock_owner_context(conn, actor, org_id)
     user, org, member, session = rows
     if not all(rows) or actor.org_id != org_id or actor.actor_id != actor.user_id:
         raise denied()

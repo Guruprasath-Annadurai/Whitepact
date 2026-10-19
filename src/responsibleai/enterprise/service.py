@@ -375,6 +375,16 @@ class EnterpriseIAM:
             raise forbidden(FORBIDDEN, "Only the current owner may transfer ownership.")
         async with self._engine.raw.begin() as conn:
             dialect = conn.engine.dialect.name
+            # Match root/passkey lock order: organization before memberships.
+            # The earlier authorization read cannot protect a later mutation.
+            org_lock = select(organizations).where(organizations.c.id == org_id)
+            if dialect != "sqlite":
+                org_lock = org_lock.with_for_update()
+            org = (await conn.execute(org_lock)).fetchone()
+            if org is None:
+                raise forbidden(WRONG_TENANT, "Organization not found.")
+            if org.governance_status != GovernanceStatus.ACTIVE.value or org.deactivated_at:
+                raise forbidden(ORG_DISABLED, "Ownership transfer requires an active organization.")
             lock = select(web_memberships).where(web_memberships.c.org_id == org_id)
             if dialect != "sqlite":
                 lock = lock.with_for_update()
