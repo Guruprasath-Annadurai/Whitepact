@@ -1,0 +1,107 @@
+name: M13 Ironclad Targeted Diagnosis
+
+on:
+  push:
+    branches: [codex/whitepact-m13-ironclad]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        python: ["3.11", "3.12"]
+    env:
+      PYTHONPATH: src:sdk/python:.
+      WHITEPACT_REDIS_URL: redis://127.0.0.1:6379/0
+      WHITEPACT_REQUIRE_REDIS: "1"
+      WHITEPACT_ISOLATION_IMAGE: whitepact-isolated-runtime:ci
+      WHITEPACT_TEST_RUNTIME_IMAGE: whitepact-isolated-runtime:ci
+    services:
+      postgres:
+        image: postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685
+        env:
+          POSTGRES_USER: wp
+          POSTGRES_PASSWORD: wp
+          POSTGRES_DB: whitepact_e2e
+        ports:
+          - 55432:5432
+        options: >-
+          --health-cmd "pg_isready -U wp -d whitepact_e2e"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7-alpine@sha256:ff02b58f971e7d7d156a1267e283fcbbeee91773b6aa36c49dac28ecfe28eadf
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 2
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+      - name: Record exact source and dependency environment
+        run: |
+          mkdir -p /tmp/ironclad
+          git rev-parse HEAD 'HEAD^{tree}' 'HEAD^' > /tmp/ironclad/provenance.txt
+          git status --porcelain=v1 >> /tmp/ironclad/provenance.txt
+          python -m pip install --upgrade pip setuptools build
+          python -m pip install 'hatchling==1.32.0'
+          python -m pip install -e ".[dev,openai,anthropic,sso,sentiment,postgres,redis]"
+          python -m pip install -r tests/requirements-wave1-frameworks.txt
+          python -m pip install 'pytest-timeout>=2.3,<3'
+          python -m pip freeze --all > /tmp/ironclad/dependencies.txt
+      - name: Install Linux cohort prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nftables iproute2 nginx acl
+          docker build -f Dockerfile.isolation -t whitepact-isolated-runtime:ci .
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm --prefix sdk/typescript ci --ignore-scripts --no-audit --no-fund
+          npm --prefix sdk/typescript run build
+          npx playwright install --with-deps chromium
+      - name: Ownership and signed A2 mutation regressions
+        if: ${{ !cancelled() }}
+        run: |
+          python -m pytest tests/test_m13_ironclad_ownership.py tests/test_m13_ironclad_a2_mutation.py tests/test_m13_ironclad_task_diagnostics.py tests/test_sovereign_authority.py tests/test_m13_convergence_a2.py -o addopts= --timeout=120 --timeout-method=signal --cov=src/responsibleai --cov-branch --cov-report=json:/tmp/ironclad/targeted-coverage.json --junitxml=/tmp/ironclad/authority.xml -ra > /tmp/ironclad/authority.log 2>&1
+      - name: Repeat original route-limit file in isolated processes
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: |
+          result=0
+          for iteration in 1 2 3; do
+            python scripts/engineering/m13_ironclad_task_diagnostics.py tests/test_plan_scaled_route_limits.py -o addopts= --timeout=120 --timeout-method=signal -o faulthandler_timeout=90 --junitxml=/tmp/ironclad/route-$iteration.xml -vv -ra > /tmp/ironclad/route-$iteration.log 2>&1 || result=1
+          done
+          exit "$result"
+      - name: Reproduce original shard-zero cohort with teardown observation
+        if: ${{ !cancelled() }}
+        env:
+          WHITEPACT_REQUIRE_DOCKER_ISOLATION: "1"
+        run: |
+          python - <<'PY'
+          import json, subprocess, sys
+          from pathlib import Path
+          plan = json.loads(Path("scripts/engineering/m13_ironclad_reference_shard0.json").read_text())
+          args = [sys.executable, "scripts/engineering/m13_ironclad_task_diagnostics.py", *plan["files"], "-o", "addopts=", "--timeout=120", "--timeout-method=signal", "-o", "faulthandler_timeout=90", "--junitxml=/tmp/ironclad/reference-shard0.xml", "-vv", "-ra", "--tb=short"]
+          with open("/tmp/ironclad/reference-shard0.log", "w") as log:
+              result = subprocess.run(args, stdout=log, stderr=subprocess.STDOUT, timeout=1500, check=False)
+          sys.exit(result.returncode)
+          PY
+      - name: Preserve exact-head diagnosis evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ironclad-targeted-${{ matrix.python }}-${{ github.sha }}
+          path: /tmp/ironclad/
