@@ -1108,7 +1108,8 @@ class RestoreReconciliationEngine:
     ) -> None:
         self._engine = engine
         is_prod = is_production_environment()
-        must_require_durable = require_durable if require_durable is not None else is_prod
+        # Production authority is server policy, never a caller opt-out flag.
+        must_require_durable = is_prod or require_durable is True
 
         if must_require_durable:
             if lifecycle_provider is None:
