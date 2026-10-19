@@ -117,7 +117,7 @@ jobs:
       - name: Independent final integration admission and original owner counterexamples
         if: ${{ !cancelled() }}
         run: |
-          python -m pytest tests/test_m13_final_admission.py tests/test_m13_final_http_admission.py tests/test_m13_final_detached_identity.py tests/test_m13_final_container_identity.py scripts/engineering/reproducers/test_m13_final_owner_review.py -o addopts= --timeout=120 --timeout-method=signal --junitxml=/tmp/ironclad/final-contracts.xml -vv -ra --tb=short > /tmp/ironclad/final-contracts.log 2>&1
+          python -m pytest tests/test_m13_final_admission.py tests/test_m13_final_http_admission.py tests/test_m13_final_detached_identity.py tests/test_m13_final_container_identity.py tests/test_m13_final_gate_isolation.py tests/test_m13_final_late_receipt.py scripts/engineering/reproducers/test_m13_final_owner_review.py -o addopts= --timeout=120 --timeout-method=signal --junitxml=/tmp/ironclad/final-contracts.xml -vv -ra --tb=short > /tmp/ironclad/final-contracts.log 2>&1
       - name: Replay unchanged recovery tests and imported owner-focused contracts
         if: ${{ !cancelled() }}
         shell: bash
@@ -129,7 +129,7 @@ jobs:
         env:
           WHITEPACT_REQUIRE_DOCKER_ISOLATION: "1"
         run: |
-          python -m pytest tests/test_m13_ironclad_container_ownership.py tests/test_m13_ironclad_registration_cancellation.py tests/test_final_coverage_batch16.py::test_container_execute_reads_cidfile_for_cleanup tests/test_container_cleanup_race_adversarial.py tests/test_isolation_container_backend_branches.py tests/test_docker_container_lifecycle.py scripts/engineering/reproducers/test_m13_dual_titan_cancellation.py tests/test_h2_linux_containment_adversarial.py tests/test_p0_linux_containment.py tests/test_isolation_real_tool_e2e.py -o addopts= --timeout=120 --timeout-method=signal --junitxml=/tmp/ironclad/container.xml -vv -ra --tb=short > /tmp/ironclad/container.log 2>&1
+          python -m pytest tests/test_m13_final_native_recovery.py tests/test_m13_ironclad_native_contracts.py tests/test_m13_ironclad_container_ownership.py tests/test_m13_ironclad_registration_cancellation.py tests/test_final_coverage_batch16.py::test_container_execute_reads_cidfile_for_cleanup tests/test_container_cleanup_race_adversarial.py tests/test_isolation_container_backend_branches.py tests/test_docker_container_lifecycle.py scripts/engineering/reproducers/test_m13_dual_titan_cancellation.py tests/test_h2_linux_containment_adversarial.py tests/test_p0_linux_containment.py tests/test_isolation_real_tool_e2e.py -o addopts= --timeout=120 --timeout-method=signal --junitxml=/tmp/ironclad/container.xml -vv -ra --tb=short > /tmp/ironclad/container.log 2>&1
       - name: Profile unchanged CPU bound on the candidate isolated runtime
         if: ${{ !cancelled() }}
         run: |

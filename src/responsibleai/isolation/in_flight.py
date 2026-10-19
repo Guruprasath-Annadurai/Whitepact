@@ -110,6 +110,7 @@ def _record_cross_worker_registration(entry: InFlightExecution) -> None:
         "registration_id": entry.registration_id,
         "container_name": entry.container_name,
         "container_id": entry.container_id,
+        "container_receipt": entry.container_receipt,
     }
     temporary = None
     try:
@@ -260,6 +261,7 @@ async def verify_authoritative_container_containment(
     container_name: str,
     *,
     container_id: str | None = None,
+    container_receipt: str | None = None,
     organization_id: str | None = None,
     execution_id: str | None = None,
     docker_cmd: str | None = None,
@@ -271,11 +273,9 @@ async def verify_authoritative_container_containment(
     unresolved for qualified operator recovery. Never remove by mutable name.
     """
     if (
-        container_id is None
-        or len(container_id) != 64
-        or any(c not in "0123456789abcdef" for c in container_id)
-        or not organization_id
+        not organization_id
         or not execution_id
+        or (container_id is None and container_receipt is None)
     ):
         return False
     cmd = docker_cmd or shutil.which("docker") or "docker"
@@ -283,8 +283,26 @@ async def verify_authoritative_container_containment(
     def verify_and_remove() -> bool:
         from responsibleai.isolation.container_backend import DockerContainerBackend
 
+        owned_id = container_id
+        if owned_id is None:
+            receipt = Path(container_receipt or "")
+            parent = receipt.parent.stat(follow_symlinks=False)
+            if (
+                receipt.name != "container.cid"
+                or not stat.S_ISDIR(parent.st_mode)
+                or parent.st_uid != os.geteuid()
+                or stat.S_IMODE(parent.st_mode) != 0o700
+            ):
+                return False
+            owned_id = DockerContainerBackend._trusted_container_id(receipt)
+        if (
+            owned_id is None
+            or len(owned_id) != 64
+            or any(c not in "0123456789abcdef" for c in owned_id)
+        ):
+            return False
         inspected = subprocess.run(
-            [cmd, "inspect", container_id],
+            [cmd, "inspect", owned_id],
             capture_output=True,
             text=True,
             timeout=timeout_seconds,
@@ -295,7 +313,7 @@ async def verify_authoritative_container_containment(
             return (
                 re.fullmatch(
                     r"(?:error(?: response from daemon)?:\s*)?no such (?:container|object):\s*"
-                    + re.escape(container_id),
+                    + re.escape(owned_id),
                     inspected.stderr.strip(),
                     flags=re.IGNORECASE,
                 )
@@ -307,7 +325,7 @@ async def verify_authoritative_container_containment(
         obj = objects[0]
         labels = obj.get("Config", {}).get("Labels") or {}
         if (
-            obj.get("Id") != container_id
+            obj.get("Id") != owned_id
             or obj.get("Name") != f"/{container_name}"
             or labels.get("io.whitepact.organization")
             != hashlib.sha256(organization_id.encode()).hexdigest()
@@ -315,7 +333,7 @@ async def verify_authoritative_container_containment(
         ):
             return False
         DockerContainerBackend(docker_cmd=cmd)._remove_containers(
-            [container_id],
+            [owned_id],
             stable_seconds=0,
             wait_seconds=timeout_seconds,
         )
@@ -347,6 +365,7 @@ class InFlightExecution:
     registration_id: str = field(default_factory=lambda: uuid.uuid4().hex)
     container_name: str | None = None
     container_id: str | None = None
+    container_receipt: str | None = None
 
 
 class InFlightExecutionRegistry:
@@ -410,6 +429,7 @@ class InFlightExecutionRegistry:
         admission_epoch: int = 0,
         container_name: str | None = None,
         container_id: str | None = None,
+        container_receipt: str | None = None,
     ) -> InFlightExecution:
         entry = InFlightExecution(
             execution_id=execution_id,
@@ -422,6 +442,7 @@ class InFlightExecutionRegistry:
             admission_epoch=admission_epoch,
             container_name=container_name,
             container_id=container_id,
+            container_receipt=container_receipt,
         )
         async with self._lock:
             tracking_owned = False
@@ -580,6 +601,7 @@ class InFlightExecutionRegistry:
                 callback_failed = not await verify_authoritative_container_containment(
                     entry.container_name,
                     container_id=entry.container_id,
+                    container_receipt=entry.container_receipt,
                     organization_id=entry.organization_id,
                     execution_id=entry.execution_id,
                 )
@@ -597,7 +619,6 @@ class InFlightExecutionRegistry:
                 entry.last_termination_error = last_err
                 async with self._lock:
                     self._unresolved[entry.execution_id] = entry
-                    self._active.pop(entry.execution_id, None)
                 logger.critical(
                     "CONTAINMENT_UNRESOLVED_ALERT: %s for org: %s failed termination: %s",
                     entry.execution_id,
@@ -635,6 +656,7 @@ class InFlightExecutionRegistry:
                     containment_status="unresolved",
                     container_name=r.get("container_name"),
                     container_id=r.get("container_id"),
+                    container_receipt=r.get("container_receipt"),
                     registration_id=r.get("registration_id") or uuid.uuid4().hex,
                 )
                 async with self._lock:
@@ -720,6 +742,7 @@ class InFlightExecutionRegistry:
                 if await verify_authoritative_container_containment(
                     entry.container_name,
                     container_id=entry.container_id,
+                    container_receipt=entry.container_receipt,
                     organization_id=entry.organization_id,
                     execution_id=entry.execution_id,
                 ):
