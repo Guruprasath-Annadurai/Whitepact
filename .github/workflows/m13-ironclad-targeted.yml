@@ -2,7 +2,7 @@ name: M13 Ironclad Targeted Diagnosis
 
 on:
   push:
-    branches: [codex/whitepact-m13-ironclad]
+    branches: [codex/whitepact-m13-ironclad, codex/whitepact-m13-final-convergence]
   workflow_dispatch:
 
 permissions:
@@ -114,6 +114,16 @@ jobs:
               assert len(failures) == 1 and failures[0]['phase'] == 'call'
           print('Five original CPU failures reproduced; these remain RED test results.')
           PY
+      - name: Independent final integration admission and original owner counterexamples
+        if: ${{ !cancelled() }}
+        run: |
+          python -m pytest tests/test_m13_final_admission.py tests/test_m13_final_detached_identity.py tests/test_m13_final_container_identity.py scripts/engineering/reproducers/test_m13_final_owner_review.py -o addopts= --timeout=120 --timeout-method=signal --junitxml=/tmp/ironclad/final-contracts.xml -vv -ra --tb=short > /tmp/ironclad/final-contracts.log 2>&1
+      - name: Replay unchanged recovery tests and imported owner-focused contracts
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: |
+          fresh_registry=$(mktemp -d)
+          TMPDIR="$fresh_registry" python -m pytest tests/test_h4_backup_recovery_adversarial.py scripts/engineering/reproducers/test_m13_fortress_restore_independent.py tests/test_m13_recovery_zero_p0_reproducers.py -o addopts= --timeout=120 --timeout-method=signal --junitxml=/tmp/ironclad/final-recovery.xml -vv -ra --tb=short > /tmp/ironclad/final-recovery.log 2>&1
       - name: Container ownership, cancellation and native Linux regressions
         if: ${{ !cancelled() }}
         env:

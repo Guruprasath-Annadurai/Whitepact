@@ -69,3 +69,43 @@ Initial combined replay failed collection with ImportPathMismatchError because
 two worktrees exported tests.conftest. This is ERROR, not product FAIL/PASS.
 Replay was restarted with one test root and explicit owner-source imports;
 results remain pending at this checkpoint. Owner-focused new cases run separately.
+
+## Independent execution and first selective integration
+
+Owner-focused new tests on exact e7e24dee: **20 PASS in223.40s**,
+`/private/tmp/m13-final-owner-focused.xml`. Unchanged historical replay on that
+same source: **20 PASS/3 FAIL in66.86s**, receipt
+`/private/tmp/m13-final-owner-original-replay-v2.xml`. Failing originals are H4
+test07 (mock gives no true termination attestation), H4 test11 (original
+QUARANTINED assertion), and PostgreSQL tombstone/FK test (earlier unresolved
+execution remains). These original gates are not relabeled by owner counterparts.
+
+First selective source includes reviewed database/FK/Store B reconciliation and
+startup error fencing; owner in_flight name-only deletion and unreadable-record
+suppression are rejected. Private receipt/cancellation code stays IRONCLAD, with
+immutable-CID metadata and creation labels added. Recovery removal requires exact
+CID plus matching daemon-provided tenant/execution labels, never name-only rm.
+Legacy/name-only records remain unresolved; loss of a tracking file does not
+clear memory uncertainty. Remote registration generation is preserved for
+compare-and-delete cleanup, preventing replacement-registration deletion.
+
+Consequential guards now await current database authority, rather than using a
+startup cache. Bound-database synchronous calls deny and require the async guard.
+Startup query exceptions also persist FAILED rather than only logging a warning.
+Store B remains authoritative; no prototype/default identity relaxation.
+
+Additional inherited detached-entry defect independently RED1/1 in2.20s:
+task=None and callback=None were treated as confirmed containment. Corrected
+implementation retains UNRESOLVED without positive termination proof.
+
+Integrated focused contracts: **45 PASS in12.48s**, including all four unchanged
+owner-review assertions, receipt/cancellation scope, live-marker checks and
+eight immutable-identity/mismatched-identity/error checks. Receipt
+`/private/tmp/m13-final-integrated-contracts-v2.xml`. This is local/component
+evidence, not native Linux or final candidate CI. Mypy all427 source files PASS.
+
+An earlier integrated slice recorded24 PASS/7 FAIL138.95s on original recovery
+plus A2/admission tests with retained shared tracking. Those failures remain
+preserved in `/private/tmp/m13-final-integrated-first.xml`; no tracking records
+were deleted or original expectations edited to hide them. Fresh PostgreSQL
+live-marker and full/native matrices remain required on the committed successor.

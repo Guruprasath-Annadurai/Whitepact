@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 
 from sqlalchemy import delete, insert, select, update
 
-from responsibleai.data_governance.backup_defense import assert_restore_readiness_admitted
+from responsibleai.data_governance.backup_defense import assert_current_restore_readiness_admitted
 from responsibleai.data_governance.legal_hold import LegalHoldManager
 from responsibleai.db.engine import (
     DatabaseEngine,
@@ -132,7 +132,7 @@ class RetentionManager:
         ``org_id is None`` selects policies whose organization is NULL. It does
         not select every tenant. Skips a category protected by a legal hold.
         """
-        assert_restore_readiness_admitted()
+        await assert_current_restore_readiness_admitted()
 
         now = _now()
         pruned_counts: dict[str, int] = {}

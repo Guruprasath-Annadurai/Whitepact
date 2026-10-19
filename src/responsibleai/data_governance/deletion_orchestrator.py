@@ -29,7 +29,7 @@ from responsibleai.data_governance.backup_defense import (
     DurableLifecycleStateProvider,
     LifecycleState,
     LifecycleStateRecord,
-    assert_restore_readiness_admitted,
+    assert_current_restore_readiness_admitted,
     compute_lifecycle_digest,
 )
 from responsibleai.data_governance.legal_hold import LegalHoldActiveError, LegalHoldManager
@@ -124,7 +124,7 @@ class TenantDeletionOrchestrator:
         require_sovereignty: bool = True,
     ) -> TenantDeletionResult:
         """Executes end-to-end governed deletion of an organization."""
-        assert_restore_readiness_admitted()
+        await assert_current_restore_readiness_admitted()
 
         if await self._legal_hold.is_held(org_id):
             raise LegalHoldActiveError(f"Cannot delete tenant {org_id}: active legal hold exists")

@@ -20,8 +20,11 @@ import hashlib
 import json
 import logging
 import os
+import re
+import shutil
 import stat
 import struct
+import subprocess
 import tempfile
 import time
 import uuid
@@ -105,6 +108,8 @@ def _record_cross_worker_registration(entry: InFlightExecution) -> None:
         "created_at": time.time(),
         "containment_status": entry.containment_status,
         "registration_id": entry.registration_id,
+        "container_name": entry.container_name,
+        "container_id": entry.container_id,
     }
     temporary = None
     try:
@@ -251,6 +256,77 @@ def _check_remote_worker_active(
     return unresolved_remote
 
 
+async def verify_authoritative_container_containment(
+    container_name: str,
+    *,
+    container_id: str | None = None,
+    organization_id: str | None = None,
+    execution_id: str | None = None,
+    docker_cmd: str | None = None,
+    timeout_seconds: float = 5.0,
+) -> bool:
+    """Require an acknowledged immutable ID and matching creation labels.
+
+    A name alone cannot authorize removal. Legacy/name-only records remain
+    unresolved for qualified operator recovery. Never remove by mutable name.
+    """
+    if (
+        container_id is None
+        or len(container_id) != 64
+        or any(c not in "0123456789abcdef" for c in container_id)
+        or not organization_id
+        or not execution_id
+    ):
+        return False
+    cmd = docker_cmd or shutil.which("docker") or "docker"
+
+    def verify_and_remove() -> bool:
+        from responsibleai.isolation.container_backend import DockerContainerBackend
+
+        inspected = subprocess.run(
+            [cmd, "inspect", container_id],
+            capture_output=True,
+            text=True,
+            timeout=timeout_seconds,
+            check=False,
+        )
+        if inspected.returncode != 0:
+            # Never attempt destructive cleanup after an unqualified inspect.
+            return (
+                re.fullmatch(
+                    r"(?:error(?: response from daemon)?:\s*)?no such (?:container|object):\s*"
+                    + re.escape(container_id),
+                    inspected.stderr.strip(),
+                    flags=re.IGNORECASE,
+                )
+                is not None
+            )
+        objects = json.loads(inspected.stdout)
+        if not isinstance(objects, list) or len(objects) != 1:
+            return False
+        obj = objects[0]
+        labels = obj.get("Config", {}).get("Labels") or {}
+        if (
+            obj.get("Id") != container_id
+            or obj.get("Name") != f"/{container_name}"
+            or labels.get("io.whitepact.organization")
+            != hashlib.sha256(organization_id.encode()).hexdigest()
+            or labels.get("io.whitepact.execution") != execution_id
+        ):
+            return False
+        DockerContainerBackend(docker_cmd=cmd)._remove_containers(
+            [container_id],
+            stable_seconds=0,
+            wait_seconds=timeout_seconds,
+        )
+        return True
+
+    try:
+        return await asyncio.to_thread(verify_and_remove)
+    except Exception:
+        return False
+
+
 class DatabaseReconciliationError(RuntimeError):
     """Raised when distributed revocation epoch reconciliation cannot query database."""
 
@@ -269,6 +345,8 @@ class InFlightExecution:
     last_termination_error: str | None = None
     containment_status: str = "active"  # "active", "terminated", "unresolved"
     registration_id: str = field(default_factory=lambda: uuid.uuid4().hex)
+    container_name: str | None = None
+    container_id: str | None = None
 
 
 class InFlightExecutionRegistry:
@@ -330,6 +408,8 @@ class InFlightExecutionRegistry:
         task: asyncio.Task[Any] | None = None,
         terminate_callback: Callable[[], Any] | None = None,
         admission_epoch: int = 0,
+        container_name: str | None = None,
+        container_id: str | None = None,
     ) -> InFlightExecution:
         entry = InFlightExecution(
             execution_id=execution_id,
@@ -340,6 +420,8 @@ class InFlightExecutionRegistry:
             terminate_callback=terminate_callback,
             created_at=time.monotonic(),
             admission_epoch=admission_epoch,
+            container_name=container_name,
+            container_id=container_id,
         )
         async with self._lock:
             tracking_owned = False
@@ -472,7 +554,7 @@ class InFlightExecutionRegistry:
                 entry.organization_id,
                 entry.termination_attempts + 1,
             )
-            callback_failed = entry.terminate_callback is None and entry.task is not None
+            callback_failed = entry.terminate_callback is None
             last_err: str | None = None
 
             # 1. Invoke low-level container/process termination callback if registered
@@ -494,6 +576,17 @@ class InFlightExecutionRegistry:
                     )
 
             # 2. Cancel the asyncio task running the communicate call
+            if entry.terminate_callback is None and entry.container_name:
+                callback_failed = not await verify_authoritative_container_containment(
+                    entry.container_name,
+                    container_id=entry.container_id,
+                    organization_id=entry.organization_id,
+                    execution_id=entry.execution_id,
+                )
+                if callback_failed:
+                    last_err = "Container ownership or containment unconfirmed"
+
+            # Cancellation never attests process/container termination.
             if entry.task is not None and not entry.task.done():
                 entry.task.cancel()
 
@@ -504,6 +597,7 @@ class InFlightExecutionRegistry:
                 entry.last_termination_error = last_err
                 async with self._lock:
                     self._unresolved[entry.execution_id] = entry
+                    self._active.pop(entry.execution_id, None)
                 logger.critical(
                     "CONTAINMENT_UNRESOLVED_ALERT: %s for org: %s failed termination: %s",
                     entry.execution_id,
@@ -539,6 +633,9 @@ class InFlightExecutionRegistry:
                     termination_attempts=1,
                     last_termination_error=f"Remote worker (pid {r.get('pid')}) still active; distributed termination unconfirmed",
                     containment_status="unresolved",
+                    container_name=r.get("container_name"),
+                    container_id=r.get("container_id"),
+                    registration_id=r.get("registration_id") or uuid.uuid4().hex,
                 )
                 async with self._lock:
                     self._unresolved[exec_id] = entry
@@ -619,6 +716,23 @@ class InFlightExecutionRegistry:
                         resolved.append(entry.execution_id)
                 except Exception as exc:
                     entry.last_termination_error = str(exc)
+            elif entry.container_name:
+                if await verify_authoritative_container_containment(
+                    entry.container_name,
+                    container_id=entry.container_id,
+                    organization_id=entry.organization_id,
+                    execution_id=entry.execution_id,
+                ):
+                    entry.containment_status = "terminated"
+                    async with self._lock:
+                        self._unresolved.pop(entry.execution_id, None)
+                        self._active.pop(entry.execution_id, None)
+                    _remove_cross_worker_registration(
+                        entry.organization_id,
+                        entry.execution_id,
+                        registration_id=entry.registration_id,
+                    )
+                    resolved.append(entry.execution_id)
         return resolved
 
     async def reconcile_epochs(self, engine: Any) -> list[str]:

@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import functools
+import hashlib
 import json
 import logging
 import os
@@ -439,6 +440,8 @@ class DockerContainerBackend(IsolationBackend):
                     "-i",
                     f"--name={container_name}",
                     f"--cidfile={cid_file}",
+                    f"--label=io.whitepact.organization={hashlib.sha256(request.organization_id.encode()).hexdigest()}",
+                    f"--label=io.whitepact.execution={execution_id}",
                     "--user=65534:65534",  # Non-root unprivileged (nobody:nogroup)
                     f"--memory={limits.max_memory_mb}m",
                     f"--cpus={limits.cpu_cores}",
@@ -548,6 +551,8 @@ class DockerContainerBackend(IsolationBackend):
                         task=asyncio.current_task(),
                         terminate_callback=_terminate_container,
                         admission_epoch=request.admission_epoch,
+                        container_name=container_name,
+                        container_id=creation_receipt(),
                     )
                     # No await between registry acceptance and owner transfer.
                     # Rejection must see the registration task as its own caller,
