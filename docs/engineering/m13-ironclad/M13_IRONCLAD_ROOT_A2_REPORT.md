@@ -1,6 +1,10 @@
 # IRONCLAD root A2 qualification
 
-Reviewed source checkpoint: 47fc55a1591890f18c06333b4f187d091535719d; tree b57b0e46f388cce8a01690e986fde2be6783a967; parent d480e8c87882a7fc5d353961a6fe22048380ab9f. Initial baseline: 7939341fd9d98d0f1fa39ce4421318dbc1dac33e. Draft PR #221 targets codex/whitepact-m13-absolute-convergence. This is an interim engineering record. Completed d9ddf44a CI is historical relative to this successor; new exact-head CI remains pending.
+Final qualification update (2026-10-19): frozen implementation HEAD `ccf4e8cc80f1de52a0a9b445298055ac581f53e1`, tree `c7bef348b9dcea2e55a86d4b01f357fb1498ecd2`, parent `47fc55a1591890f18c06333b4f187d091535719d`. Draft PR #221 targets `codex/whitepact-m13-absolute-convergence`. Evidence-only branch adds tests/reports; implementation equivalence is checked independently. The current results below supersede historical pending statements retained later in this audit trail. M13 OPEN. GLOBAL PRODUCTION NO-GO.
+
+## Current exact-source evidence
+
+Exact-source Linux targeted run [39243112392](https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/39243112392): **98 PASS per Python 3.11/3.12** across ownership, genuine signed root transitions, identity/capability, owner/session and existing A2/convergence contracts. Original four stale-principal RED cases and original transfer RED logs remain retained. New tests deny REVOKED/SUSPENDED/DISABLED/DELETED principals before activation, enforce verified email and server UV, and use actual enrollment and root PoP. Passing new counterparts does not disposition the original 28 pre-A2 root failures. First Enrollment exact-head run39243317358 remains FAIL:12 FAIL/95 PASS each; Independent run39243120600 remains FAIL. Effective BASIC_VERIFIED is account/authenticator control, not legal identity. No H4 change or identity-policy relaxation.
 
 ## Independently reproduced defects
 

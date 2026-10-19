@@ -1,6 +1,10 @@
 # IRONCLAD Python 3.11 teardown diagnosis
 
-Reviewed source checkpoint: 47fc55a1591890f18c06333b4f187d091535719d; tree b57b0e46f388cce8a01690e986fde2be6783a967; parent d480e8c87882a7fc5d353961a6fe22048380ab9f. Initial baseline: 7939341fd9d98d0f1fa39ce4421318dbc1dac33e. Draft PR #221 targets codex/whitepact-m13-absolute-convergence. This is an interim engineering record. Completed d9ddf44a CI is historical relative to this successor; new exact-head CI remains pending.
+Final qualification update (2026-10-19): frozen implementation HEAD `ccf4e8cc80f1de52a0a9b445298055ac581f53e1`, tree `c7bef348b9dcea2e55a86d4b01f357fb1498ecd2`, parent `47fc55a1591890f18c06333b4f187d091535719d`. Draft PR #221 targets `codex/whitepact-m13-absolute-convergence`. Evidence-only branch adds tests/reports; implementation equivalence is checked independently. The current results below supersede historical pending statements retained later in this audit trail. M13 OPEN. GLOBAL PRODUCTION NO-GO.
+
+## Current exact-source evidence
+
+Exact-source Ubuntu24/PG16/Redis7 targeted run39243112392: isolated route file **6 PASS ×3 per interpreter**. Original66-file994-case cohort now includes all original branch-coverage source scopes, same120-second per-test limit:3.11 984 PASS/8 FAIL/2 SKIP;3.12 989 PASS/3 FAIL/2 SKIP; **zero teardown ERROR**. The complete8-shard matrix39243226832 likewise records **zero ERROR on both interpreters**,8029 cases each, original limits intact. No pending-task identity was captured for the old793 timeout because it did not recur. Repeated affected-environment success is evidence of non-reproduction, not a causal fix. Original cause remains UNRESOLVED; no speculative cancellation patch or timeout increase was used.
 
 ## Reproduction and limits
 

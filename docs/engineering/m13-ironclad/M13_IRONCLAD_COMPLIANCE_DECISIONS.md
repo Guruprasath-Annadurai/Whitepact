@@ -1,6 +1,12 @@
 # IRONCLAD compliance decisions
 
-Reviewed source checkpoint: 47fc55a1591890f18c06333b4f187d091535719d; tree b57b0e46f388cce8a01690e986fde2be6783a967; parent d480e8c87882a7fc5d353961a6fe22048380ab9f. Initial baseline: 7939341fd9d98d0f1fa39ce4421318dbc1dac33e. Draft PR #221 targets codex/whitepact-m13-absolute-convergence. This is an interim engineering record. Completed d9ddf44a CI is historical relative to this successor; new exact-head CI remains pending.
+Final qualification update (2026-10-19): frozen implementation HEAD `ccf4e8cc80f1de52a0a9b445298055ac581f53e1`, tree `c7bef348b9dcea2e55a86d4b01f357fb1498ecd2`, parent `47fc55a1591890f18c06333b4f187d091535719d`. Draft PR #221 targets `codex/whitepact-m13-absolute-convergence`. Evidence-only branch adds tests/reports; implementation equivalence is checked independently. The current results below supersede historical pending statements retained later in this audit trail. M13 OPEN. GLOBAL PRODUCTION NO-GO.
+
+## Current exact-source evidence
+
+Exact-source full matrix39243226832 FAIL: **67 test failures each**,141 inherited/owner Ruff findings remain; no policy suppression or protected test edits. DCO/Independent39243120600 FAIL;15 milestone attestations still require authentic authors, not forged signoffs or history rewrite. Configured CodeQL39243317567, Bandit/pip-audit39243317317 and historical Gitleaks39243318719 all SUCCESS atcc. These are configured checks, not proof no vulnerabilities. Product39243316986 and SDK/package39243317495 SUCCESS. External OpenSSF/main publication remains NOT_EXECUTED under the no-publication order. Four authority tables still lack approved classification; no runtime/legal data policy invented. New full failures include org-key MFA positive control400 and mocked timeout preempted by org-1 revocation; those assertions remain failing and require independent order/fixture diagnosis. All original negative tenant assertions before MFA positive control were reached. No test failure is silently waived.
+
+Follow-up diagnosis: original mocked-timeout1 FAIL under existing tracking state but1 PASS2.02s under a fresh TMPDIR; latest_revoked_epoch=-1, so the reported revocation can represent unresolved containment admission, not an actual recorded revocation. Original org endpoint file2 PASS locally; Linux400 cause remains unresolved. No retained tracking records or original assertions were deleted.
 
 ## Immutable evidence and author decisions
 

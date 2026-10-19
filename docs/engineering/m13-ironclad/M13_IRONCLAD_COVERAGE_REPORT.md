@@ -1,6 +1,10 @@
 # IRONCLAD coverage
 
-Reviewed source checkpoint: 47fc55a1591890f18c06333b4f187d091535719d; tree b57b0e46f388cce8a01690e986fde2be6783a967; parent d480e8c87882a7fc5d353961a6fe22048380ab9f. Initial baseline: 7939341fd9d98d0f1fa39ce4421318dbc1dac33e. Draft PR #221 targets codex/whitepact-m13-absolute-convergence. This is an interim engineering record. Completed d9ddf44a CI is historical relative to this successor; new exact-head CI remains pending.
+Final qualification update (2026-10-19): frozen implementation HEAD `ccf4e8cc80f1de52a0a9b445298055ac581f53e1`, tree `c7bef348b9dcea2e55a86d4b01f357fb1498ecd2`, parent `47fc55a1591890f18c06333b4f187d091535719d`. Draft PR #221 targets `codex/whitepact-m13-absolute-convergence`. Evidence-only branch adds tests/reports; implementation equivalence is checked independently. The current results below supersede historical pending statements retained later in this audit trail. M13 OPEN. GLOBAL PRODUCTION NO-GO.
+
+## Current exact-source evidence
+
+Completed exact-source full [39243226832](https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/39243226832): **8029 unique cases each,7928 PASS/67 FAIL/0 ERROR/34 SKIP each**, complete accounting, eight shards per interpreter. Python3.11 branch **6949/8618=80.63355767%**, statements30693/33726=91.0069%; Python3.12 branch **6974/8618=80.92364818%**, statements30738/33726=91.1404%. Same source scopes and80% branch threshold; no old/targeted coverage merged. Coverage gate PASS; overall matrix FAIL (tests/Ruff). Source growth changes denominator from8604 to8618; comparisons do not pretend unchanged denominator. All34 original environment skips remain SKIP. Separate exactcc actual localhost CrewAI/LlamaIndex runs **22 PASS per interpreter** (3.11 18.03s;3.12 18.74s) use real dependencies and no paid LLM; initial missing dependency collection/setup attempts are retained separately, not counted as passes. New evidence-only four-case probes are excluded from sourcecc coverage/accounting.
 
 ## Baseline and policy
 

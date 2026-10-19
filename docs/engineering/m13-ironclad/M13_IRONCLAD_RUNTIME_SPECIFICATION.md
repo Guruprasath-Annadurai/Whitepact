@@ -1,6 +1,10 @@
 # IRONCLAD runtime specification
 
-Reviewed source checkpoint: 47fc55a1591890f18c06333b4f187d091535719d; tree b57b0e46f388cce8a01690e986fde2be6783a967; parent d480e8c87882a7fc5d353961a6fe22048380ab9f. Initial baseline: 7939341fd9d98d0f1fa39ce4421318dbc1dac33e. Draft PR #221 targets codex/whitepact-m13-absolute-convergence. This is an interim engineering record. Completed d9ddf44a CI is historical relative to this successor; new exact-head CI remains pending.
+Final qualification update (2026-10-19): frozen implementation HEAD `ccf4e8cc80f1de52a0a9b445298055ac581f53e1`, tree `c7bef348b9dcea2e55a86d4b01f357fb1498ecd2`, parent `47fc55a1591890f18c06333b4f187d091535719d`. Draft PR #221 targets `codex/whitepact-m13-absolute-convergence`. Evidence-only branch adds tests/reports; implementation equivalence is checked independently. The current results below supersede historical pending statements retained later in this audit trail. M13 OPEN. GLOBAL PRODUCTION NO-GO.
+
+## Current exact-source evidence
+
+Exact-source native targeted run39243112392: Python3.12 **131 PASS**; Python3.11 **129 PASS/2 FAIL**, no native skips. Two original same-organization lifecycle expectations conflict with persisted UNRESOLVED after an interrupted create without a trusted receipt. They remain FAIL; do not erase uncertainty. Reference cohort inherits that state on3.11 (984 PASS/8 FAIL/2 SKIP), versus3.12 (989 PASS/3 FAIL/2 SKIP). Evidence-only commit `3e9d6b780672b568b3130649e0ec0e09975c91e1`, run [39246319117](https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/39246319117), independently passes **4 cases each** with source unchanged: two actual Docker known-ACK/lost-receipt tenant probes plus two controlled plugin-error callback contracts. Neither original native tests nor original plugin reproducer is altered. Runtime Review39243120593 remains FAIL:53 PASS/2 FAIL each; original plugin callback reproducer mocks the delegated cleanup method, so its assertion no longer observes actual shared inspection. That original gate requires maintainer disposition and is not relabeled PASS. Actual PostgreSQL restore1 PASS/2 FAIL each (StoreB floor and restrictive FK). Antigravity recovery-zero `8f1717c1bf1b5bbfe6fb0afc24f4bdc8ba73d9e1` was fetched only, not integrated or accepted. Public restore remains503.
 
 ## Preserved invariants
 
