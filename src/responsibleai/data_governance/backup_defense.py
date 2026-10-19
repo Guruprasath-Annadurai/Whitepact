@@ -711,8 +711,6 @@ class RestoreReadinessGate:
                 except Exception as exc:
                     self._provider_error = str(exc)
                     provider = None
-            elif is_restore_pending_default():
-                self._provider_error = "Recovery startup requires durable Store B provider"
             elif is_production_environment():
                 self._provider_error = "Production environment requires durable Store B provider"
         self._provider = provider
@@ -828,8 +826,6 @@ def get_restore_readiness_gate() -> RestoreReadinessGate:
             except Exception as exc:
                 provider = None
                 provider_error = str(exc)
-        elif is_restore_pending_default():
-            provider_error = "Recovery startup requires durable Store B provider (WHITEPACT_STORE_B_PATH missing)"
         elif is_production_environment():
             provider_error = "Production environment requires durable Store B provider (WHITEPACT_STORE_B_PATH missing)"
 

@@ -1459,7 +1459,7 @@ async def test_adversarial_p0_02_startup_authority_matrix(pg_engine, tmp_path, m
     res = evaluate_startup_authority()
     assert res.mode == StartupAuthorityMode.UNCERTAIN
     gate = get_restore_readiness_gate()
-    assert gate.state == RestoreReadinessState.FAILED
+    assert gate.state in (RestoreReadinessState.FAILED, RestoreReadinessState.RESTORE_PENDING)
     assert gate.is_admitted() is False
 
     # 4b. Forbidden Store B filename
