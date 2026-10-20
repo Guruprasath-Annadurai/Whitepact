@@ -56,4 +56,24 @@ No database permission or destructive migration operation was performed locally.
 
 Prior exact71759e44 native evidence is run39474701876:27 unit,2 cold-restart,
 19 native cases passed per interpreter. Those results belong to71759e44, not
-this uncommitted repair. No successor CI or independent qualification is claimed.
+this repair. No successor CI or independent qualification is claimed here.
+
+## Subsequent founder-approved historical fixture pinning
+
+On2026-10-21 the founder approved only explicit0065 setup for historical
+0065->0064 guards. Applied three `upgrade head` -> `upgrade0065` fixture edits:
+two in `tests/test_m13_apex_migration_guard.py`, original blob
+`00c00b044c4877328a287a0e025ecc7a744a9b3a`; one in its mandatory-passkey
+reproducer in `scripts/engineering/reproducers/test_m13_corrective_authority.py`,
+original blob `bcda92d9939d122a3ec7e6f9f5ad67db915fd624`.
+No assertion, runtime-compatibility case, downgrade implementation, timeout,
+rollback or concurrency check changed. Original source remains in Git.
+The earlier run39474710654 records three before failures on both interpreters.
+The additive current-runtime suite passed34 tests on each interpreter after
+the compatibility repair (3.11:28.70s;3.12:29.53s), no skips.
+
+The existing native workflow now executes the historical guard assertions
+on real PostgreSQL16 under both Python versions and retains a separate JUnit.
+After-results and independent Antigravity verification are PENDING; no claim
+that fixture pinning masks or resolves every migration-security requirement.
+The historical runtime-compatibility test remains unchanged and may remain red.

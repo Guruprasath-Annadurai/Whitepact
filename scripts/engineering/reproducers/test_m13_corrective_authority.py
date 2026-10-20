@@ -142,7 +142,7 @@ async def test_mandatory_passkey_requirement_prevents_intermediate_0064_schema()
             ini = _find_alembic_ini()
             assert ini is not None
             env = _migration_env(database)
-            await _run_alembic(ini, env, "upgrade", "head")
+            await _run_alembic(ini, env, "upgrade", "0065")
             connection = await asyncpg.connect(database)
             try:
                 await connection.execute(

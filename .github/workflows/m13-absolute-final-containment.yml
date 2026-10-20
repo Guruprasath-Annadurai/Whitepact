@@ -57,6 +57,11 @@ jobs:
         run: |
           python -m pytest tests/test_m13_absolute_cold_restart_native.py -o addopts='' --junitxml=/tmp/absolute-cold.xml --tb=short -ra
           python -c 'import xml.etree.ElementTree as E; r=E.parse("/tmp/absolute-cold.xml"); assert not list(r.iter("skipped")) and not list(r.iter("failure")) and not list(r.iter("error"))'
+      - name: Approved historical passkey migration guards on PostgreSQL 16
+        if: ${{ !cancelled() }}
+        run: |
+          python -m pytest tests/test_m13_apex_migration_guard.py -o addopts='' --junitxml=/tmp/absolute-migration.xml --tb=short -ra
+          python -c 'import xml.etree.ElementTree as E; r=E.parse("/tmp/absolute-migration.xml"); assert not list(r.iter("skipped")) and not list(r.iter("failure")) and not list(r.iter("error"))'
       - name: Original native lifecycle and repeated timeout soak
         if: ${{ !cancelled() }}
         run: |
@@ -72,3 +77,4 @@ jobs:
             /tmp/absolute-unit.xml
             /tmp/absolute-cold.xml
             /tmp/absolute-native.xml
+            /tmp/absolute-migration.xml

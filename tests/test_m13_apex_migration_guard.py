@@ -67,7 +67,7 @@ async def test_failed_ddl_preserves_revision_and_nonmandatory_data() -> None:
             ini = _find_alembic_ini()
             assert ini is not None
             env = _migration_env(database)
-            await _run_alembic(ini, env, "upgrade", "head")
+            await _run_alembic(ini, env, "upgrade", "0065")
             connection = await asyncpg.connect(database)
             try:
                 await connection.execute(
@@ -113,7 +113,7 @@ async def test_concurrent_mandatory_writer_is_seen_before_downgrade() -> None:
             ini = _find_alembic_ini()
             assert ini is not None
             env = _migration_env(database)
-            await _run_alembic(ini, env, "upgrade", "head")
+            await _run_alembic(ini, env, "upgrade", "0065")
             connection = await asyncpg.connect(database)
             task = None
             transaction = None
