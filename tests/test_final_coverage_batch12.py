@@ -1112,6 +1112,14 @@ async def test_execute_mock_nonzero_exit(monkeypatch: pytest.MonkeyPatch) -> Non
 @pytest.mark.asyncio
 @pytest.mark.usefixtures("portable_workspace_mapping", "isolated_mock_container_registry")
 async def test_execute_mock_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+    from types import SimpleNamespace
+
+    from responsibleai.isolation import container_backend as backend_module
+
+    # This unit double intentionally makes client communication/drain fail.
+    # Keep preparation deterministic so a loaded host cannot time out BEFORE
+    # that mocked phase. asyncio's own clock and the native250ms soak are untouched.
+    monkeypatch.setattr(backend_module, "time", SimpleNamespace(monotonic=lambda: 0.0))
     backend = DockerContainerBackend(docker_cmd="docker")
     monkeypatch.setattr(backend, "is_available", lambda: True)
 
