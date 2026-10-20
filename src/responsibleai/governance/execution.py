@@ -333,6 +333,20 @@ class InternalToolExecutor:
                 self._broker = None
 
     async def execute(self, authorization: ExecutionAuthorization, action: ActionRequest) -> Any:
+        from responsibleai.governance.synthetic_counter import SYNTHETIC_COUNTER_TOOL
+        from responsibleai.isolation.mode import is_production, synthetic_host_tool_allowed
+
+        host_fixture = (
+            action.action_type == SYNTHETIC_COUNTER_TOOL and synthetic_host_tool_allowed()
+        )
+        if self._broker is None and not host_fixture and is_production():
+            from responsibleai.isolation.errors import IsolationError
+
+            raise IsolationError(
+                "Same-process tool execution is strictly forbidden in production. "
+                "An IsolationBroker is mandatory."
+            )
+
         from responsibleai.data_governance.backup_defense import (
             assert_current_restore_readiness_admitted,
         )

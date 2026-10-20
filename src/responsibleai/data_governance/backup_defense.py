@@ -773,7 +773,7 @@ class RestoreReadinessGate:
 
     def assert_traffic_admitted(self) -> None:
         """Enforce that traffic is only served once lifecycle reconciliation succeeds."""
-        if self._db_engine is not None:
+        if self._db_engine is not None and self._db_authority_status != "RECONCILED":
             raise RestoreQuarantineError(
                 "Current database authority requires asynchronous admission verification."
             )
@@ -884,6 +884,7 @@ def assert_restore_readiness_admitted() -> None:
 
 async def assert_current_restore_readiness_admitted() -> None:
     await get_restore_readiness_gate().assert_current_traffic_admitted()
+    assert_restore_readiness_admitted()
 
 
 async def assert_database_restore_consistent(engine: DatabaseEngine) -> None:

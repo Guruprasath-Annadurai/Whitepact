@@ -189,14 +189,23 @@ def _check_remote_worker_active(
         )
         return unresolved_remote
 
+    v2_prefix = None
+    if organization_id is not None:
+        tenant_digest = _identity_digest(b"WP-INFLIGHT-V2-TENANT\x00", organization_id)
+        v2_prefix = f"trk_v2_{tenant_digest}_"
+
     for f in entries:
         filename = f.name
+        if organization_id is not None and filename.startswith("trk_v2_"):
+            if not filename.startswith(v2_prefix):
+                continue
         file_org = organization_id or "unknown"
         file_exec = filename[:-5]
         if organization_id is not None and filename.startswith(f"{organization_id}_"):
             # Legacy naming is only a diagnostic hint, never an ownership proof.
             file_exec = filename[len(organization_id) + 1 : -5]
 
+        data = None
         try:
             if f.is_symlink():
                 raise ValueError("Symbolic link tracking is not authoritative")
@@ -216,7 +225,20 @@ def _check_remote_worker_active(
             if data.get("containment_status", "active") not in {"active", "unresolved"}:
                 raise ValueError("Unconfirmed containment state")
         except Exception as read_exc:
-            # File is unreadable, locked, or corrupted; cannot authoritatively prove absence!
+            if (
+                isinstance(data, dict)
+                and isinstance(data.get("organization_id"), str)
+                and organization_id is not None
+                and data["organization_id"] != organization_id
+            ):
+                continue
+            if (
+                organization_id is not None
+                and "_" in filename
+                and not filename.startswith("trk_v2_")
+                and not filename.startswith(f"{organization_id}_")
+            ):
+                continue
             unresolved_remote.append(
                 {
                     "execution_id": file_exec,
@@ -246,7 +268,7 @@ def _check_remote_worker_active(
                 unresolved_remote.append(data)
             else:
                 # A dead worker cannot attest that its container was terminated.
-                # Retain legacy records too: they carry no contrary containment proof.
+                # Retain legacy and modern records: they carry no contrary containment proof.
                 unresolved_remote.append(
                     {**data, "error": "Worker exited; containment unconfirmed"}
                 )

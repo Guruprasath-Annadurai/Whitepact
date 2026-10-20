@@ -155,7 +155,7 @@ def test_07_slashes_and_traversal_attempts(isolated_tracking_dir):
     _record_cross_worker_registration(entry)
 
     # File must be strictly inside isolated_tracking_dir, not escaped
-    files = list(isolated_tracking_dir.iterdir())
+    files = [p for p in isolated_tracking_dir.iterdir() if p.name.endswith(".json")]
     assert len(files) == 1
     assert files[0].parent.resolve() == isolated_tracking_dir.resolve()
     assert "passwd" not in files[0].name
@@ -184,11 +184,11 @@ def test_09_very_long_identifiers(isolated_tracking_dir):
 
 # Scenario 10: Case and Unicode normalization (NFC equivalence)
 def test_10_unicode_normalization_nfc():
-    # 'é' as single code point U+00E9 vs 'e' + U+0301 (combining acute accent)
+    # Database identifiers are exact strings and must not collide via normalization
     nfc = "café"
     nfd = unicodedata.normalize("NFD", nfc)
     assert nfc != nfd
-    assert _tracking_filename(nfc, "exec") == _tracking_filename(nfd, "exec")
+    assert _tracking_filename(nfc, "exec") != _tracking_filename(nfd, "exec")
 
 
 # Scenario 11: Concurrent registrations across tenants

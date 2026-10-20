@@ -22,6 +22,17 @@ from responsibleai.db.engine import (
 from responsibleai.db.migrate import _find_alembic_ini, _migration_env, _run_alembic
 from responsibleai.db.revocation_epoch_repository import RevocationEpochRepository
 from tests.pg_test_url import isolated_pg_url
+from responsibleai.isolation import in_flight as tracking
+
+
+@pytest.fixture(autouse=True)
+def isolated_tracking_environment(tmp_path, monkeypatch):
+    t_dir = tmp_path / "tracking"
+    t_dir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(tracking, "_DISTRIBUTED_REGISTRY_DIR", t_dir)
+    tracking.InFlightExecutionRegistry.reset_instance()
+    yield
+    tracking.InFlightExecutionRegistry.reset_instance()
 
 
 @pytest.fixture

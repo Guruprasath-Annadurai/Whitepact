@@ -4,7 +4,7 @@
 
 Proves:
 1. kill(pid, 0) returning EPERM (process alive under different UID/sandbox) retains tracking and marks unresolved.
-2. kill(pid, 0) returning ESRCH (process dead) unlinks tracking record cleanly.
+2. kill(pid, 0) returning ESRCH (process dead) retains tracking record as unconfirmed containment.
 3. Inaccessible or corrupt tracking files fail closed, treating containment as unconfirmed.
 4. Directory scanning failure (e.g. permission/disk error) fails closed, marking unresolved containment.
 5. In-flight termination with partial callback failure retains unconfirmed executions.
@@ -38,8 +38,8 @@ def reset_in_flight_registry():
 
 
 @pytest.mark.asyncio
-async def test_kill_esrch_unlinks_dead_worker_tracking() -> None:
-    """When a remote worker process has died (ESRCH), its tracking file is cleanly unlinked."""
+async def test_kill_esrch_retains_unconfirmed_tracking() -> None:
+    """When a remote worker process has died (ESRCH), tracking is retained as unconfirmed containment."""
     dist_dir = _DISTRIBUTED_REGISTRY_DIR
     dist_dir.mkdir(parents=True, exist_ok=True)
 
@@ -72,8 +72,9 @@ async def test_kill_esrch_unlinks_dead_worker_tracking() -> None:
 
         with patch("os.kill", side_effect=_mock_kill):
             active_remote = _check_remote_worker_active(org_id)
-            assert len(active_remote) == 0, "Dead worker must not be reported as active"
-            assert not tracking_file.exists(), "Dead worker tracking file must be unlinked"
+            assert len(active_remote) == 1, "Dead worker without containment proof must be reported as unresolved"
+            assert "Worker exited; containment unconfirmed" in active_remote[0].get("error", "")
+            assert tracking_file.exists(), "Tracking file must be retained until containment is independently confirmed"
     finally:
         if tracking_file.exists():
             tracking_file.unlink()
