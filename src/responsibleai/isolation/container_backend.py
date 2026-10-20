@@ -29,6 +29,7 @@ import tempfile
 import time
 import uuid
 from collections.abc import Mapping
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -130,12 +131,24 @@ def _runner_error(stdout: str) -> str | None:
 class DockerContainerBackend(IsolationBackend):
     """Docker container execution backend providing OCI containment."""
 
+    def _create_stopped_container(self, command: list[str], receipt: Path) -> str:
+        """Create is inert: never start an unacknowledged daemon request.
+
+        A killed/timed-out client may still cause a late CREATE, but that object
+        cannot execute the command because START is a distinct, later request.
+        """
+        result = subprocess.run(command, capture_output=True, text=True, timeout=30, check=True)
+        cid = self._trusted_container_id(receipt)
+        if cid is None or result.stdout.strip() != cid:
+            raise IsolationBackendUnavailableError("Docker creation acknowledgement is incomplete")
+        return cid
+
     @staticmethod
     def _trusted_container_id(path: Path) -> str | None:
         """Read only a complete Docker creation receipt from our private directory.
 
         Docker writes the full ID after ContainerCreate succeeds, before start.
-        No receipt means creation may still be pending and needs the stable wait.
+        No receipt means creation may still be pending; it never permits START.
         The caller must keep this directory private and outside container mounts.
         """
         descriptor = None
@@ -386,6 +399,19 @@ class DockerContainerBackend(IsolationBackend):
                     current.cancel()
 
     async def execute(self, request: IsolatedExecutionRequest) -> ExecutionOutcome:
+        from responsibleai.isolation.durable_intent import (
+            assert_runtime_inventory,
+            daemon_identity,
+            fence_process_generation,
+            process_generation,
+            required_journal,
+        )
+
+        journal = required_journal()
+        generation = process_generation()
+        journal_started = False
+        journal_finished = False
+        cleanup_confirmed = False
         if not self.is_available():
             raise IsolationBackendUnavailableError(
                 "Docker isolation backend is unavailable or daemon is unreachable. "
@@ -425,8 +451,8 @@ class DockerContainerBackend(IsolationBackend):
         try:
             # Docker's receipt must never be writable by the isolated workload.
             # TemporaryDirectory is 0700 and is deliberately not bind mounted.
-            cid_directory = tempfile.TemporaryDirectory(prefix="wp-container-receipt-")
-            cid_file = Path(cid_directory.name) / "container.cid"
+            cid_directory = Path(tempfile.mkdtemp(prefix="wp-container-receipt-"))
+            cid_file = cid_directory / "container.cid"
             with EphemeralWorkspace(request.action_id, request.organization_id) as workspace:
                 workspace.populate(staged_files)
                 # Host tree stays 0700/0600. Container UID 65534 is granted a
@@ -435,13 +461,14 @@ class DockerContainerBackend(IsolationBackend):
 
                 cmd = [
                     self.docker_cmd,
-                    "run",
+                    "create",
                     "--rm",
                     "-i",
                     f"--name={container_name}",
                     f"--cidfile={cid_file}",
                     f"--label=io.whitepact.organization={hashlib.sha256(request.organization_id.encode()).hexdigest()}",
                     f"--label=io.whitepact.execution={execution_id}",
+                    f"--label=io.whitepact.generation={generation}",
                     "--user=65534:65534",  # Non-root unprivileged (nobody:nogroup)
                     f"--memory={limits.max_memory_mb}m",
                     f"--cpus={limits.cpu_cores}",
@@ -471,24 +498,51 @@ class DockerContainerBackend(IsolationBackend):
                     {"action_type": request.action_type, "arguments": request.arguments}
                 ).encode("utf-8")
 
-                # Cancellation cannot discard a subprocess whose OS creation has
-                # already happened but whose asyncio handoff has not returned.
-                proc = await self._await_owned_completion(
-                    asyncio.create_task(
-                        asyncio.create_subprocess_exec(
-                            *cmd,
-                            stdin=asyncio.subprocess.PIPE,
-                            stdout=asyncio.subprocess.PIPE,
-                            stderr=asyncio.subprocess.PIPE,
+                if journal is not None:
+                    expires = request.authorization_expires_at
+                    if (
+                        not request.authorization_id
+                        or not request.action_digest
+                        or expires is None
+                        or expires.tzinfo is None
+                        or expires <= datetime.now(UTC)
+                    ):
+                        raise IsolationPolicyViolationError(
+                            "Hosted execution requires a current bound authorization"
                         )
+                    backend_identity = await asyncio.to_thread(daemon_identity, self.docker_cmd)
+                    await assert_runtime_inventory(journal, self.docker_cmd, backend_identity)
+                    await journal.begin(
+                        execution_id=execution_id,
+                        organization_id=request.organization_id,
+                        owner_generation=generation,
+                        backend_identity=backend_identity,
+                        authorization_id=request.authorization_id,
+                        action_digest=request.action_digest,
+                        admission_epoch=request.admission_epoch,
+                        expected_container_name=container_name,
+                    )
+                    journal_started = True
+
+                created_cid = await self._await_owned_completion(
+                    asyncio.create_task(
+                        asyncio.to_thread(self._create_stopped_container, cmd, cid_file)
                     )
                 )
+                if journal is not None:
+                    await journal.acknowledge(execution_id, generation, created_cid)
+
+                # All asynchronous daemon CREATE completion now precedes START.
+                # Exact immutable identity, never a name that may be reused.
+                cmd = [self.docker_cmd, "start", "--attach", "--interactive", created_cid]
+                proc = None
 
                 from responsibleai.isolation.in_flight import InFlightExecutionRegistry
 
                 registry = InFlightExecutionRegistry.get_instance()
                 communication_started = False
-                acknowledged_cid = None
+                acknowledged_cid = created_cid
+                termination_confirmed = False
 
                 def creation_receipt() -> str | None:
                     nonlocal acknowledged_cid
@@ -499,15 +553,17 @@ class DockerContainerBackend(IsolationBackend):
                     return acknowledged_cid
 
                 async def _terminate_container() -> bool:
+                    nonlocal termination_confirmed
+
                     async def terminate_owned() -> bool:
-                        client_completed = proc.returncode == 0
-                        if proc.returncode is None:
+                        client_completed = proc is None or proc.returncode == 0
+                        if proc is not None and proc.returncode is None:
                             try:
                                 proc.kill()
                             except ProcessLookupError:
                                 pass
                         drain_error = None
-                        if not communication_started:
+                        if not communication_started and proc is not None:
                             # Registration may deny before the normal communicate
                             # owner starts. Drain PIPEs and reap the killed client;
                             # never introduce a second reader during execution.
@@ -516,7 +572,11 @@ class DockerContainerBackend(IsolationBackend):
                             except Exception as exc:
                                 drain_error = exc
                         cid = creation_receipt()
-                        targets = [cid, container_name] if cid is not None else [container_name]
+                        if cid is None:
+                            raise RuntimeError(
+                                "No immutable creation identity; cleanup is unconfirmed"
+                            )
+                        targets = [cid]
                         # Unknown creation can arrive after an early absent result.
                         # A private full CID proves create completed; delayed start
                         # cannot recreate that removed identity.
@@ -537,9 +597,16 @@ class DockerContainerBackend(IsolationBackend):
 
                     # Register awaits this callback before denying admission.
                     # Its existing unresolved contract retains failed containment.
-                    return await self._await_owned_completion(
-                        asyncio.create_task(terminate_owned())
-                    )
+                    try:
+                        result = await self._await_owned_completion(
+                            asyncio.create_task(terminate_owned())
+                        )
+                        termination_confirmed = result is True
+                        return result
+                    except BaseException:
+                        if journal is not None:
+                            fence_process_generation()
+                        raise
 
                 execution_owner = asyncio.current_task()
 
@@ -566,6 +633,11 @@ class DockerContainerBackend(IsolationBackend):
                         asyncio.create_task(register_owned())
                     )
                 except PermissionError as exc:
+                    if termination_confirmed:
+                        if journal is not None:
+                            await journal.finish(execution_id, generation)
+                            journal_finished = True
+                        cleanup_confirmed = True
                     return ExecutionOutcome(
                         action_id=request.action_id,
                         exit_code=-9,
@@ -582,9 +654,33 @@ class DockerContainerBackend(IsolationBackend):
                 stderr_data = b""
                 communication_started = True
                 try:
+                    remaining = limits.wall_timeout_seconds - (time.monotonic() - start_time)
+                    if remaining <= 0:
+                        raise TimeoutError
+                    if journal is not None:
+                        await journal.assert_startable(execution_id, generation, created_cid)
+                        if (
+                            request.authorization_expires_at is None
+                            or request.authorization_expires_at <= datetime.now(UTC)
+                        ):
+                            raise IsolationPolicyViolationError(
+                                "Authorization expired during container preparation"
+                            )
+                    # Register ownership/revocation before a byte of START is
+                    # sent. CREATE has not executed the workload.
+                    proc = await self._await_owned_completion(
+                        asyncio.create_task(
+                            asyncio.create_subprocess_exec(
+                                *cmd,
+                                stdin=asyncio.subprocess.PIPE,
+                                stdout=asyncio.subprocess.PIPE,
+                                stderr=asyncio.subprocess.PIPE,
+                            )
+                        )
+                    )
                     stdout_data, stderr_data = await asyncio.wait_for(
                         proc.communicate(input=input_payload),
-                        timeout=limits.wall_timeout_seconds,
+                        timeout=remaining,
                     )
                 except TimeoutError:
                     timed_out = True
@@ -592,7 +688,9 @@ class DockerContainerBackend(IsolationBackend):
                     revoked_in_flight = True
                 finally:
                     client_cleanup_error = None
-                    if timed_out or revoked_in_flight or proc.returncode is None:
+                    if proc is not None and (
+                        timed_out or revoked_in_flight or proc.returncode is None
+                    ):
 
                         async def finish_client_io():
                             failure = None
@@ -620,21 +718,23 @@ class DockerContainerBackend(IsolationBackend):
                     # asyncio.CancelledError, TimeoutError, and unexpected exceptions.
                     #
                     # Execution-ownership-safe cleanup:
-                    # 1. If --cidfile was written by Docker, clean up by exact 64-character container ID.
-                    # 2. As fallback, clean up by unique container_name (which includes execution_id).
-                    # Neither target can ever match or interfere with a concurrent invocation.
+                    # Only the acknowledged immutable ID is a cleanup target.
+                    # A name may have been reused after --rm; never delete it.
                     #
                     # subprocess.run is used (not asyncio) so that this call cannot be
                     # interrupted by asyncio task cancellation.  docker rm -f is idempotent:
                     # "No such container" (already removed by --rm) is silently ignored.
                     cid = creation_receipt()
-                    cleanup_targets = [cid, container_name] if cid is not None else [container_name]
+                    cleanup_targets = [cid] if cid is not None else []
 
-                    # Client kill (timeout or CancelledError) can race dockerd's
-                    # asynchronous create. Retry rm -f until the uniquely named
-                    # container is gone; never filter by org/action prefix.
-                    incomplete = timed_out or proc.returncode is None or revoked_in_flight
-                    creation_settled = cid is not None or proc.returncode == 0
+                    # START can race cancellation, but cannot create a new
+                    # identity after this acknowledged container is removed.
+                    incomplete = (
+                        timed_out or proc is None or proc.returncode is None or revoked_in_flight
+                    )
+                    creation_settled = cid is not None or (
+                        proc is not None and proc.returncode == 0
+                    )
                     cleanup_error: Exception | None = None
                     try:
                         await self._await_owned_completion(
@@ -666,7 +766,7 @@ class DockerContainerBackend(IsolationBackend):
                         )
 
                     # Ensure the docker client process is not left as a zombie.
-                    if proc.returncode is None:
+                    if proc is not None and proc.returncode is None:
                         try:
                             proc.kill()
                         except Exception:
@@ -677,7 +777,10 @@ class DockerContainerBackend(IsolationBackend):
                     # CRITICAL INVARIANT: If removal failed or absence is unconfirmed,
                     # DO NOT unregister! Retain in registry tracking as unresolved containment.
                     async def finish_tracking() -> None:
+                        nonlocal cleanup_confirmed, journal_finished
                         if cleanup_error is not None:
+                            if journal is not None:
+                                fence_process_generation()
                             async with registry._lock:
                                 registration.termination_attempts += 1
                                 registration.containment_status = "unresolved"
@@ -695,7 +798,11 @@ class DockerContainerBackend(IsolationBackend):
                                         "UNRESOLVED_TRACKING_PERSISTENCE_FAILED: %s", execution_id
                                     )
                         else:
+                            if journal is not None:
+                                await journal.finish(execution_id, generation)
+                                journal_finished = True
                             await registry.unregister(execution_id)
+                            cleanup_confirmed = True
 
                     await self._await_owned_completion(asyncio.create_task(finish_tracking()))
                     duration = time.monotonic() - start_time
@@ -706,7 +813,9 @@ class DockerContainerBackend(IsolationBackend):
 
                 result_obj: Any = None
                 violation: str | None = None
-                exit_code = proc.returncode if proc.returncode is not None else -1
+                exit_code = (
+                    proc.returncode if proc is not None and proc.returncode is not None else -1
+                )
 
                 if timed_out:
                     violation = f"Container wall timeout of {limits.wall_timeout_seconds}s exceeded"
@@ -742,6 +851,14 @@ class DockerContainerBackend(IsolationBackend):
                     violation=violation,
                 )
         finally:
-            if cid_directory is not None:
-                cid_directory.cleanup()
-            shutil.rmtree(runner_host.parent, ignore_errors=True)
+            if journal_started and not journal_finished and journal is not None:
+                fence_process_generation()
+                await self._await_owned_completion(
+                    asyncio.create_task(journal.mark_unresolved(execution_id, generation))
+                )
+            # Uncertainty must retain the private receipt for a later verified
+            # retry, even in the explicit local prototype with no PG journal.
+            if cleanup_confirmed:
+                if cid_directory is not None:
+                    shutil.rmtree(cid_directory)
+                shutil.rmtree(runner_host.parent, ignore_errors=True)

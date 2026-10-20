@@ -976,6 +976,10 @@ def isolated_mock_container_registry(tmp_path, monkeypatch):
 
     monkeypatch.setattr(in_flight, "_DISTRIBUTED_REGISTRY_DIR", tmp_path / "mock-tracking")
     monkeypatch.setattr(in_flight.InFlightExecutionRegistry, "_instance", None)
+    # These tests already replace Docker startup and cleanup. Supply the new
+    # inert CREATE acknowledgement as well; real CREATE/receipt behavior is
+    # exercised separately by protocol and native suites, not this unit double.
+    monkeypatch.setattr(DockerContainerBackend, "_create_stopped_container", lambda *a: "c" * 64)
     try:
         yield
     finally:

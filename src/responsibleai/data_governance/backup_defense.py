@@ -888,6 +888,28 @@ async def assert_current_restore_readiness_admitted() -> None:
 
 async def assert_database_restore_consistent(engine: DatabaseEngine) -> None:
     """Assert that the database does not contain an unreconciled or failed recovery state."""
+    from responsibleai.db.containment_repository import ContainmentRepository
+    from responsibleai.isolation.durable_intent import process_generation
+
+    await ContainmentRepository(engine).assert_admitted(owner_generation=process_generation())
+    from responsibleai.isolation.mode import unisolated_execution_allowed
+
+    if not unisolated_execution_allowed():
+        import asyncio
+
+        from responsibleai.isolation.container_backend import DockerContainerBackend
+        from responsibleai.isolation.durable_intent import (
+            assert_runtime_inventory,
+            daemon_identity,
+        )
+
+        if engine.raw.dialect.name != "postgresql":
+            raise RestoreQuarantineError(
+                "Hosted runtime readiness requires the durable PostgreSQL journal"
+            )
+        backend = DockerContainerBackend()
+        identity = await asyncio.to_thread(daemon_identity, backend.docker_cmd)
+        await assert_runtime_inventory(ContainmentRepository(engine), backend.docker_cmd, identity)
     async with engine.raw.connect() as conn:
         row = (
             await conn.execute(
