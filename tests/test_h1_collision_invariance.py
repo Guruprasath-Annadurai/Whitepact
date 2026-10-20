@@ -188,7 +188,8 @@ def test_10_unicode_normalization_nfc():
     nfc = "café"
     nfd = unicodedata.normalize("NFD", nfc)
     assert nfc != nfd
-    assert _tracking_filename(nfc, "exec") == _tracking_filename(nfd, "exec")
+    # Exact database tenant identifiers must not alias through normalization.
+    assert _tracking_filename(nfc, "exec") != _tracking_filename(nfd, "exec")
 
 
 # Scenario 11: Concurrent registrations across tenants

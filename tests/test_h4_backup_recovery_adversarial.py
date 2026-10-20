@@ -450,14 +450,14 @@ async def test_11_restored_deleted_tenant_quarantined_and_authority_purged(db_en
 
     assert deleted_org_id in report.details["quarantined_orgs"]
 
-    # Verify governance_status is explicitly set to QUARANTINED
+    # Quarantine uses schema-valid DISABLED plus the explicit quarantine evidence.
     async with db_engine.raw.connect() as conn:
         org_row = (
             await conn.execute(
                 select(organizations).where(organizations.c.id == deleted_org_id)
             )
         ).fetchone()
-        assert org_row.governance_status == "QUARANTINED"
+        assert org_row.governance_status == "DISABLED"
         assert "RESTORE_QUARANTINED" in org_row.name
 
         # API keys and delegations MUST be completely erased

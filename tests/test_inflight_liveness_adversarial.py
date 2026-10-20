@@ -39,7 +39,7 @@ def reset_in_flight_registry():
 
 @pytest.mark.asyncio
 async def test_kill_esrch_unlinks_dead_worker_tracking() -> None:
-    """When a remote worker process has died (ESRCH), its tracking file is cleanly unlinked."""
+    """Retain the historical test ID: ESRCH cannot prove container containment."""
     dist_dir = _DISTRIBUTED_REGISTRY_DIR
     dist_dir.mkdir(parents=True, exist_ok=True)
 
@@ -72,8 +72,11 @@ async def test_kill_esrch_unlinks_dead_worker_tracking() -> None:
 
         with patch("os.kill", side_effect=_mock_kill):
             active_remote = _check_remote_worker_active(org_id)
-            assert len(active_remote) == 0, "Dead worker must not be reported as active"
-            assert not tracking_file.exists(), "Dead worker tracking file must be unlinked"
+            assert len(active_remote) == 1, "Dead worker containment remains unresolved"
+            assert active_remote[0]["execution_id"] == exec_id
+            assert active_remote[0]["organization_id"] == org_id
+            assert active_remote[0]["error"] == "Worker exited; containment unconfirmed"
+            assert tracking_file.exists(), "Unconfirmed containment evidence must survive"
     finally:
         if tracking_file.exists():
             tracking_file.unlink()
