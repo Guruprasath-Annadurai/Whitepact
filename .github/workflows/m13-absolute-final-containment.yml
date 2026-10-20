@@ -51,7 +51,7 @@ jobs:
           git rev-parse HEAD 'HEAD^{tree}' 'HEAD^' > /tmp/absolute-source.txt
       - name: Durable state and creation protocol regressions
         run: |
-          python -m pytest tests/test_m13_absolute_durable_intent.py tests/test_m13_absolute_creation_protocol.py tests/test_m13_absolute_runtime_inventory.py tests/test_m13_closure_pr224_contracts.py -o addopts='' --junitxml=/tmp/absolute-unit.xml --tb=short -ra
+          python -m pytest tests/test_m13_absolute_durable_intent.py tests/test_m13_absolute_creation_protocol.py tests/test_m13_absolute_runtime_inventory.py tests/test_m13_closure_pr224_contracts.py tests/test_m13_convergence3_schema_contract.py tests/test_m13_convergence3_schema_postgres.py -o addopts='' --junitxml=/tmp/absolute-unit.xml --tb=short -ra
       - name: Real SIGKILL and missing metadata at normal READY
         if: ${{ !cancelled() }}
         run: |
