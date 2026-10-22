@@ -41,3 +41,25 @@ authorize replacing those assertions; their substantive safety review remains OP
 No production implementation changed for these dispositions. No containment
 timeout was shortened and no automatic absence-based clearance was added.
 Independent qualification and global production remain OPEN / NO-GO.
+
+## Separate approval: runtime compatibility version expectations
+
+On2026-10-22 the founder separately approved updating only the historical
+runtime-compatibility test for the journal-enabled runtime. Original file:
+`tests/test_m13_runtime_schema_compatibility.py`, Git blob
+`d79022add35d0c689b519df96ff6a0675940833e`, at candidate
+`f556bb7a6989bfdcf5c2a9ee1961cdf266f8dfe1`.
+
+Before: actual PG16 runtime review39480655583 fails this test on both Python
+versions: it expects0066 to be incompatible while the current runtime requires
+0066. After change: accept0066; reject0064/0065/0067; attempt0066 inside the
+aborted transaction; restore0066 for restart. Existing rollback, incompatible,
+restart and missing-version-table assertions remain. Empty/multiple/unreadable
+version negatives remain in additive `test_m13_convergence3_schema_contract.py`.
+No production code or compatibility allowlist changed under this approval.
+
+The existing dedicated PG16 dual-Python workflow now includes this test alongside
+all four historical migration guards. Execution and independent review are
+PENDING until exact-head artifacts are collected. Rejecting0065 in the current
+runtime is explicitly NOT proof that an older binary cannot use a0066 database.
+Old-binary and database-role fencing remain mandatory OPEN requirements.
