@@ -6,12 +6,14 @@ from datetime import UTC, datetime
 
 import pytest
 from sqlalchemy import insert
+from tests.pg_test_url import isolated_pg_url
 
 from responsibleai.data_governance.backup_defense import (
     InMemoryLifecycleStateProvider,
     LifecycleState,
     LifecycleStateRecord,
     RestoreReconciliationEngine,
+    RestoreReconciliationError,
 )
 from responsibleai.db.engine import (
     create_engine,
@@ -21,11 +23,17 @@ from responsibleai.db.engine import (
 )
 from responsibleai.db.migrate import _find_alembic_ini, _migration_env, _run_alembic
 from responsibleai.db.revocation_epoch_repository import RevocationEpochRepository
-from tests.pg_test_url import isolated_pg_url
+from responsibleai.isolation import in_flight as tracking
 
 
 @pytest.fixture
-async def restored():
+async def restored(tmp_path, monkeypatch):
+    # Only this disposable database's component fixtures belong in its registry.
+    # Preserve the outer registry and all pre-existing tracking evidence intact.
+    monkeypatch.setattr(tracking, "_DISTRIBUTED_REGISTRY_DIR", tmp_path / "restore-tracking")
+    monkeypatch.setattr(
+        tracking.InFlightExecutionRegistry, "_instance", tracking.InFlightExecutionRegistry()
+    )
     databases = isolated_pg_url("wp_convergence_restore")
     database = await anext(databases)
     await _run_alembic(_find_alembic_ini(), _migration_env(database), "upgrade", "head")
@@ -68,6 +76,35 @@ async def test_store_b_floor_fences_canonical_governance_epoch(restored):
     ).reconcile_post_restore("independent-development-test")
     assert report.status == "RECONCILED"
     assert (await epochs.current("restored-tenant")).epoch >= 7
+
+
+@pytest.mark.asyncio
+async def test_tombstone_reconciliation_retains_uncertain_execution(restored):
+    """Isolating fixtures must never turn genuine uncertainty into success."""
+    registry = tracking.InFlightExecutionRegistry.get_instance()
+    await registry.register(
+        "uncertain-execution",
+        "restored-tenant",
+        "component-test",
+        terminate_callback=lambda: False,
+    )
+    provider = InMemoryLifecycleStateProvider()
+    provider.record_state(
+        LifecycleStateRecord(
+            tenant_id="restored-tenant",
+            generation_id="generation",
+            state=LifecycleState.TOMBSTONED,
+            effective_at=datetime.now(UTC).isoformat(),
+            security_epoch=7,
+            revocation_floor=7,
+        )
+    )
+    with pytest.raises(RestoreReconciliationError, match="Containment unconfirmed"):
+        await RestoreReconciliationEngine(
+            restored, lifecycle_provider=provider
+        ).reconcile_post_restore("independent-development-test")
+    assert registry.has_unresolved("restored-tenant")
+    assert list(tracking._DISTRIBUTED_REGISTRY_DIR.glob("*.json"))
 
 
 @pytest.mark.asyncio

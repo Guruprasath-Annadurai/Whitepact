@@ -23,6 +23,12 @@ from responsibleai.isolation.models import (
 
 @pytest.fixture
 def registry(tmp_path, monkeypatch):
+    from responsibleai.isolation.durable_intent import required_journal
+
+    # Resolve the existing explicit development-mode configuration before the
+    # test's bounded scheduling probe, not during its first event-loop turn.
+    # This module is a controlled process double, not hosted journal evidence.
+    assert required_journal() is None
     monkeypatch.setattr(tracking, "_DISTRIBUTED_REGISTRY_DIR", tmp_path / "tracking")
     tracking.InFlightExecutionRegistry.reset_instance()
     yield tracking.InFlightExecutionRegistry.get_instance()
@@ -158,6 +164,13 @@ async def test_cancellation_waits_for_contended_registry_transition(registry):
         assert release.wait(5)
         raise RuntimeError("unconfirmed under contention")
 
+    def acknowledge_inert_create(command, receipt):
+        # Supply only the earlier inert-CREATE transport boundary. The original
+        # contended registry transition and cancellation assertions stay real.
+        cid = "c" * 64
+        receipt.write_text(cid, encoding="utf-8")
+        return cid
+
     org = f"org-{uuid.uuid4().hex}"
     request = IsolatedExecutionRequest(
         action_id=f"action-{uuid.uuid4().hex}", organization_id=org,
@@ -171,6 +184,7 @@ async def test_cancellation_waits_for_contended_registry_transition(registry):
         patch("responsibleai.isolation.container_backend.grant_container_read"),
         patch.object(EphemeralWorkspace, "prepare_for_container"),
         patch("asyncio.create_subprocess_exec", return_value=Process()),
+        patch.object(backend, "_create_stopped_container", side_effect=acknowledge_inert_create),
         patch.object(backend, "_remove_containers", side_effect=cleanup),
     ):
         task = asyncio.create_task(backend.execute(request))
