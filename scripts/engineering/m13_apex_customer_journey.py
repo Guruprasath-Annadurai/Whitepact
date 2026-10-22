@@ -10,8 +10,9 @@ import asyncio
 import json
 import os
 import secrets
-from contextlib import aclosing
+from contextlib import aclosing, contextmanager
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from scripts.engineering.m13i1_customer_journey import serve
 from scripts.engineering.m13i2_customer_journey import configured_settings
@@ -59,6 +60,40 @@ PHASES = (
     "post_revocation_denial",
     "logout_session_invalidation",
 )
+
+
+@contextmanager
+def isolated_startup_store_b():
+    """Provision the fresh disposable journey's Store B, never recover an old store.
+
+    The application server must be stopped before exit. The prior gate and its
+    durable evidence are retained untouched; only this fresh database fixture
+    receives a new provider. No READY write or recovery authority is supplied.
+    """
+    from responsibleai.data_governance.backup_defense import (
+        get_restore_readiness_gate,
+        set_restore_readiness_gate,
+    )
+    from responsibleai.environment import is_production
+
+    if is_production():
+        raise RuntimeError("Disposable onboarding requires an explicit nonproduction environment")
+    original = get_restore_readiness_gate()
+    keys = ("WHITEPACT_STORE_B_PATH", "WHITEPACT_STORE_B_KEY")
+    previous = {key: os.environ.get(key) for key in keys}
+    with TemporaryDirectory(prefix="whitepact-apex-store-b-") as directory:
+        try:
+            os.environ["WHITEPACT_STORE_B_PATH"] = str(Path(directory) / "lifecycle.sqlite3")
+            os.environ["WHITEPACT_STORE_B_KEY"] = secrets.token_urlsafe(32)
+            set_restore_readiness_gate(None)
+            yield
+        finally:
+            set_restore_readiness_gate(original)
+            for key, value in previous.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
 
 
 def validate_evidence(result: dict) -> None:
@@ -128,19 +163,22 @@ async def attempt(*, development_agent_prototype: bool = False) -> dict:
                     ]
                 )
             ) as mailbox:
-                with configured_settings(
-                    {
-                        "database_url": database,
-                        "auto_migrate": False,
-                        "auth_enabled": True,
-                        "api_keys": [],
-                        "environment": "development",
-                        "web_auth_dev_tokens": False,
-                        "dev_agent_auth_enabled": development_agent_prototype,
-                        "web_session_secure": False,
-                        "web_verification_delivery_url": f"{mailbox}/deliver",
-                        "web_verification_delivery_token": delivery_secret,
-                    }
+                with (
+                    isolated_startup_store_b(),
+                    configured_settings(
+                        {
+                            "database_url": database,
+                            "auto_migrate": False,
+                            "auth_enabled": True,
+                            "api_keys": [],
+                            "environment": "development",
+                            "web_auth_dev_tokens": False,
+                            "dev_agent_auth_enabled": development_agent_prototype,
+                            "web_session_secure": False,
+                            "web_verification_delivery_url": f"{mailbox}/deliver",
+                            "web_verification_delivery_token": delivery_secret,
+                        }
+                    ),
                 ):
                     async with serve(dashboard.app) as origin:
                         config = {

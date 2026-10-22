@@ -219,6 +219,51 @@ async def test_real_postgres_unsafe_authorization_stays_quarantined(real_recover
 
 
 @pytest.mark.asyncio
+async def test_competing_operator_lock_cannot_consume_or_restore_authority(real_recovery):
+    import fcntl
+
+    from responsibleai.data_governance.operator_recovery_control import OperatorProfile
+
+    engine, provider, gate, profile_path, private = real_recovery
+    manifest = await prepare_offline_recovery(engine, provider, profile_path=profile_path)
+    profile = OperatorProfile.load(profile_path)
+    lock_path = profile.ledger_path.with_suffix(".recovery-lock")
+    descriptor = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o600)
+    try:
+        fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        with pytest.raises(BlockingIOError):
+            await execute_offline_recovery(
+                engine,
+                provider,
+                gate,
+                profile_path=profile_path,
+                manifest=manifest,
+                signatures=sign(manifest, private),
+            )
+        assert gate.state == RestoreReadinessState.FAILED
+        with sqlite3.connect(profile.ledger_path) as connection:
+            assert connection.execute("SELECT count(*) FROM recovery_receipts").fetchone() == (0,)
+        async with engine.raw.connect() as connection:
+            assert (
+                await connection.scalar(text("SELECT count(*) FROM restore_reconciliation_records"))
+                == 0
+            )
+    finally:
+        os.close(descriptor)
+    # No automatic retry: a deliberate call after the competing operation ends
+    # still has to validate the complete original evidence and both signatures.
+    await execute_offline_recovery(
+        engine,
+        provider,
+        gate,
+        profile_path=profile_path,
+        manifest=manifest,
+        signatures=sign(manifest, private),
+    )
+    await gate.assert_current_traffic_admitted()
+
+
+@pytest.mark.asyncio
 async def test_actual_unknown_docker_workload_blocks_recovery_without_adoption(real_recovery):
     engine, provider, gate, profile_path, private = real_recovery
     image = subprocess.run(

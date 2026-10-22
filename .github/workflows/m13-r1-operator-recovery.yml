@@ -63,7 +63,7 @@ jobs:
           mypy src/responsibleai/data_governance/operator_recovery.py src/responsibleai/data_governance/operator_recovery_control.py src/responsibleai/ops/operator_recovery.py
       - name: Real stores, native Docker and process-crash matrix
         run: |
-          python -m pytest tests/test_operator_recovery_authorization.py tests/test_operator_recovery_ledger.py tests/test_operator_recovery_direct_calls.py tests/test_operator_recovery_postgres.py tests/test_operator_recovery_crash.py -o addopts='' --junitxml=/tmp/r1-recovery.xml --tb=short -ra
+          python -m pytest tests/test_operator_recovery_authorization.py tests/test_operator_recovery_ledger.py tests/test_operator_recovery_direct_calls.py tests/test_operator_recovery_postgres.py tests/test_operator_recovery_crash.py tests/test_operator_recovery_startup.py -o addopts='' --junitxml=/tmp/r1-recovery.xml --tb=short -ra
           python -c 'import xml.etree.ElementTree as E; r=E.parse("/tmp/r1-recovery.xml"); assert not list(r.iter("skipped")) and not list(r.iter("failure")) and not list(r.iter("error"))'
       - name: Unchanged restore and journal neighbors
         if: ${{ !cancelled() }}
