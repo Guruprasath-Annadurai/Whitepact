@@ -22,6 +22,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from sqlalchemy.exc import OperationalError
 
 from responsibleai.db.engine import create_engine
 from responsibleai.db.org_repository import OrgRepository
@@ -82,7 +83,7 @@ async def test_01_db_unavailable_before_grant_issuance_fails_closed(pg_engine) -
     broken_engine = create_engine("postgresql+asyncpg://invalid:invalid@127.0.0.1:54321/nonexistent")
     kernel = Phase7AAuthorityKernel(broken_engine)
     try:
-        with pytest.raises(Exception):
+        with pytest.raises((OSError, OperationalError)):
             await kernel.issue(**_issue_kwargs("org-unreachable"))
     finally:
         await broken_engine.close()
@@ -105,7 +106,7 @@ async def test_02_db_unavailable_after_grant_fails_closed_before_effect(pg_engin
     broken_engine = create_engine("postgresql+asyncpg://invalid:invalid@127.0.0.1:54321/nonexistent")
     failing_kernel = Phase7AAuthorityKernel(broken_engine)
     try:
-        with pytest.raises(Exception):
+        with pytest.raises((OSError, OperationalError)):
             await failing_kernel.claim_local_effect_start(
                 claim,
                 action_digest=claim.action_digest,
