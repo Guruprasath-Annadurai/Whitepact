@@ -8,7 +8,10 @@ from responsibleai.db.engine import DatabaseEngine
 
 # Review this alongside every security-bearing migration. Do not silently accept
 # newer schema semantics merely because existing ORM queries still work.
-SUPPORTED_POSTGRES_REVISIONS = frozenset({"0065"})
+# This runtime requires the durable pre-CREATE containment journal introduced
+# by 0066, in addition to 0065's mandatory passkey protections. Older and newer
+# revisions are not implicitly compatible; partial/multiple heads also fail.
+SUPPORTED_POSTGRES_REVISIONS = frozenset({"0066"})
 
 
 async def assert_runtime_schema_compatible(engine: DatabaseEngine) -> None:
@@ -22,6 +25,8 @@ async def assert_runtime_schema_compatible(engine: DatabaseEngine) -> None:
                 .all()
             )
     except Exception as exc:
-        raise RuntimeError("Startup refused: PostgreSQL schema compatibility is unverified") from exc
+        raise RuntimeError(
+            "Startup refused: PostgreSQL schema compatibility is unverified"
+        ) from exc
     if versions != SUPPORTED_POSTGRES_REVISIONS:
         raise RuntimeError("Startup refused: incompatible PostgreSQL schema revision")

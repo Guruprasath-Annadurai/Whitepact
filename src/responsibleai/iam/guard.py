@@ -98,9 +98,11 @@ class PrivilegedSurfaceGuard:
         through this gate -- those already use their own sovereign proof path in
         recovery.py/transfer.py, and must not be able to reach this method as a bypass.
         """
-        from responsibleai.data_governance.backup_defense import assert_restore_readiness_admitted
+        from responsibleai.data_governance.backup_defense import (
+            assert_current_restore_readiness_admitted,
+        )
 
-        assert_restore_readiness_admitted()
+        await assert_current_restore_readiness_admitted()
 
         now = datetime.now(UTC).isoformat()
 

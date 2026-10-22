@@ -333,9 +333,22 @@ class InternalToolExecutor:
                 self._broker = None
 
     async def execute(self, authorization: ExecutionAuthorization, action: ActionRequest) -> Any:
-        from responsibleai.data_governance.backup_defense import assert_restore_readiness_admitted
+        from responsibleai.isolation.errors import IsolationError
+        from responsibleai.isolation.mode import is_production
 
-        assert_restore_readiness_admitted()
+        # Reject a configuration that cannot execute safely before consuming
+        # its single-use permit. This does not admit any execution path.
+        if self._broker is None and is_production():
+            raise IsolationError(
+                "Same-process tool execution is strictly forbidden in production. "
+                "An IsolationBroker is mandatory."
+            )
+
+        from responsibleai.data_governance.backup_defense import (
+            assert_current_restore_readiness_admitted,
+        )
+
+        await assert_current_restore_readiness_admitted()
 
         await admit_execution(authorization, action, self._nonce_repo)
 
@@ -351,10 +364,8 @@ class InternalToolExecutor:
         if self._broker is not None and not host_fixture:
             return await self._broker.execute(authorization, action)
 
-        from responsibleai.isolation.errors import IsolationError
         from responsibleai.isolation.mode import (
             UNISOLATED_EXECUTION_ENV,
-            is_production,
             unisolated_execution_allowed,
         )
 

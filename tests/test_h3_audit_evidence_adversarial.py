@@ -28,14 +28,12 @@ Mandatory 20-Scenario Evidence Integrity Matrix:
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import json
-import uuid
-from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
 from sqlalchemy import delete, insert, select, update
+from sqlalchemy.exc import IntegrityError
 
 from responsibleai.db import EvidenceRepository, create_engine
 from responsibleai.db.engine import governance_evidence, governance_evidence_chain_heads
@@ -67,7 +65,9 @@ async def engine():
     await database.close()
 
 
-def _make_evidence_record(org_id: str, index: int = 0, actor_id: str | None = None) -> EvidenceRecord:
+def _make_evidence_record(
+    org_id: str, index: int = 0, actor_id: str | None = None
+) -> EvidenceRecord:
     actor = actor_id or f"principal-{index}"
     identity = IdentityContext(identity_id=actor, kind="api_key", org_id=org_id)
     agent = AgentContext(identity=identity, organization_id=org_id, agent_id=f"agent-{index}")
@@ -125,9 +125,7 @@ async def test_02_deleted_audit_entry_detected(engine):
     # Delete the middle entry
     async with engine.raw.begin() as conn:
         await conn.execute(
-            delete(governance_evidence).where(
-                governance_evidence.c.id == records[1].evidence_id
-            )
+            delete(governance_evidence).where(governance_evidence.c.id == records[1].evidence_id)
         )
 
     assert await repo.verify_chain("org-h3-2") is False
@@ -274,7 +272,7 @@ async def test_10_replayed_evidence_nonce_rejected(engine):
     await repo.record(rec1)
 
     # Re-recording with identical evidence_id is rejected by primary key integrity
-    with pytest.raises(Exception):
+    with pytest.raises(IntegrityError, match="(?i)unique|duplicate"):
         await repo.record(rec1)
 
 
@@ -385,7 +383,9 @@ def test_15_witness_publication_mismatch(tmp_path):
         opaque_reference=False,
     )
     # Verification with different head hash raises WitnessPublicationError
-    with pytest.raises(WitnessPublicationError, match="database head does not match the published witness"):
+    with pytest.raises(
+        WitnessPublicationError, match="database head does not match the published witness"
+    ):
         verify_published_head(
             log,
             organization_id="org-witness-mismatch",

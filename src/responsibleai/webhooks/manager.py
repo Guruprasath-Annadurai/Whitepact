@@ -221,9 +221,11 @@ class WebhookManager:
         independently-developed, non-overlapping fixes to this same method;
         neither is dropped in favor of the other.
         """
-        from responsibleai.data_governance.backup_defense import assert_restore_readiness_admitted
+        from responsibleai.data_governance.backup_defense import (
+            assert_current_restore_readiness_admitted,
+        )
 
-        assert_restore_readiness_admitted()
+        await assert_current_restore_readiness_admitted()
 
         targets = [
             config

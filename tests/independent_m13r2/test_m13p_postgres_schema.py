@@ -4,9 +4,9 @@
 
 import asyncpg
 import pytest
+from tests.pg_test_url import isolated_pg_url
 
 from responsibleai.db.migrate import _find_alembic_ini, _migration_env, _run_alembic
-from tests.pg_test_url import isolated_pg_url
 
 
 @pytest.mark.asyncio

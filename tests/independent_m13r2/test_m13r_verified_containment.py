@@ -13,6 +13,13 @@ from unittest.mock import AsyncMock
 
 import pytest
 from sqlalchemy import select, update
+from tests.test_m12fs_root_hardening import (
+    _configure_test_env,  # noqa: F401 -- isolated autouse fixture
+    _create_test_owner,
+    _register_fake_passkey,
+    api_client,  # noqa: F401 -- real ASGI HTTP client fixture
+)
+from tests.webauthn_fakes import assertion_blob
 
 from responsibleai.db.engine import (
     authority_containment_records,
@@ -28,13 +35,6 @@ from responsibleai.enterprise.authority.service import (
 from responsibleai.enterprise.runtime import get_enterprise_engine
 from responsibleai.enterprise.security.webauthn import b64url_decode
 from responsibleai.isolation.in_flight import InFlightExecutionRegistry
-from tests.test_m12fs_root_hardening import (
-    _configure_test_env,  # noqa: F401 -- isolated autouse fixture
-    _create_test_owner,
-    _register_fake_passkey,
-    api_client,  # noqa: F401 -- real ASGI HTTP client fixture
-)
-from tests.webauthn_fakes import assertion_blob
 
 
 async def verified_input():

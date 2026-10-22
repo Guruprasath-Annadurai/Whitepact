@@ -4,9 +4,9 @@
 
 import asyncpg
 import pytest
+from tests.pg_test_url import isolated_pg_url
 
 from responsibleai.db.migrate import _find_alembic_ini, _migration_env, _run_alembic
-from tests.pg_test_url import isolated_pg_url
 
 TABLES = {
     "authority_step_up_challenges",
@@ -23,7 +23,7 @@ async def test_0063_upgrade_0064_constraints_and_safe_empty_downgrade():
         assert ini is not None
         env = _migration_env(url)
         await _run_alembic(ini, env, "upgrade", "0063")
-        await _run_alembic(ini, env, "upgrade", "head")
+        await _run_alembic(ini, env, "upgrade", "0064")
         conn = await asyncpg.connect(url)
         try:
             assert int(await conn.fetchval("SHOW server_version_num")) // 10000 == 16
@@ -78,7 +78,7 @@ async def test_0063_upgrade_0064_constraints_and_safe_empty_downgrade():
             assert await conn.fetchval("SELECT version_num FROM alembic_version") == "0063"
         finally:
             await conn.close()
-        await _run_alembic(ini, env, "upgrade", "head")
+        await _run_alembic(ini, env, "upgrade", "0064")
 
 
 @pytest.mark.asyncio

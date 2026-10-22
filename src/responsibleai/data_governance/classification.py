@@ -42,6 +42,48 @@ class TableClassification:
 
 
 TABLE_CLASSIFICATIONS: dict[str, TableClassification] = {
+    # Authority/journal records retain the former fail-closed export/erasure
+    # posture. Generic customer exports must not copy operational proof state.
+    "authority_containment_records": TableClassification(
+        "authority_containment_records",
+        DataClassification.CANONICAL_SECURITY_EVIDENCE,
+        SensitivityTier.CRITICAL,
+        "SECURITY_EVIDENCE_DEFAULT",
+        False,
+        False,
+    ),
+    "authority_recovery_requests": TableClassification(
+        "authority_recovery_requests",
+        DataClassification.CANONICAL_SECURITY_EVIDENCE,
+        SensitivityTier.CRITICAL,
+        "SECURITY_EVIDENCE_DEFAULT",
+        False,
+        False,
+    ),
+    "authority_recovery_votes": TableClassification(
+        "authority_recovery_votes",
+        DataClassification.CANONICAL_SECURITY_EVIDENCE,
+        SensitivityTier.CRITICAL,
+        "SECURITY_EVIDENCE_DEFAULT",
+        False,
+        False,
+    ),
+    "authority_step_up_challenges": TableClassification(
+        "authority_step_up_challenges",
+        DataClassification.SENSITIVE_SECURITY,
+        SensitivityTier.CRITICAL,
+        "SECURITY_EVIDENCE_DEFAULT",
+        False,
+        False,
+    ),
+    "runtime_containment_records": TableClassification(
+        "runtime_containment_records",
+        DataClassification.CANONICAL_SECURITY_EVIDENCE,
+        SensitivityTier.CRITICAL,
+        "SECURITY_EVIDENCE_DEFAULT",
+        False,
+        False,
+    ),
     "audit_log": TableClassification(
         "audit_log",
         DataClassification.CANONICAL_SECURITY_EVIDENCE,

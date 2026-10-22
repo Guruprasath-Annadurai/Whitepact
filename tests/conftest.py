@@ -96,6 +96,25 @@ TEST_GOVERNANCE_PURPOSE = "automated-test"
 
 
 @pytest.fixture(autouse=True)
+def isolated_restore_gate_instance():
+    """Separate test process-local gates, never durable recovery authority.
+
+    A previous test can close its database or intentionally fail startup. Its
+    singleton must not become authority for the next independently configured
+    application. The normal factory still reads the actual environment/Store B;
+    this fixture never sets READY, deletes markers, or clears runtime tracking.
+    """
+    from responsibleai.data_governance import backup_defense
+
+    previous = backup_defense._GLOBAL_RESTORE_GATE
+    backup_defense._GLOBAL_RESTORE_GATE = None
+    try:
+        yield
+    finally:
+        backup_defense._GLOBAL_RESTORE_GATE = previous
+
+
+@pytest.fixture(autouse=True)
 def clean_audit_writes_and_hermetic_state():
     """Clear any residual background audit tasks from closed event loops."""
     yield

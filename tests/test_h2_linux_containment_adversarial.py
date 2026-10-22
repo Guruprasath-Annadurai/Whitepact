@@ -33,31 +33,22 @@ Mandatory 25-Scenario Infrastructure Qualification:
 from __future__ import annotations
 
 import asyncio
-import os
-import signal
-import subprocess
 import time
 import uuid
-from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from responsibleai.governance.models import GovernanceDecision
 from responsibleai.isolation.container_backend import DockerContainerBackend
 from responsibleai.isolation.errors import (
     IsolationBackendUnavailableError,
     IsolationPolicyViolationError,
 )
 from responsibleai.isolation.in_flight import (
-    InFlightExecution,
     InFlightExecutionRegistry,
     _check_remote_worker_active,
-    _record_cross_worker_registration,
     _tracking_filename,
 )
 from responsibleai.isolation.models import (
-    ExecutionOutcome,
     IsolatedExecutionRequest,
     IsolationProfile,
     NetworkPolicy,
@@ -71,6 +62,7 @@ def reset_registry(monkeypatch, tmp_path_factory):
     monkeypatch.setenv("RAI_MCP_ALLOW_TEST_TOOLS", "1")
     t_dir = tmp_path_factory.mktemp("inflight")
     import responsibleai.isolation.in_flight as tracking
+
     monkeypatch.setattr(tracking, "_DISTRIBUTED_REGISTRY_DIR", t_dir)
     InFlightExecutionRegistry.reset_instance()
     yield
@@ -173,9 +165,8 @@ def test_06_filesystem_escape_attempt_rejected():
 
 # Scenario 7: Unauthorized host filesystem access rejection
 def test_07_unauthorized_host_filesystem_access():
-    from responsibleai.isolation.container_backend import _TRUSTED_RUNNER_MOUNT
 
-    backend = DockerContainerBackend()
+    _backend = DockerContainerBackend()
     cmd = [
         "--user=65534:65534",
         "--read-only",
@@ -214,7 +205,9 @@ async def test_09_docker_daemon_unavailable_fail_closed(monkeypatch):
         arguments={},
         profile=IsolationProfile(network_policy=NetworkPolicy.NONE),
     )
-    with pytest.raises(IsolationBackendUnavailableError, match="Docker isolation backend is unavailable"):
+    with pytest.raises(
+        IsolationBackendUnavailableError, match="Docker isolation backend is unavailable"
+    ):
         await backend.execute(req)
 
 
@@ -256,17 +249,24 @@ def test_12_worker_process_killed_retention(tmp_path):
     # Worker wrote tracking file with remote pid, then died
     f = tracking_dir / _tracking_filename("org_dead_worker", "exec_dead_worker")
     import json
-    f.write_text(json.dumps({
-        "execution_id": "exec_dead_worker",
-        "organization_id": "org_dead_worker",
-        "action_id": "action_dead",
-        "pid": 99999999,
-        "created_at": time.time(),
-        "containment_status": "active",
-    }), encoding="utf-8")
+
+    f.write_text(
+        json.dumps(
+            {
+                "execution_id": "exec_dead_worker",
+                "organization_id": "org_dead_worker",
+                "action_id": "action_dead",
+                "pid": 99999999,
+                "created_at": time.time(),
+                "containment_status": "active",
+            }
+        ),
+        encoding="utf-8",
+    )
 
     with pytest.MonkeyPatch.context() as mp:
         import responsibleai.isolation.in_flight as tracking
+
         mp.setattr(tracking, "_DISTRIBUTED_REGISTRY_DIR", tracking_dir)
 
         # Checking remote active processes detects the dead worker and marks containment unconfirmed
@@ -299,7 +299,9 @@ async def test_14_cleanup_interrupted_recovery():
             raise InterruptedError("SIGINT during container rm")
         return True
 
-    await registry.register("exec_cleanup_int", org_id, "act_cleanup", terminate_callback=_interrupted_cleanup)
+    await registry.register(
+        "exec_cleanup_int", org_id, "act_cleanup", terminate_callback=_interrupted_cleanup
+    )
     # First termination interrupted
     await registry.terminate_in_flight(organization_id=org_id)
     assert registry.has_unresolved(org_id) is True
@@ -318,12 +320,15 @@ async def test_15_repeated_task_cancellation():
     org_id = "org_repeated_cancel"
 
     cancelled_count = 0
+
     def _cancel_callback():
         nonlocal cancelled_count
         cancelled_count += 1
         return True
 
-    await registry.register("exec_rep_cancel", org_id, "act_cancel", terminate_callback=_cancel_callback)
+    await registry.register(
+        "exec_rep_cancel", org_id, "act_cancel", terminate_callback=_cancel_callback
+    )
     t1 = await registry.terminate_in_flight(organization_id=org_id)
     t2 = await registry.terminate_in_flight(organization_id=org_id)
     t3 = await registry.terminate_in_flight(organization_id=org_id)
@@ -342,16 +347,23 @@ def test_16_container_still_running_after_worker_death(tmp_path):
     # Tracking record with containment_status="unresolved"
     f = tracking_dir / _tracking_filename("org_orphaned_c", "exec_orphan_1")
     import json
-    f.write_text(json.dumps({
-        "execution_id": "exec_orphan_1",
-        "organization_id": "org_orphaned_c",
-        "action_id": "act_orph",
-        "pid": 99999999,
-        "containment_status": "unresolved",
-    }), encoding="utf-8")
+
+    f.write_text(
+        json.dumps(
+            {
+                "execution_id": "exec_orphan_1",
+                "organization_id": "org_orphaned_c",
+                "action_id": "act_orph",
+                "pid": 99999999,
+                "containment_status": "unresolved",
+            }
+        ),
+        encoding="utf-8",
+    )
 
     with pytest.MonkeyPatch.context() as mp:
         import responsibleai.isolation.in_flight as tracking
+
         mp.setattr(tracking, "_DISTRIBUTED_REGISTRY_DIR", tracking_dir)
         unresolved = _check_remote_worker_active("org_orphaned_c")
         assert len(unresolved) == 1
@@ -367,9 +379,12 @@ async def test_17_tracking_write_failure_fail_closed(monkeypatch):
     def _failing_record(entry):
         raise OSError("Read-only filesystem: tracking write failed")
 
-    monkeypatch.setattr("responsibleai.isolation.in_flight._record_cross_worker_registration", _failing_record)
+    monkeypatch.setattr(
+        "responsibleai.isolation.in_flight._record_cross_worker_registration", _failing_record
+    )
 
     terminated_called = False
+
     def _term():
         nonlocal terminated_called
         terminated_called = True
@@ -389,8 +404,13 @@ async def test_17_tracking_write_failure_fail_closed(monkeypatch):
 def test_18_distributed_tracking_scan_failure():
     with pytest.MonkeyPatch.context() as mp:
         import responsibleai.isolation.in_flight as tracking
+
         # Set to a path where scandir fails
-        mp.setattr(tracking, "_DISTRIBUTED_REGISTRY_DIR", tracking.Path("/nonexistent_forbidden_dir/whitepact"))
+        mp.setattr(
+            tracking,
+            "_DISTRIBUTED_REGISTRY_DIR",
+            tracking.Path("/nonexistent_forbidden_dir/whitepact"),
+        )
         # When dir does not exist, returns empty
         assert _check_remote_worker_active("org_test") == []
 
@@ -399,10 +419,13 @@ def test_18_distributed_tracking_scan_failure():
 @pytest.mark.asyncio
 async def test_19_disk_full_defense(monkeypatch):
     registry = InFlightExecutionRegistry.get_instance()
+
     def _disk_full(entry):
         raise OSError(28, "No space left on device")
 
-    monkeypatch.setattr("responsibleai.isolation.in_flight._record_cross_worker_registration", _disk_full)
+    monkeypatch.setattr(
+        "responsibleai.isolation.in_flight._record_cross_worker_registration", _disk_full
+    )
 
     with pytest.raises(PermissionError):
         await registry.register("exec_enospc", "org_enospc", "act_enospc")
@@ -469,6 +492,7 @@ async def test_23_container_restart_recovery():
 
     # Simulate container restarting unexpectedly
     inspect_status = "restarting"
+
     def _inspect_term():
         if inspect_status == "restarting":
             raise RuntimeError("Container is still running or restarting")
@@ -492,17 +516,24 @@ def test_24_orphaned_container_detection(tmp_path):
 
     f = tracking_dir / _tracking_filename("org_orphan_scan", "exec_orphan_detected")
     import json
-    f.write_text(json.dumps({
-        "execution_id": "exec_orphan_detected",
-        "organization_id": "org_orphan_scan",
-        "action_id": "act_scan",
-        "pid": 99999999,
-        "created_at": time.time() - 3600,
-        "containment_status": "active",
-    }), encoding="utf-8")
+
+    f.write_text(
+        json.dumps(
+            {
+                "execution_id": "exec_orphan_detected",
+                "organization_id": "org_orphan_scan",
+                "action_id": "act_scan",
+                "pid": 99999999,
+                "created_at": time.time() - 3600,
+                "containment_status": "active",
+            }
+        ),
+        encoding="utf-8",
+    )
 
     with pytest.MonkeyPatch.context() as mp:
         import responsibleai.isolation.in_flight as tracking
+
         mp.setattr(tracking, "_DISTRIBUTED_REGISTRY_DIR", tracking_dir)
         unresolved = _check_remote_worker_active("org_orphan_scan")
         assert len(unresolved) == 1

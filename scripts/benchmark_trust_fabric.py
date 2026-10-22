@@ -17,13 +17,11 @@ Verifies absence of N+1 queries by tracking query execution counts.
 from __future__ import annotations
 
 import asyncio
-import json
 import statistics
 import time
 from datetime import UTC, datetime
 
 from sqlalchemy import event
-from sqlalchemy.engine import Engine
 
 from responsibleai.db.engine import (
     create_engine,
@@ -134,7 +132,7 @@ async def run_benchmarks():
         lifecycle_state=PrincipalState.ACTIVE,
     )
 
-    ident = await dir_svc.attach_identifier(
+    _ident = await dir_svc.attach_identifier(
         principal_id=principal.id,
         org_id=org_id,
         identifier_type=IdentifierType.EMAIL,
@@ -173,7 +171,7 @@ async def run_benchmarks():
     latencies = []
     for _ in range(100):
         t0 = time.perf_counter()
-        p = await dir_svc.get_principal(principal.id, org_id=org_id)
+        _p = await dir_svc.get_principal(principal.id, org_id=org_id)
         latencies.append((time.perf_counter() - t0) * 1000)
     p_queries = counter.count / 100
     results["principal_lookup"] = {
@@ -191,7 +189,7 @@ async def run_benchmarks():
     latencies = []
     for _ in range(100):
         t0 = time.perf_counter()
-        p = await dir_svc.resolve_by_identifier(
+        _p = await dir_svc.resolve_by_identifier(
             org_id=org_id,
             identifier_type=IdentifierType.EMAIL,
             value="alice.executive@enterprise.com",
@@ -213,7 +211,7 @@ async def run_benchmarks():
     latencies = []
     for _ in range(100):
         t0 = time.perf_counter()
-        passport = await pass_svc.generate_passport(
+        _passport = await pass_svc.generate_passport(
             principal_id=principal.id,
             org_id=org_id,
             signing_key_id=signing_key.key_id,
@@ -235,7 +233,7 @@ async def run_benchmarks():
     latencies = []
     for _ in range(100):
         t0 = time.perf_counter()
-        proof_res = await proof_svc.prove_signing_authority(
+        _proof_res = await proof_svc.prove_signing_authority(
             principal_id=principal.id,
             org_id=org_id,
             amount_usd=25000.0,
@@ -264,7 +262,7 @@ async def run_benchmarks():
     )
     for _ in range(100):
         t0 = time.perf_counter()
-        resp = await decision_engine.evaluate_decision(dec_req)
+        _resp = await decision_engine.evaluate_decision(dec_req)
         latencies.append((time.perf_counter() - t0) * 1000)
     dec_queries = counter.count / 100
     results["decision_evaluation"] = {

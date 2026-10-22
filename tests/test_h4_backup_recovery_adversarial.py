@@ -28,51 +28,36 @@ Mandatory 20-Scenario Disaster Recovery & Resilience Matrix:
 from __future__ import annotations
 
 import asyncio
-import json
-import os
 import shutil
 import sqlite3
-import tempfile
 import uuid
-from pathlib import Path
-from unittest.mock import MagicMock
+from contextlib import closing
 
 import pytest
-from sqlalchemy import delete, insert, select, update
+from sqlalchemy import delete, insert, select
+from sqlalchemy.exc import IntegrityError
 
 from responsibleai.data_governance.backup_defense import (
-    CurrentLifecycleStateProvider,
-    DurableLifecycleStateProvider,
     InMemoryLifecycleStateProvider,
     LifecycleRollbackError,
     LifecycleState,
     LifecycleStateRecord,
-    MissingLifecycleProviderError,
     RestoreQuarantineError,
     RestoreReadinessGate,
     RestoreReadinessState,
     RestoreReconciliationEngine,
     RestoreReconciliationError,
-    compute_lifecycle_digest,
 )
 from responsibleai.db import EvidenceRepository, create_engine
 from responsibleai.db.engine import (
-    governance_approvals,
     governance_delegations,
     governance_evidence,
     governance_evidence_chain_heads,
-    governance_execution_authorizations,
     governance_execution_nonces,
-    governance_policies,
-    governance_policy_versions,
     governance_revocation_epochs,
     governance_root_authority_records,
-    iam_sessions,
     org_api_keys,
     organizations,
-    restore_reconciliation_records,
-    tenant_tombstones,
-    web_sessions,
 )
 from responsibleai.governance import (
     ActionRequest,
@@ -91,9 +76,20 @@ from responsibleai.governance.evidence_publication import (
     verify_published_head,
 )
 from responsibleai.isolation.in_flight import (
-    InFlightExecution,
     InFlightExecutionRegistry,
 )
+
+
+@pytest.fixture(autouse=True)
+def isolated_execution_tracking(tmp_path, monkeypatch):
+    # A restored fixture must not inherit another test's unresolved execution.
+    # The outer tracking directory and all its records remain untouched.
+    monkeypatch.setattr(
+        "responsibleai.isolation.in_flight._DISTRIBUTED_REGISTRY_DIR", tmp_path / "tracking"
+    )
+    InFlightExecutionRegistry.reset_instance()
+    yield
+    InFlightExecutionRegistry.reset_instance()
 
 
 @pytest.fixture()
@@ -264,7 +260,7 @@ async def test_04_restored_database_replayed_nonces_rejected(db_engine):
         )
 
     # Attempt to replay the existing nonce after restore violates primary key
-    with pytest.raises(Exception):
+    with pytest.raises(IntegrityError, match="(?i)unique|duplicate"):
         async with db_engine.raw.begin() as conn:
             await conn.execute(
                 insert(governance_execution_nonces).values(
@@ -316,7 +312,9 @@ def test_06_witness_publication_divergence_detected(tmp_path):
     )
 
     # Disaster recovery restored DB back to sequence 1 (rollback behind publication tip 2!)
-    with pytest.raises(WitnessPublicationError, match="database head rolled back behind the publication"):
+    with pytest.raises(
+        WitnessPublicationError, match="database head rolled back behind the publication"
+    ):
         verify_published_head(
             log,
             organization_id="org-diverge",
@@ -338,6 +336,7 @@ async def test_07_active_container_detected_and_fenced():
     def mock_terminate():
         nonlocal terminated
         terminated = True
+        return True
 
     await registry.register(
         execution_id=exec_id,
@@ -352,6 +351,28 @@ async def test_07_active_container_detected_and_fenced():
     assert exec_id in term_ids
     assert terminated is True
     InFlightExecutionRegistry.reset_instance()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("result", [None, False, "exception"])
+async def test_unconfirmed_backup_termination_preserves_tracking_and_denies_admission(result):
+    registry = InFlightExecutionRegistry.get_instance()
+    org_id, execution_id = "unconfirmed-backup", "uncertain-execution"
+
+    def terminate():
+        if result == "exception":
+            raise RuntimeError("Containment unconfirmed")
+        return result
+
+    await registry.register(execution_id, org_id, "action", terminate_callback=terminate)
+    assert await registry.terminate_in_flight(organization_id=org_id) == []
+    assert registry.has_unresolved(org_id)
+    assert any(registry.get_unresolved_containments(org_id))
+    from responsibleai.isolation import in_flight
+
+    assert any(in_flight._DISTRIBUTED_REGISTRY_DIR.glob("*.json"))
+    with pytest.raises(PermissionError, match="revoked in-flight"):
+        await registry.register("subsequent", org_id, "action", admission_epoch=100)
 
 
 # Scenario 8: Concurrent execution during backup snapshot
@@ -450,21 +471,17 @@ async def test_11_restored_deleted_tenant_quarantined_and_authority_purged(db_en
 
     assert deleted_org_id in report.details["quarantined_orgs"]
 
-    # Verify governance_status is explicitly set to QUARANTINED
+    # Quarantine uses schema-valid DISABLED plus the explicit quarantine evidence.
     async with db_engine.raw.connect() as conn:
         org_row = (
-            await conn.execute(
-                select(organizations).where(organizations.c.id == deleted_org_id)
-            )
+            await conn.execute(select(organizations).where(organizations.c.id == deleted_org_id))
         ).fetchone()
-        assert org_row.governance_status == "QUARANTINED"
+        assert org_row.governance_status == "DISABLED"
         assert "RESTORE_QUARANTINED" in org_row.name
 
         # API keys and delegations MUST be completely erased
         keys = (
-            await conn.execute(
-                select(org_api_keys).where(org_api_keys.c.org_id == deleted_org_id)
-            )
+            await conn.execute(select(org_api_keys).where(org_api_keys.c.org_id == deleted_org_id))
         ).fetchall()
         assert len(keys) == 0
 
@@ -503,10 +520,10 @@ def test_13_corrupted_backup_archive_detected(tmp_path):
     corrupt_file = tmp_path / "corrupt_backup.tar.gz"
     corrupt_file.write_bytes(b"NOT_A_VALID_TAR_OR_SQLITE_STREAM")
 
-    with pytest.raises(Exception):
+    with pytest.raises(sqlite3.DatabaseError, match="file is not a database"):
         # sqlite3 connect on garbage file
-        conn = sqlite3.connect(str(corrupt_file))
-        conn.execute("SELECT count(*) FROM sqlite_master").fetchall()
+        with closing(sqlite3.connect(str(corrupt_file))) as conn:
+            conn.execute("SELECT count(*) FROM sqlite_master").fetchall()
 
 
 # Scenario 14: Incomplete restore fail-closed
@@ -647,7 +664,7 @@ def test_19_witness_log_continuity_across_disaster_recovery(tmp_path):
     store = FileWitnessKeyStore.create(tmp_path / "keys")
     log = AppendOnlyWitnessLog(tmp_path / "log")
 
-    p1 = publish_evidence_head(
+    _p1 = publish_evidence_head(
         store,
         log,
         organization_id="org-witness-dr",
@@ -656,7 +673,7 @@ def test_19_witness_log_continuity_across_disaster_recovery(tmp_path):
         witnessed_at="2026-01-01T00:00:00Z",
         opaque_reference=False,
     )
-    p2 = publish_evidence_head(
+    _p2 = publish_evidence_head(
         store,
         log,
         organization_id="org-witness-dr",

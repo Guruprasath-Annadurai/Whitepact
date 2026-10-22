@@ -9,15 +9,15 @@ No production fixture or security implementation is changed.
 from unittest.mock import AsyncMock
 
 import pytest
-
-from responsibleai.enterprise.authority.service import CustomerAuthorityService
-from responsibleai.enterprise.runtime import get_enterprise_engine
-from responsibleai.isolation.in_flight import InFlightExecutionRegistry
 from tests.test_m12fs_root_hardening import (
     _configure_test_env,  # noqa: F401 -- imports the isolated autouse fixture
     _create_containment_assertion,
     _create_test_owner,
 )
+
+from responsibleai.enterprise.authority.service import CustomerAuthorityService
+from responsibleai.enterprise.runtime import get_enterprise_engine
+from responsibleai.isolation.in_flight import InFlightExecutionRegistry
 
 
 @pytest.mark.asyncio

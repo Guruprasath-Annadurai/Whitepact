@@ -8,6 +8,8 @@ import asyncio
 import json
 import os
 import sys
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
@@ -77,10 +79,15 @@ def ctx_from(org: str, env: str | None = None) -> SovereignContext:
     return SovereignContext(organization_id=org, environment=env or "development")
 
 
-async def service() -> SovereignService:
+@asynccontextmanager
+async def service() -> AsyncIterator[SovereignService]:
+    """Own the temporary CLI database until the command finishes or fails."""
     engine = create_engine(":memory:")
-    await engine.init()
-    return SovereignService(store=SovereignCanonicalStore.from_engine(engine))
+    try:
+        await engine.init()
+        yield SovereignService(store=SovereignCanonicalStore.from_engine(engine))
+    finally:
+        await engine.close()
 
 
 def disposition_exit(payload: dict[str, Any]) -> int:
@@ -103,43 +110,43 @@ async def cmd_status(json_mode: bool) -> int:
 
 
 async def cmd_xray(org: str, json_mode: bool) -> int:
-    svc = await service()
-    result = await svc.build_xray_async(ctx_from(org))
-    emit(redact_for_debugger(result.model_dump()), None, json_mode)
-    return EXIT_OK
+    async with service() as svc:
+        result = await svc.build_xray_async(ctx_from(org))
+        emit(redact_for_debugger(result.model_dump()), None, json_mode)
+        return EXIT_OK
 
 
 async def cmd_trace(org: str, evidence_id: str, json_mode: bool) -> int:
-    svc = await service()
-    trace = await svc.trace_evidence_async(ctx_from(org), evidence_id)
-    emit(trace.model_dump(), None, json_mode)
-    return EXIT_OK
+    async with service() as svc:
+        trace = await svc.trace_evidence_async(ctx_from(org), evidence_id)
+        emit(trace.model_dump(), None, json_mode)
+        return EXIT_OK
 
 
 async def cmd_explain(
     org: str, evidence_id: str | None, identity_id: str | None, json_mode: bool
 ) -> int:
-    svc = await service()
-    ctx = ctx_from(org)
-    if evidence_id:
-        out = await svc.explain_evidence_async(ctx, evidence_id)
-    elif identity_id:
-        out = await svc.explain_identity_async(ctx, identity_id)
-    else:
-        emit({"error": "evidence_id or identity_id required"}, None, json_mode)
-        return EXIT_INVALID
-    emit(out.model_dump(), None, json_mode)
-    return disposition_exit(out.model_dump())
+    async with service() as svc:
+        ctx = ctx_from(org)
+        if evidence_id:
+            out = await svc.explain_evidence_async(ctx, evidence_id)
+        elif identity_id:
+            out = await svc.explain_identity_async(ctx, identity_id)
+        else:
+            emit({"error": "evidence_id or identity_id required"}, None, json_mode)
+            return EXIT_INVALID
+        emit(out.model_dump(), None, json_mode)
+        return disposition_exit(out.model_dump())
 
 
 async def cmd_gauntlet(org: str, probes: list[str], json_mode: bool) -> int:
-    svc = await service()
-    report = await svc.run_gauntlet_async(ctx_from(org), probe_ids=probes or None)
-    payload = report.model_dump()
-    emit(payload, None, json_mode)
-    if any(c.get("status") == "FAIL" for c in payload.get("cases", [])):
-        return EXIT_GOVERNANCE
-    return EXIT_OK
+    async with service() as svc:
+        report = await svc.run_gauntlet_async(ctx_from(org), probe_ids=probes or None)
+        payload = report.model_dump()
+        emit(payload, None, json_mode)
+        if any(c.get("status") == "FAIL" for c in payload.get("cases", [])):
+            return EXIT_GOVERNANCE
+        return EXIT_OK
 
 
 def _auth_check(*, required: bool) -> dict[str, str]:
@@ -258,61 +265,61 @@ async def cmd_doctor(
 async def cmd_blast_radius(
     org: str, actor: str, extra_cap: tuple[str, ...], json_mode: bool
 ) -> int:
-    svc = await service()
-    result = await svc.simulate_blast_radius_async(
-        ctx_from(org),
-        actor_identity_id=actor,
-        hypothetical_extra_capabilities=frozenset(extra_cap),
-    )
-    emit(redact_for_debugger(result.model_dump()), None, json_mode)
-    return EXIT_OK
+    async with service() as svc:
+        result = await svc.simulate_blast_radius_async(
+            ctx_from(org),
+            actor_identity_id=actor,
+            hypothetical_extra_capabilities=frozenset(extra_cap),
+        )
+        emit(redact_for_debugger(result.model_dump()), None, json_mode)
+        return EXIT_OK
 
 
 async def cmd_mission(org: str, agent: str, steps: list[str], json_mode: bool) -> int:
-    svc = await service()
-    report = await svc.simulate_mission_async(ctx_from(org), agent_id=agent, steps=steps)
-    payload = report.model_dump()
-    emit(redact_for_debugger(payload), None, json_mode)
-    for step in payload.get("steps", []):
-        code = disposition_exit(step)
-        if code != EXIT_OK:
-            return code
-    return EXIT_OK
+    async with service() as svc:
+        report = await svc.simulate_mission_async(ctx_from(org), agent_id=agent, steps=steps)
+        payload = report.model_dump()
+        emit(redact_for_debugger(payload), None, json_mode)
+        for step in payload.get("steps", []):
+            code = disposition_exit(step)
+            if code != EXIT_OK:
+                return code
+        return EXIT_OK
 
 
 async def cmd_shadow(org: str, agent: str, action: str, persist: bool, json_mode: bool) -> int:
-    svc = await service()
-    ctx = ctx_from(org)
-    if persist:
-        obs = await svc.evaluate_shadow_persisted_async(
-            ctx, agent_id=agent, action_type=action, target="shadow:target"
-        )
-        payload = obs.model_dump()
-    else:
-        payload = svc.evaluate_shadow(
-            ctx,
-            agent_id=agent,
-            action_type=action,
-            granted_action_types=frozenset({action}),
-        ).model_dump()
-    emit(redact_for_debugger(payload), None, json_mode)
-    return disposition_exit(payload)
+    async with service() as svc:
+        ctx = ctx_from(org)
+        if persist:
+            obs = await svc.evaluate_shadow_persisted_async(
+                ctx, agent_id=agent, action_type=action, target="shadow:target"
+            )
+            payload = obs.model_dump()
+        else:
+            payload = svc.evaluate_shadow(
+                ctx,
+                agent_id=agent,
+                action_type=action,
+                granted_action_types=frozenset({action}),
+            ).model_dump()
+        emit(redact_for_debugger(payload), None, json_mode)
+        return disposition_exit(payload)
 
 
 async def cmd_authority_compare(org: str, manifest: Path, json_mode: bool) -> int:
-    svc = await service()
-    m = load_manifest(manifest)
-    result = await svc.compare_manifest_async(ctx_from(org), m)
-    emit(result.model_dump(), None, json_mode)
-    return EXIT_OK if not result.diffs else EXIT_GOVERNANCE
+    async with service() as svc:
+        m = load_manifest(manifest)
+        result = await svc.compare_manifest_async(ctx_from(org), m)
+        emit(result.model_dump(), None, json_mode)
+        return EXIT_OK if not result.diffs else EXIT_GOVERNANCE
 
 
 async def cmd_authority_drift(org: str, manifest: Path, json_mode: bool) -> int:
-    svc = await service()
-    m = load_manifest(manifest)
-    report = await svc.detect_drift_async(ctx_from(org), m)
-    emit(report.model_dump(), None, json_mode)
-    return EXIT_OK if not report.facts else EXIT_GOVERNANCE
+    async with service() as svc:
+        m = load_manifest(manifest)
+        report = await svc.detect_drift_async(ctx_from(org), m)
+        emit(report.model_dump(), None, json_mode)
+        return EXIT_OK if not report.facts else EXIT_GOVERNANCE
 
 
 async def cmd_authority_diff(org: str, manifest: Path, json_mode: bool) -> int:
@@ -342,11 +349,11 @@ def _load_rules(path: Path | None, inline: str | None) -> list[PolicyRule]:
 async def cmd_policy_lint(
     org: str, rules_file: Path | None, rules_json: str | None, json_mode: bool
 ) -> int:
-    svc = await service()
-    rules = _load_rules(rules_file, rules_json)
-    errors = svc.lint_policy_rules(rules)
-    emit({"errors": errors, "organization_id": org}, None, json_mode)
-    return EXIT_OK if not errors else EXIT_INVALID
+    async with service() as svc:
+        rules = _load_rules(rules_file, rules_json)
+        errors = svc.lint_policy_rules(rules)
+        emit({"errors": errors, "organization_id": org}, None, json_mode)
+        return EXIT_OK if not errors else EXIT_INVALID
 
 
 async def cmd_policy_validate(
@@ -358,31 +365,31 @@ async def cmd_policy_validate(
 async def cmd_policy_test(
     org: str, cases_file: Path | None, cases_json: str | None, json_mode: bool
 ) -> int:
-    svc = await service()
-    if cases_file:
-        raw = json.loads(cases_file.read_text(encoding="utf-8"))
-    elif cases_json:
-        raw = json.loads(cases_json)
-    else:
-        emit({"error": "cases required"}, None, json_mode)
-        return EXIT_INVALID
-    cases = [PolicyTestCase(**c) for c in raw]
-    report = await svc.run_policy_tests_async(ctx_from(org), cases)
-    payload = report.model_dump()
-    emit(payload, None, json_mode)
-    if any(r.get("passed") is False for r in payload.get("results", [])):
-        return EXIT_GOVERNANCE
-    return EXIT_OK
+    async with service() as svc:
+        if cases_file:
+            raw = json.loads(cases_file.read_text(encoding="utf-8"))
+        elif cases_json:
+            raw = json.loads(cases_json)
+        else:
+            emit({"error": "cases required"}, None, json_mode)
+            return EXIT_INVALID
+        cases = [PolicyTestCase(**c) for c in raw]
+        report = await svc.run_policy_tests_async(ctx_from(org), cases)
+        payload = report.model_dump()
+        emit(payload, None, json_mode)
+        if any(r.get("passed") is False for r in payload.get("results", [])):
+            return EXIT_GOVERNANCE
+        return EXIT_OK
 
 
 async def cmd_policy_diff(
     org: str, rules_file: Path | None, rules_json: str | None, json_mode: bool
 ) -> int:
-    svc = await service()
-    rules = _load_rules(rules_file, rules_json)
-    report = await svc.diff_policy_async(ctx_from(org), rules)
-    emit(report.model_dump(), None, json_mode)
-    return EXIT_OK
+    async with service() as svc:
+        rules = _load_rules(rules_file, rules_json)
+        report = await svc.diff_policy_async(ctx_from(org), rules)
+        emit(report.model_dump(), None, json_mode)
+        return EXIT_OK
 
 
 async def cmd_policy_simulate(
@@ -392,13 +399,13 @@ async def cmd_policy_simulate(
     action_types: list[str],
     json_mode: bool,
 ) -> int:
-    svc = await service()
-    rules = _load_rules(rules_file, rules_json)
-    report = await svc.simulate_policy_async(
-        ctx_from(org), candidate_rules=rules, action_types=action_types
-    )
-    emit(report.model_dump(), None, json_mode)
-    return EXIT_OK
+    async with service() as svc:
+        rules = _load_rules(rules_file, rules_json)
+        report = await svc.simulate_policy_async(
+            ctx_from(org), candidate_rules=rules, action_types=action_types
+        )
+        emit(report.model_dump(), None, json_mode)
+        return EXIT_OK
 
 
 async def cmd_capsule_create(org: str, json_mode: bool) -> int:
@@ -415,24 +422,26 @@ async def cmd_capsule_inspect(capsule_file: Path, json_mode: bool) -> int:
 
 
 async def cmd_capsule_validate(capsule_file: Path | None, org: str | None, json_mode: bool) -> int:
-    svc = await service()
-    if capsule_file:
-        cap = SovereignCapsule.model_validate(json.loads(capsule_file.read_text(encoding="utf-8")))
-    elif org:
-        cap = create_capsule(ctx_from(org))
-    else:
-        emit({"error": "--capsule or --org required"}, None, json_mode)
-        return EXIT_INVALID
-    valid = svc.validate_capsule(cap)
-    emit({"valid": valid, "capsule_id": cap.capsule_id}, None, json_mode)
-    return EXIT_OK if valid else EXIT_GOVERNANCE
+    async with service() as svc:
+        if capsule_file:
+            cap = SovereignCapsule.model_validate(
+                json.loads(capsule_file.read_text(encoding="utf-8"))
+            )
+        elif org:
+            cap = create_capsule(ctx_from(org))
+        else:
+            emit({"error": "--capsule or --org required"}, None, json_mode)
+            return EXIT_INVALID
+        valid = svc.validate_capsule(cap)
+        emit({"valid": valid, "capsule_id": cap.capsule_id}, None, json_mode)
+        return EXIT_OK if valid else EXIT_GOVERNANCE
 
 
 async def cmd_capsule_reproduce(capsule_file: Path, json_mode: bool) -> int:
-    svc = await service()
-    cap = SovereignCapsule.model_validate(json.loads(capsule_file.read_text(encoding="utf-8")))
-    emit(svc.reproduce_capsule(cap), None, json_mode)
-    return EXIT_OK
+    async with service() as svc:
+        cap = SovereignCapsule.model_validate(json.loads(capsule_file.read_text(encoding="utf-8")))
+        emit(svc.reproduce_capsule(cap), None, json_mode)
+        return EXIT_OK
 
 
 async def cmd_replay(evidence_file: Path, org: str | None, json_mode: bool) -> int:
@@ -470,25 +479,25 @@ async def cmd_sandbox(json_mode: bool) -> int:
 
 
 async def cmd_ci(manifest: Path, org: str, json_mode: bool) -> int:
-    svc = await service()
-    m = load_manifest(manifest)
-    ctx = ctx_from(org)
-    drift = await svc.detect_drift_async(ctx, m)
-    gauntlet = await svc.run_gauntlet_async(
-        ctx, probe_ids=["tenant_guard", "matrix_simulation_no_consequential_counter"]
-    )
-    report = {
-        "manifest_valid": True,
-        "drift_facts": len(drift.facts),
-        "gauntlet_cases": len(gauntlet.cases),
-        "gauntlet_failures": sum(1 for c in gauntlet.cases if c.status.value == "FAIL"),
-        "production_opened": False,
-        "labels": ["GOVERNANCE_CI", "ZERO_EFFECT"],
-    }
-    emit(report, None, json_mode)
-    if report["gauntlet_failures"]:
-        return EXIT_GOVERNANCE
-    return EXIT_OK if report["drift_facts"] == 0 else EXIT_GOVERNANCE
+    async with service() as svc:
+        m = load_manifest(manifest)
+        ctx = ctx_from(org)
+        drift = await svc.detect_drift_async(ctx, m)
+        gauntlet = await svc.run_gauntlet_async(
+            ctx, probe_ids=["tenant_guard", "matrix_simulation_no_consequential_counter"]
+        )
+        report = {
+            "manifest_valid": True,
+            "drift_facts": len(drift.facts),
+            "gauntlet_cases": len(gauntlet.cases),
+            "gauntlet_failures": sum(1 for c in gauntlet.cases if c.status.value == "FAIL"),
+            "production_opened": False,
+            "labels": ["GOVERNANCE_CI", "ZERO_EFFECT"],
+        }
+        emit(report, None, json_mode)
+        if report["gauntlet_failures"]:
+            return EXIT_GOVERNANCE
+        return EXIT_OK if report["drift_facts"] == 0 else EXIT_GOVERNANCE
 
 
 def _fail(message: str, disposition: str, code: int, json_mode: bool) -> None:

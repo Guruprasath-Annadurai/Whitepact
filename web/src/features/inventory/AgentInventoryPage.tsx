@@ -38,8 +38,8 @@ export function AgentInventoryPage() {
   return <main className="dashboard-content"><div className="page-heading"><div><h1>Agents</h1><p>Organization: {session.organization?.name ?? "Unavailable"}</p></div></div>
     <AgentInventoryPreparation key={`${organizationId ?? "unavailable"}:${attempt}`} state={!organizationId ? { status: "unavailable" } : current?.state ?? { status: "loading" }} readContractAvailable={Boolean(organizationId)} customerRead errorMessage={current?.failure} />
     {organizationId && <Button variant="secondary" disabled={!current} onClick={() => setAttempt((value) => value + 1)}>{current?.state.status === "error" ? "Retry inventory read" : "Refresh inventory read"}</Button>}
-    <AuthorityRecordStatus key={organizationId ?? "unavailable"} />
-    <AuthorityRecordDetails key={organizationId ?? "unavailable"} />
+    <AuthorityRecordStatus key={`authority-status:${organizationId ?? "unavailable"}`} />
+    <AuthorityRecordDetails key={`authority-details:${organizationId ?? "unavailable"}`} />
     <p>Registration, delegation, disablement and other privileged lifecycle changes are unavailable here.</p>
   </main>;
 }

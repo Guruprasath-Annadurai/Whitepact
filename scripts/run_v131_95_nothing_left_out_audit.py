@@ -80,8 +80,8 @@ def openapi_compat() -> str:
         ],
         timeout=120,
     )
-    old_path = OUT / "openapi_v130_rc.json"
-    old: dict | None = None
+    _old_path = OUT / "openapi_v130_rc.json"
+    _old: dict | None = None
     tag = "v1.3.0-rc-final"
     show = _run(["git", "show", f"{tag}:src/responsibleai/dashboard/app.py"], timeout=60)
     if show["exit"] == 0:
@@ -92,7 +92,7 @@ def openapi_compat() -> str:
 
     lines = [
         "# API contract / OpenAPI compatibility (v1.3.1 addendum)\n\n",
-        f"Current schema generated in-process from FastAPI `app.openapi()`.\n\n",
+        "Current schema generated in-process from FastAPI `app.openapi()`.\n\n",
         f"Baseline note: {old_note}\n\n",
     ]
     if cur["exit"] == 0:

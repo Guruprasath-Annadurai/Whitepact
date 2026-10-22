@@ -18,12 +18,11 @@ Directly validates:
 from __future__ import annotations
 
 import asyncio
-import time
 import uuid
 from datetime import UTC, datetime, timedelta
-from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from sqlalchemy.exc import OperationalError
 
 from responsibleai.db.engine import create_engine
 from responsibleai.db.org_repository import OrgRepository
@@ -32,15 +31,10 @@ from responsibleai.isolation.in_flight import InFlightExecutionRegistry
 from responsibleai.rbac.models import Plan
 from responsibleai.runtime.authority_kernel import (
     AUTH_TTL,
-    LEASE_TTL,
     Phase7AAuthorityKernel,
-    PreEffectDecision,
 )
 from responsibleai.runtime.errors import (
-    AuthorityDatabaseError,
-    AuthorityKernelError,
     PreEffectCasRejected,
-    StaleWorkerError,
 )
 from tests.pg_test_url import create_isolated_database, drop_isolated_database
 
@@ -52,6 +46,7 @@ async def pg_engine():
     db_url = admin_url.replace("/postgres", f"/{db_name}")
     try:
         from responsibleai.db.migrate import run_migrations_or_raise
+
         await run_migrations_or_raise(db_url)
         engine = create_engine(db_url)
         try:
@@ -86,10 +81,12 @@ def _issue_kwargs(org_id: str, digest: str = "a" * 64, **extra):
 async def test_01_db_unavailable_before_grant_issuance_fails_closed(pg_engine) -> None:
     """1. When PostgreSQL is unreachable before grant issuance, request fails closed."""
     # Create kernel pointing to broken database connection
-    broken_engine = create_engine("postgresql+asyncpg://invalid:invalid@127.0.0.1:54321/nonexistent")
+    broken_engine = create_engine(
+        "postgresql+asyncpg://invalid:invalid@127.0.0.1:54321/nonexistent"
+    )
     kernel = Phase7AAuthorityKernel(broken_engine)
     try:
-        with pytest.raises(Exception):
+        with pytest.raises((OSError, OperationalError)):
             await kernel.issue(**_issue_kwargs("org-unreachable"))
     finally:
         await broken_engine.close()
@@ -104,15 +101,21 @@ async def test_02_db_unavailable_after_grant_fails_closed_before_effect(pg_engin
 
     # Successfully issue and admit while DB is healthy
     issued = await kernel.issue(**_issue_kwargs(org.id))
-    await kernel.acquire_lease(request_id=issued.request_id, worker_id="w-1", organization_id=org.id)
+    await kernel.acquire_lease(
+        request_id=issued.request_id, worker_id="w-1", organization_id=org.id
+    )
     await kernel.admit(request_id=issued.request_id, worker_id="w-1", organization_id=org.id)
-    claim = await kernel.claim_backend_start(request_id=issued.request_id, worker_id="w-1", organization_id=org.id)
+    claim = await kernel.claim_backend_start(
+        request_id=issued.request_id, worker_id="w-1", organization_id=org.id
+    )
 
     # Disconnect / simulate DB failure during pre-effect CAS
-    broken_engine = create_engine("postgresql+asyncpg://invalid:invalid@127.0.0.1:54321/nonexistent")
+    broken_engine = create_engine(
+        "postgresql+asyncpg://invalid:invalid@127.0.0.1:54321/nonexistent"
+    )
     failing_kernel = Phase7AAuthorityKernel(broken_engine)
     try:
-        with pytest.raises(Exception):
+        with pytest.raises((OSError, OperationalError)):
             await failing_kernel.claim_local_effect_start(
                 claim,
                 action_digest=claim.action_digest,
@@ -130,9 +133,13 @@ async def test_03_unknown_transaction_commit_fails_closed_without_effect(pg_engi
     kernel = Phase7AAuthorityKernel(pg_engine)
 
     issued = await kernel.issue(**_issue_kwargs(org.id))
-    await kernel.acquire_lease(request_id=issued.request_id, worker_id="w-commit", organization_id=org.id)
+    await kernel.acquire_lease(
+        request_id=issued.request_id, worker_id="w-commit", organization_id=org.id
+    )
     await kernel.admit(request_id=issued.request_id, worker_id="w-commit", organization_id=org.id)
-    claim = await kernel.claim_backend_start(request_id=issued.request_id, worker_id="w-commit", organization_id=org.id)
+    claim = await kernel.claim_backend_start(
+        request_id=issued.request_id, worker_id="w-commit", organization_id=org.id
+    )
 
     # If claim_local_effect_start encounters CAS rejection / epoch conflict, it must raise PreEffectCasRejected
     # Simulate conflict by artificially bumping epoch
@@ -156,9 +163,13 @@ async def test_04_long_running_worker_with_stale_authority_rejected(pg_engine) -
 
     issued = await kernel.issue(**_issue_kwargs(org.id))
     # Worker admits
-    await kernel.acquire_lease(request_id=issued.request_id, worker_id="w-stale", organization_id=org.id)
+    await kernel.acquire_lease(
+        request_id=issued.request_id, worker_id="w-stale", organization_id=org.id
+    )
     await kernel.admit(request_id=issued.request_id, worker_id="w-stale", organization_id=org.id)
-    claim = await kernel.claim_backend_start(request_id=issued.request_id, worker_id="w-stale", organization_id=org.id)
+    claim = await kernel.claim_backend_start(
+        request_id=issued.request_id, worker_id="w-stale", organization_id=org.id
+    )
 
     # Tenant revokes execution authorization via epoch bump
     epoch_repo = RevocationEpochRepository(pg_engine)
@@ -177,14 +188,20 @@ async def test_04_long_running_worker_with_stale_authority_rejected(pg_engine) -
 async def test_05_multi_worker_partition_cannot_commit_unauthorized_effect(pg_engine) -> None:
     """5. In a multi-worker partition, partitioned worker A cannot commit an effect after worker B revokes."""
     repo = OrgRepository(pg_engine)
-    org = await repo.create_org("Partition Org", f"prt-{uuid.uuid4().hex[:8]}", plan=Plan.ENTERPRISE)
+    org = await repo.create_org(
+        "Partition Org", f"prt-{uuid.uuid4().hex[:8]}", plan=Plan.ENTERPRISE
+    )
     ka = Phase7AAuthorityKernel(pg_engine)
-    kb = Phase7AAuthorityKernel(pg_engine)
+    _kb = Phase7AAuthorityKernel(pg_engine)
 
     issued = await ka.issue(**_issue_kwargs(org.id))
-    await ka.acquire_lease(request_id=issued.request_id, worker_id="w-partitioned", organization_id=org.id)
+    await ka.acquire_lease(
+        request_id=issued.request_id, worker_id="w-partitioned", organization_id=org.id
+    )
     await ka.admit(request_id=issued.request_id, worker_id="w-partitioned", organization_id=org.id)
-    claim = await ka.claim_backend_start(request_id=issued.request_id, worker_id="w-partitioned", organization_id=org.id)
+    claim = await ka.claim_backend_start(
+        request_id=issued.request_id, worker_id="w-partitioned", organization_id=org.id
+    )
 
     # Worker B initiates revocation
     epoch_repo = RevocationEpochRepository(pg_engine)
@@ -245,7 +262,7 @@ async def test_07_reconciliation_after_restart_syncs_with_db(pg_engine) -> None:
     await epoch_repo.bump(org.id)
 
     # Start reconciliation watcher with short interval
-    watcher = registry.start_reconciliation_watcher(pg_engine, interval=0.02)
+    _watcher = registry.start_reconciliation_watcher(pg_engine, interval=0.02)
     for _ in range(50):
         if term_invoked:
             break

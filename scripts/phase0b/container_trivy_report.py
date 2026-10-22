@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import json
 import subprocess
-import sys
 from collections import Counter
 from pathlib import Path
 
@@ -59,8 +58,8 @@ def main() -> int:
     md = [
         "# Container security scan (Phase 0B)\n\n",
         f"**Image:** `{IMG}`\n\n",
-        f"**Scanner:** Trivy 0.57.1 (Docker)\n\n",
-        f"**Verdict:** **PARTIAL** — scan complete; majority of HIGH findings are inherited Debian base "
+        "**Scanner:** Trivy 0.57.1 (Docker)\n\n",
+        "**Verdict:** **PARTIAL** — scan complete; majority of HIGH findings are inherited Debian base "
         "packages (`curl`, `util-linux`) without fixed versions in the current base image. "
         "Assess reachability per deployment (runtime user, attack surface).\n\n",
         "| Severity | Count |\n|---|---:|\n",

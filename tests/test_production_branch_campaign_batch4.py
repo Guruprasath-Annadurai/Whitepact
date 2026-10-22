@@ -332,7 +332,9 @@ async def test_container_execute_rejects_non_none_network_policy() -> None:
             await backend.execute(req)
 
 
-def test_remove_containers_rejects_unconfirmed_inspect_errors(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_remove_containers_rejects_unconfirmed_inspect_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     backend = DockerContainerBackend(docker_cmd="docker")
 
     def boom(*_a, **_k):

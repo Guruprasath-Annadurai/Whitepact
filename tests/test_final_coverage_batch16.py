@@ -2184,21 +2184,20 @@ async def test_container_execute_reads_cidfile_for_cleanup(monkeypatch: pytest.M
         def kill(self):
             pass
 
-    monkeypatch.setattr(asyncio, "create_subprocess_exec", AsyncMock(return_value=_Proc()))
+    owned_cid = "a" * 64
 
-    from responsibleai.isolation.container_backend import EphemeralWorkspace
-
-    real_enter = EphemeralWorkspace.__enter__
-
-    def _enter_with_cid(self):
-        workspace = real_enter(self)
-        (workspace.path / ".container.cid").write_text(
-            "abcd1234efgh5678ijkl9012mnop3456qrst7890uvwx1234yzab",
-            encoding="utf-8",
+    async def _docker_create(*command, **kwargs):
+        # Model the trusted Docker client acknowledging creation. Workload files
+        # cannot provide ownership evidence for another container.
+        cid_path = Path(
+            next(arg.split("=", 1)[1] for arg in command if arg.startswith("--cidfile="))
         )
-        return workspace
+        assert cid_path.parent.stat().st_mode & 0o777 == 0o700
+        assert not cid_path.exists()
+        cid_path.write_text(owned_cid, encoding="ascii")
+        return _Proc()
 
-    monkeypatch.setattr(EphemeralWorkspace, "__enter__", _enter_with_cid)
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", _docker_create)
     req = IsolatedExecutionRequest(
         action_id="act-cid",
         organization_id="org-cid",
@@ -2207,4 +2206,4 @@ async def test_container_execute_reads_cidfile_for_cleanup(monkeypatch: pytest.M
     )
     outcome = await backend.execute(req)
     assert outcome.violation is None
-    assert removed and "abcd1234efgh5678ijkl9012mnop3456qrst7890uvwx1234yzab" in removed[0]
+    assert removed and owned_cid in removed[0]

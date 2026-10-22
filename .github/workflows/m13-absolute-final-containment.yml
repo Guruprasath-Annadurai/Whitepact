@@ -1,0 +1,86 @@
+name: M13 Absolute Final Containment
+
+on:
+  push:
+    branches: [codex/whitepact-m13-final-convergence]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  containment:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.11', '3.12']
+    services:
+      postgres:
+        image: postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685
+        env:
+          POSTGRES_USER: wp
+          POSTGRES_PASSWORD: wp
+          POSTGRES_DB: postgres
+        ports: ['55432:5432']
+        options: >-
+          --health-cmd "pg_isready -U wp" --health-interval 5s
+          --health-timeout 5s --health-retries 12
+    env:
+      PYTHONPATH: src:.
+      WHITEPACT_REQUIRE_DOCKER_ISOLATION: '1'
+      WHITEPACT_TEST_PG_ADMIN_URL: postgresql://wp:wp@127.0.0.1:55432/postgres
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Prepare disposable native environment
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y acl
+          python -m pip install -r tests/requirements-m11.txt
+          python -m pip install '.[dashboard,postgres,mcp]' alembic ruff==0.17.0
+          docker build -f Dockerfile.isolation -t whitepact-isolated-runtime:absolute-final .
+          echo "WHITEPACT_ISOLATION_IMAGE=$(docker image inspect whitepact-isolated-runtime:absolute-final --format '{{.Id}}')" >> "$GITHUB_ENV"
+          git rev-parse HEAD 'HEAD^{tree}' 'HEAD^' > /tmp/absolute-source.txt
+      - name: Durable state and creation protocol regressions
+        run: |
+          python -m pytest tests/test_m13_absolute_durable_intent.py tests/test_m13_absolute_creation_protocol.py tests/test_m13_absolute_runtime_inventory.py tests/test_m13_closure_pr224_contracts.py tests/test_m13_convergence3_schema_contract.py tests/test_m13_convergence3_schema_postgres.py -o addopts='' --junitxml=/tmp/absolute-unit.xml --tb=short -ra
+      - name: Real SIGKILL and missing metadata at normal READY
+        if: ${{ !cancelled() }}
+        run: |
+          python -m pytest tests/test_m13_absolute_cold_restart_native.py tests/test_m13_redgreen_prestart_crashes.py -o addopts='' --junitxml=/tmp/absolute-cold.xml --tb=short -ra
+          python -c 'import xml.etree.ElementTree as E; r=E.parse("/tmp/absolute-cold.xml"); assert not list(r.iter("skipped")) and not list(r.iter("failure")) and not list(r.iter("error"))'
+      - name: Approved historical passkey migration guards on PostgreSQL 16
+        if: ${{ !cancelled() }}
+        run: |
+          python -m pytest tests/test_m13_apex_migration_guard.py tests/test_m13_runtime_schema_compatibility.py -o addopts='' --junitxml=/tmp/absolute-migration.xml --tb=short -ra
+          python -c 'import xml.etree.ElementTree as E; r=E.parse("/tmp/absolute-migration.xml"); assert not list(r.iter("skipped")) and not list(r.iter("failure")) and not list(r.iter("error"))'
+      - name: Actual historical application startup against current schema
+        if: ${{ !cancelled() }}
+        run: |
+          python -m pytest tests/test_m13_redgreen_historical_application.py -o addopts='' --junitxml=/tmp/absolute-historical.xml --tb=short -ra
+          python -c 'import xml.etree.ElementTree as E; r=E.parse("/tmp/absolute-historical.xml"); assert not list(r.iter("skipped")) and not list(r.iter("failure")) and not list(r.iter("error"))'
+      - name: Original native lifecycle and repeated timeout soak
+        if: ${{ !cancelled() }}
+        run: |
+          python -m pytest tests/test_m13_absolute_native_runtime.py tests/test_docker_ownership_regression.py tests/test_runtime_isolation_docker.py tests/test_container_isolation_contract.py -o addopts='' --junitxml=/tmp/absolute-native.xml --tb=short -ra
+          python -c 'import xml.etree.ElementTree as E; r=E.parse("/tmp/absolute-native.xml"); assert not list(r.iter("skipped")) and not list(r.iter("failure")) and not list(r.iter("error"))'
+      - name: Retain exact-source evidence even on failure
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: absolute-final-${{ matrix.python }}-${{ github.sha }}
+          path: |
+            /tmp/absolute-source.txt
+            /tmp/absolute-unit.xml
+            /tmp/absolute-cold.xml
+            /tmp/absolute-native.xml
+            /tmp/absolute-migration.xml
+            /tmp/absolute-historical.xml

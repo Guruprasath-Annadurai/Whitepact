@@ -55,6 +55,7 @@ from responsibleai.enterprise.authority.service import (
 from responsibleai.enterprise.errors import CROSS_TENANT, EnterpriseError
 from responsibleai.enterprise.service import Actor, EnterpriseIAM
 from responsibleai.rbac.models import Role
+from tests.m13_owner_qualification import qualify_owner, root_completion_assertion
 from tests.pg_test_url import isolated_pg_url
 
 
@@ -153,6 +154,7 @@ async def test_full_consequential_authority_chain():
         )
 
         # 3. Initiate root bootstrap with identity assurance and passkey stepup required
+        owner_actor, authenticator_key, credential = await qualify_owner(engine, owner_actor)
         init_stepup = await svc.initiate_root_bootstrap(
             owner_actor,
             org_id=org_id,
@@ -192,6 +194,9 @@ async def test_full_consequential_authority_chain():
         # 5. Tampered PoP signature is rejected with PROOF_OF_POSSESSION_INVALID
         pop_msg = f"WP_ROOT_POP:{org_id}:{nonce}:{token_hash}".encode()
         tampered_sig = _b64url(b"invalid_signature_bytes_32_len__invalid_signature_bytes_32_len__")
+        pop_assertion = await root_completion_assertion(
+            svc, owner_actor, init_res, pub_hex, authenticator_key, credential
+        )
         with pytest.raises(EnterpriseError) as pop_exc:
             await svc.complete_root_bootstrap(
                 owner_actor,
@@ -200,6 +205,7 @@ async def test_full_consequential_authority_chain():
                 nonce=nonce,
                 root_public_key=pub_hex,
                 root_signature=tampered_sig,
+                webauthn_assertion=pop_assertion,
                 scope_description="Production Root Scope",
                 purpose="Autonomous Operations",
                 allowed_action_types=["ledger.read", "ledger.write"],
@@ -209,6 +215,9 @@ async def test_full_consequential_authority_chain():
 
         # 6. Valid PoP signature succeeds
         valid_sig = _b64url(priv_key.sign(pop_msg))
+        valid_assertion = await root_completion_assertion(
+            svc, owner_actor, init_res, pub_hex, authenticator_key, credential, sign_count=3
+        )
 
         complete_res = await svc.complete_root_bootstrap(
             owner_actor,
@@ -217,6 +226,7 @@ async def test_full_consequential_authority_chain():
             nonce=nonce,
             root_public_key=pub_hex,
             root_signature=valid_sig,
+            webauthn_assertion=valid_assertion,
             scope_description="Production Root Scope",
             purpose="Autonomous Operations",
             allowed_action_types=["ledger.read", "ledger.write"],
@@ -441,8 +451,17 @@ async def test_multi_admin_quorum_recovery_adversarial():
         )
 
         # Bootstrap initial root
+        actor0, authenticator_key, credential = await qualify_owner(engine, actor0)
         init_res = await svc.initiate_root_bootstrap(actor0, org_id=org_id)
-        _, pub_hex, _ = _gen_ed25519()
+        private, pub_hex, _ = _gen_ed25519()
+        signature = _b64url(
+            private.sign(
+                f"WP_ROOT_POP:{org_id}:{init_res['nonce']}:{hashlib.sha256(init_res['token'].encode()).hexdigest()}".encode()
+            )
+        )
+        assertion = await root_completion_assertion(
+            svc, actor0, init_res, pub_hex, authenticator_key, credential
+        )
         complete_res = await svc.complete_root_bootstrap(
             actor0,
             org_id=org_id,
@@ -450,6 +469,8 @@ async def test_multi_admin_quorum_recovery_adversarial():
             nonce=init_res["nonce"],
             root_public_key=pub_hex,
             scope_description="Initial Root",
+            root_signature=signature,
+            webauthn_assertion=assertion,
             purpose="Testing quorum",
             allowed_action_types=["admin.write"],
             allowed_targets=["system:all"],
@@ -663,8 +684,17 @@ async def test_cross_tenant_and_privilege_escalation_containment():
         assert pe_exc.value.code == UNAUTHORIZED_BOOTSTRAP_CALLER
 
         # Bootstrap root for Org A
+        actor_a, authenticator_key, credential = await qualify_owner(engine, actor_a)
         init_a = await svc.initiate_root_bootstrap(actor_a, org_id=org_a_id)
-        _, pub_a, _ = _gen_ed25519()
+        private, pub_a, _ = _gen_ed25519()
+        signature = _b64url(
+            private.sign(
+                f"WP_ROOT_POP:{org_a_id}:{init_a['nonce']}:{hashlib.sha256(init_a['token'].encode()).hexdigest()}".encode()
+            )
+        )
+        assertion = await root_completion_assertion(
+            svc, actor_a, init_a, pub_a, authenticator_key, credential
+        )
         comp_a = await svc.complete_root_bootstrap(
             actor_a,
             org_id=org_a_id,
@@ -672,6 +702,8 @@ async def test_cross_tenant_and_privilege_escalation_containment():
             nonce=init_a["nonce"],
             root_public_key=pub_a,
             scope_description="Org A Root",
+            root_signature=signature,
+            webauthn_assertion=assertion,
             purpose="Testing Path B",
             allowed_action_types=["test.action"],
             allowed_targets=["test:target"],

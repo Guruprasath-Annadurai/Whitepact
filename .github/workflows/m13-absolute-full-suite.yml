@@ -53,7 +53,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
-          fetch-depth: 2
+          fetch-depth: 0
           persist-credentials: false
       - name: Record tested source
         run: git rev-parse HEAD 'HEAD^{tree}' 'HEAD^'
@@ -70,10 +70,15 @@ jobs:
           python -m pip install 'hatchling==1.32.0'
           pip install -e ".[dev,openai,anthropic,sso,sentiment,postgres,redis]"
           pip install -r tests/requirements-wave1-frameworks.txt
+          pip install 'ruff==0.17.0'
 
       - name: Lint with ruff
         if: ${{ !cancelled() }}
         run: ruff check src/ tests/ sdk/python/
+
+      - name: Verify approved formatting evidence relationships
+        if: ${{ !cancelled() }}
+        run: python scripts/engineering/m13_approved_formatting.py
 
       - name: Check formatting with ruff
         if: ${{ !cancelled() }}

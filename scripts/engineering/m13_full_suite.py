@@ -87,8 +87,7 @@ def main():
     env["COVERAGE_FILE"] = str(out / ".coverage")
     command = [
         sys.executable,
-        "-m",
-        "pytest",
+        "scripts/engineering/m13_ironclad_task_diagnostics.py",
         *shards[args.shard],
         "-o",
         "addopts=",

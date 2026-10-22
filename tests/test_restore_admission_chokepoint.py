@@ -274,9 +274,12 @@ async def test_multi_worker_shared_restore_readiness(tmp_path: Path):
 
 
 @pytest.mark.asyncio
-async def test_startup_safety_default_not_ready():
+async def test_startup_safety_default_not_ready(tmp_path, monkeypatch):
     """When WhitePact starts up in restore mode, default is RESTORE_PENDING; pre-reconciliation actions blocked."""
     old_mode = os.environ.get("WHITEPACT_RESTORE_MODE")
+    store = tmp_path / "startup-store-b.db"
+    SqliteDurableLifecycleStateProvider(store)
+    monkeypatch.setenv("WHITEPACT_STORE_B_PATH", str(store))
     os.environ["WHITEPACT_RESTORE_MODE"] = "1"
     try:
         set_restore_readiness_gate(None)  # Force fresh initialization
@@ -289,6 +292,14 @@ async def test_startup_safety_default_not_ready():
         # Attempt pre-reconciliation action -> blocked (STARTUP PRE-RECONCILIATION ACTIONS: 0)
         with pytest.raises(RestoreQuarantineError):
             startup_gate.assert_traffic_admitted()
+
+        startup_gate.set_state(RestoreReadinessState.RESTORE_PENDING, updated_by="startup-test")
+        set_restore_readiness_gate(None)
+        restarted = get_restore_readiness_gate()
+        assert restarted.provider is not None
+        assert restarted.provider.get_readiness_state() == RestoreReadinessState.RESTORE_PENDING
+        assert restarted.state == RestoreReadinessState.RESTORE_PENDING
+        assert restarted.is_admitted() is False
 
     finally:
         if old_mode is not None:

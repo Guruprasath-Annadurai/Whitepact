@@ -16,9 +16,11 @@ import httpx
 import pytest
 import uvicorn
 from sdk.python.rai_client.governance import GovernanceRequestError, GovernanceRuntimeClient
+from sqlalchemy import func, select
 
 import responsibleai.dashboard.app as dashboard
 from responsibleai.dashboard.signup_guard import SignupRateWindow
+from responsibleai.db.engine import governance_execution_authorizations
 from responsibleai.db.org_repository import OrgRepository
 from responsibleai.governance.synthetic_counter import SYNTHETIC_COUNTER_TOOL
 from responsibleai.governance.synthetic_counter import snapshot as counter_snapshot
@@ -201,6 +203,40 @@ async def test_real_approval_resume_after_credential_revocation_has_zero_effect(
 
 
 @pytest.mark.asyncio
+async def test_authenticated_customer_cannot_self_authorize_restore_reconciliation(live_customer):
+    """Real PG/session boundary; a synthetic FAILED precondition is not recovery proof."""
+    from responsibleai.data_governance.backup_defense import (
+        RestoreReadinessState,
+        get_restore_readiness_gate,
+    )
+
+    browser, sdk, org_id, key = live_customer
+    gate = get_restore_readiness_gate()
+    gate.set_state(RestoreReadinessState.FAILED)
+    responses = await asyncio.gather(
+        *(
+            browser.post(
+                route,
+                headers={"X-WP-CSRF": browser.cookies["wp_csrf"]},
+                json={"reconciled_by": "customer-claimed-operator", "status": "READY"},
+            )
+            for route in ("/api/restore/reconcile", "/api/v1/restore/reconcile")
+        )
+    )
+    assert all(response.status_code == 503 for response in responses)
+    assert all(
+        response.json()["error"] == "RESTORE_SECURITY_QUALIFICATION_REQUIRED"
+        for response in responses
+    )
+    assert gate.state == RestoreReadinessState.FAILED
+    with pytest.raises(GovernanceRequestError) as denied:
+        await sdk.call_tool(SYNTHETIC_COUNTER_TOOL, purpose=PURPOSE)
+    assert denied.value.status_code == 503
+    assert key not in str(denied.value)
+    assert (await counter_snapshot(org_id))["counter"] == 0
+
+
+@pytest.mark.asyncio
 async def test_go_sdk_analytics_against_real_backend(live_customer, tmp_path):
     browser, _, _, key = live_customer
     root = Path(__file__).resolve().parents[1]
@@ -277,6 +313,14 @@ async def test_real_database_outage_blocks_new_admission_and_recovers(live_custo
     browser, sdk, org_id, key = live_customer
     pending = await sdk.call_tool(SYNTHETIC_COUNTER_TOOL, purpose=PURPOSE)
     assert pending.requires_approval
+    assert dashboard._db_engine is not None
+    grants_query = (
+        select(func.count())
+        .select_from(governance_execution_authorizations)
+        .where(governance_execution_authorizations.c.organization_id == org_id)
+    )
+    async with dashboard._db_engine.raw.connect() as conn:
+        grants_before = await conn.scalar(grants_query)
     database = urlparse(dashboard.settings.database_url).path.lstrip("/")
     assert re.fullmatch(r"wp_approval_tcp_[0-9a-f]{12}", database)
     admin_url = await resolve_admin_url()
@@ -296,6 +340,13 @@ async def test_real_database_outage_blocks_new_admission_and_recovers(live_custo
         # Only the exact randomly generated disposable database is restored.
         await admin.execute(f'ALTER DATABASE "{database}" WITH ALLOW_CONNECTIONS true')
         await admin.close()
-    recovered = await sdk.call_tool(SYNTHETIC_COUNTER_TOOL, purpose=PURPOSE)
-    assert recovered.requires_approval and not recovered.completed
+    # Availability alone is not authorized recovery. The public reconciliation
+    # route remains qualification-blocked; do not fake an operator transition.
+    with pytest.raises(GovernanceRequestError) as unreconciled:
+        await sdk.call_tool(SYNTHETIC_COUNTER_TOOL, purpose=PURPOSE)
+    assert unreconciled.value.status_code == 503
+    assert "restore_quarantine" in str(unreconciled.value)
+    assert key not in str(unreconciled.value)
+    async with dashboard._db_engine.raw.connect() as conn:
+        assert await conn.scalar(grants_query) == grants_before
     assert (await counter_snapshot(org_id))["counter"] == 0

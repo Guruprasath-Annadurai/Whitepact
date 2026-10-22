@@ -13,6 +13,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from scripts.engineering.reproducers.test_m13_corrective_authority import (
     test_unverified_owner_cannot_activate_root_with_default_flags as assert_unverified_denied,
 )
+from tests.m13_owner_qualification import qualify_owner, root_completion_assertion
 from tests.pg_test_url import isolated_pg_url
 
 from responsibleai.db.engine import create_engine
@@ -71,7 +72,13 @@ async def test_completion_rechecks_persisted_owner_qualification(revoked_boundar
                 membership_status="ACTIVE",
             )
             service = CustomerAuthorityService(engine)
+            actor, owner_key, credential = await qualify_owner(engine, actor)
             ceremony = await service.initiate_root_bootstrap(actor, org_id=org_id)
+            key = Ed25519PrivateKey.generate()
+            public_key = key.public_key().public_bytes_raw().hex()
+            assertion = await root_completion_assertion(
+                service, actor, ceremony, public_key, owner_key, credential
+            )
             connection = await asyncpg.connect(database)
             try:
                 if revoked_boundary == "email":
@@ -89,7 +96,6 @@ async def test_completion_rechecks_persisted_owner_qualification(revoked_boundar
                     await connection.execute(
                         "UPDATE organizations SET governance_status='SUSPENDED' WHERE id=$1", org_id
                     )
-                key = Ed25519PrivateKey.generate()
                 message = f"WP_ROOT_POP:{org_id}:{ceremony['nonce']}:{hashlib.sha256(ceremony['token'].encode()).hexdigest()}"
                 with pytest.raises(EnterpriseError):
                     await service.complete_root_bootstrap(
@@ -97,7 +103,8 @@ async def test_completion_rechecks_persisted_owner_qualification(revoked_boundar
                         org_id=org_id,
                         token=ceremony["token"],
                         nonce=ceremony["nonce"],
-                        root_public_key=key.public_key().public_bytes_raw().hex(),
+                        root_public_key=public_key,
+                        webauthn_assertion=assertion,
                         root_signature=base64.urlsafe_b64encode(key.sign(message.encode()))
                         .rstrip(b"=")
                         .decode(),

@@ -732,12 +732,24 @@ class WebIdentityRepository:
         if current_owner_id == new_owner_id:
             return True
         async with self._engine.raw.begin() as conn:
+            # Serialize both ownership APIs with root/passkey enrollment. Never
+            # promote from an authorization snapshot taken before this transaction.
+            org_lock = select(organizations).where(organizations.c.id == org_id)
+            members_lock = select(web_memberships).where(web_memberships.c.org_id == org_id)
+            if conn.engine.dialect.name != "sqlite":
+                org_lock = org_lock.with_for_update()
+                members_lock = members_lock.with_for_update()
+            org = (await conn.execute(org_lock)).fetchone()
+            if org is None or org.governance_status != "ACTIVE" or org.deactivated_at:
+                return False
+            await conn.execute(members_lock)
             current_m = (
                 await conn.execute(
                     select(web_memberships.c.role).where(
                         web_memberships.c.org_id == org_id,
                         web_memberships.c.user_id == current_owner_id,
                         web_memberships.c.role == Role.OWNER.value,
+                        web_memberships.c.status == "ACTIVE",
                     )
                 )
             ).fetchone()
@@ -748,6 +760,7 @@ class WebIdentityRepository:
                     select(web_memberships.c.role).where(
                         web_memberships.c.org_id == org_id,
                         web_memberships.c.user_id == new_owner_id,
+                        web_memberships.c.status == "ACTIVE",
                     )
                 )
             ).fetchone()
@@ -768,6 +781,11 @@ class WebIdentityRepository:
                     web_memberships.c.user_id == new_owner_id,
                 )
                 .values(role=Role.OWNER.value)
+            )
+            await conn.execute(
+                update(organizations)
+                .where(organizations.c.id == org_id)
+                .values(owner_user_id=new_owner_id)
             )
             await conn.execute(
                 update(web_sessions)

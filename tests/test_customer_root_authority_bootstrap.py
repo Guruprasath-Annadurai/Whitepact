@@ -14,30 +14,21 @@ S5 — Execution enforcement: Actions outside customer consent fail closed.
 from __future__ import annotations
 
 import asyncio
-import secrets
 import uuid
 from datetime import UTC, datetime, timedelta
 
 import pytest
 from asgi_lifespan import LifespanManager
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import insert, select, update
+from sqlalchemy import insert, update
 
 from responsibleai.dashboard.app import app, limiter, settings
 from responsibleai.db.consent_proof_repository import ConsentProofRepository
 from responsibleai.db.delegation_repository import DelegationRepository
 from responsibleai.db.engine import (
-    create_engine,
-    governance_consent_proofs,
-    governance_delegations,
-    governance_root_authority_records,
     trust_fabric_bootstrap_records,
-    trust_fabric_principals,
-    trust_fabric_trust_roots,
     web_memberships,
-    web_users,
 )
-from responsibleai.db.revocation_epoch_repository import RevocationEpochRepository
 from responsibleai.db.root_authority_repository import RootAuthorityRepository
 from responsibleai.db.web_identity_repository import WebIdentityRepository
 from responsibleai.enterprise.runtime import get_enterprise_engine
@@ -108,7 +99,7 @@ async def _create_authenticated_customer_owner(
         "wp_session": session_token,
         "wp_csrf": csrf_token,
     }
-    headers = {
+    _headers = {
         "X-WP-CSRF": csrf_token,
     }
 
@@ -214,7 +205,9 @@ class TestCustomerRootAuthorityBootstrap:
         assert agent_res.status_code == 200
         agent_data = agent_res.json()
         agent_id = agent_data["agent_id"]
-        assert agent_data["has_delegated_authority"] is False, "Registration must not grant authority"
+        assert agent_data["has_delegated_authority"] is False, (
+            "Registration must not grant authority"
+        )
 
         # Verify that without delegation, AuthorityResolver denies execution
         engine = get_enterprise_engine()
@@ -225,12 +218,16 @@ class TestCustomerRootAuthorityBootstrap:
 
         auth_context = OrgContext(key_id=agent_id, role=Role.ANALYST, org_id=org_id)
         valid_action = ActionRequest(
-            agent=AgentContext(identity=IdentityContext.from_org_context(auth_context), agent_id=agent_id),
+            agent=AgentContext(
+                identity=IdentityContext.from_org_context(auth_context), agent_id=agent_id
+            ),
             action_type="invoice:read",
             target="invoices/2026/001",
             purpose="invoice-reconciliation",
         )
-        gov_context = GovernanceContext.from_authenticated(auth_context, valid_action, authentication_method="api_key")
+        gov_context = GovernanceContext.from_authenticated(
+            auth_context, valid_action, authentication_method="api_key"
+        )
 
         # Without delegation, resolver MUST fail closed
         with pytest.raises(AuthorityDenied):
@@ -240,7 +237,9 @@ class TestCustomerRootAuthorityBootstrap:
         delegation_res = await api_client.post(
             f"/api/enterprise/organizations/{org_id}/authority/agents/{agent_id}/delegations",
             json={
-                "granted_action_types": ["invoice:read"],  # Narrower than root's ["invoice:read", "invoice:match"]
+                "granted_action_types": [
+                    "invoice:read"
+                ],  # Narrower than root's ["invoice:read", "invoice:match"]
                 "allowed_targets": ["invoices/2026/001"],
                 "purpose": "invoice-reconciliation",
             },
@@ -258,7 +257,9 @@ class TestCustomerRootAuthorityBootstrap:
 
         # 8. Action OUTSIDE consent / delegation MUST be denied
         unauthorized_action = ActionRequest(
-            agent=AgentContext(identity=IdentityContext.from_org_context(auth_context), agent_id=agent_id),
+            agent=AgentContext(
+                identity=IdentityContext.from_org_context(auth_context), agent_id=agent_id
+            ),
             action_type="invoice:delete",  # Not consented or delegated
             target="invoices/2026/001",
             purpose="invoice-reconciliation",
@@ -450,7 +451,9 @@ class TestCustomerRootAuthorityBootstrap:
         # Create second user in same tenant with owner role
         engine = get_enterprise_engine()
         web_repo = WebIdentityRepository(engine)
-        user_b_id, token_b = await web_repo.register("Attacker Bob", "attacker_b@corp.com", "AttackerPass123!@#")
+        user_b_id, token_b = await web_repo.register(
+            "Attacker Bob", "attacker_b@corp.com", "AttackerPass123!@#"
+        )
         await web_repo.verify_email(token_b)
 
         now_iso = datetime.now(UTC).isoformat()
@@ -498,7 +501,11 @@ class TestCustomerRootAuthorityBootstrap:
             headers=headers_b,
         )
         assert complete_res.status_code in {401, 403}
-        assert complete_res.json()["error"] in {"UNAUTHORIZED_BOOTSTRAP_CALLER", "UNAUTHORIZED_CALLER", "FORBIDDEN"}
+        assert complete_res.json()["error"] in {
+            "UNAUTHORIZED_BOOTSTRAP_CALLER",
+            "UNAUTHORIZED_CALLER",
+            "FORBIDDEN",
+        }
 
     async def test_nonce_substitution_rejected(self, api_client: AsyncClient):
         """Nonce substitution / tampering: Valid token with forged nonce is rejected."""
@@ -576,5 +583,3 @@ class TestCustomerRootAuthorityBootstrap:
         )
         assert res.status_code in {401, 403}
         assert res.json()["error"] in {"BOOTSTRAP_TOKEN_EXPIRED", "BOOTSTRAP_EXPIRED"}
-
-

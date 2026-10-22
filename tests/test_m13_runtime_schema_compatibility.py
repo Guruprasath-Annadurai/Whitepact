@@ -21,7 +21,7 @@ async def test_actual_postgres_startup_revision_and_restart_contract():
             engine = create_engine(database)
             try:
                 await assert_runtime_schema_compatible(engine)
-                for version in ("0064", "0066"):
+                for version in ("0064", "0065", "0067"):
                     async with engine.raw.begin() as connection:
                         await connection.execute(
                             text("UPDATE alembic_version SET version_num=:version"),
@@ -32,12 +32,14 @@ async def test_actual_postgres_startup_revision_and_restart_contract():
                 # A failed transaction cannot publish a compatible revision.
                 with pytest.raises(ValueError):
                     async with engine.raw.begin() as connection:
-                        await connection.execute(text("UPDATE alembic_version SET version_num='0065'"))
+                        await connection.execute(
+                            text("UPDATE alembic_version SET version_num='0066'")
+                        )
                         raise ValueError("controlled rollback")
                 with pytest.raises(RuntimeError, match="incompatible"):
                     await assert_runtime_schema_compatible(engine)
                 async with engine.raw.begin() as connection:
-                    await connection.execute(text("UPDATE alembic_version SET version_num='0065'"))
+                    await connection.execute(text("UPDATE alembic_version SET version_num='0066'"))
                 await engine.close()
                 engine = create_engine(database)
                 await assert_runtime_schema_compatible(engine)

@@ -18,19 +18,23 @@ Proves the 10 non-negotiable security requirements for human approval execution:
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
-import pytest
-from sqlalchemy import create_engine, select, update
 
+import pytest
+from sqlalchemy import update
+
+import responsibleai.dashboard.app as dashboard
 from responsibleai.db.engine import governance_approvals
-from responsibleai.governance.synthetic_counter import SYNTHETIC_COUNTER_TOOL, snapshot as counter_snapshot
+from responsibleai.governance.synthetic_counter import SYNTHETIC_COUNTER_TOOL
+from responsibleai.governance.synthetic_counter import snapshot as counter_snapshot
 from tests.test_customer_real_approval_journey import (
     ADMIN_EMAIL,
     PURPOSE,
     _counter,
     _execute,
     _resolve,
-    live_customer,
+)
+from tests.test_customer_real_approval_journey import (
+    live_customer as live_customer,
 )
 from tests.test_v1_customer_journey import (
     _login,
@@ -39,7 +43,6 @@ from tests.test_v1_customer_journey import (
     _token_from_url,
     _verify_login,
 )
-import responsibleai.dashboard.app as dashboard
 
 
 @pytest.mark.asyncio
@@ -88,6 +91,7 @@ async def test_02_changed_policy_before_resume_denies_execution(live_customer):
     # Policy update: remove existing approval rule and add deny rule
     from responsibleai.governance.models import GovernanceDecision
     from responsibleai.governance.policy import PolicyRule
+
     await dashboard._policy_repo.remove_rule(org_id, "require-test-counter")
     deny_rule = PolicyRule(
         rule_id="deny_all_counter",
@@ -168,6 +172,7 @@ async def test_05_revoked_identity_or_api_key_blocks_resume(live_customer):
 
     # Revoke the API key used by the agent
     from responsibleai.db.org_repository import OrgRepository
+
     principal = await OrgRepository(dashboard._db_engine).authenticate(key)
     assert principal is not None
     del_res = await browser.delete(
@@ -186,6 +191,7 @@ async def test_05_revoked_identity_or_api_key_blocks_resume(live_customer):
 async def test_06_tenant_switching_and_isolation(live_customer):
     """Requirement 6: Tenant B cannot inspect, resolve, or execute Tenant A's approval."""
     import httpx
+
     browser, sdk, org_id, key = live_customer
     pending = await sdk.call_tool(SYNTHETIC_COUNTER_TOOL, purpose=PURPOSE)
     approval_id = pending.approval_id
@@ -254,6 +260,7 @@ async def test_08_revocation_epoch_bump_rejects_resume(live_customer):
 
     # Bump org revocation epoch
     from responsibleai.db.revocation_epoch_repository import RevocationEpochRepository
+
     epoch_repo = RevocationEpochRepository(dashboard._db_engine)
     await epoch_repo.bump(org_id)
 

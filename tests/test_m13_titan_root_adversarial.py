@@ -57,6 +57,7 @@ from responsibleai.trust_fabric.enums import (
     PrincipalState,
     PrincipalType,
 )
+from tests.m13_owner_qualification import qualify_owner, root_completion_assertion
 from tests.pg_test_url import isolated_pg_url
 
 
@@ -291,6 +292,8 @@ async def test_root_bootstrap_pending_quorum_recovery_blocks_out_of_band_bootstr
             membership_status="ACTIVE",
         )
 
+        actor, _, _ = await qualify_owner(engine, actor)
+
         # Unilateral initiate bootstrap is rejected because quorum recovery is pending
         with pytest.raises(EnterpriseError) as exc:
             await svc.initiate_root_bootstrap(actor, org_id=org_id)
@@ -349,6 +352,7 @@ async def test_root_bootstrap_webauthn_adversarial_paths():
         )
 
         # 1. Initiate with passkey step-up required
+        actor, _, _ = await qualify_owner(engine, actor)
         init_res = await svc.initiate_root_bootstrap(
             actor, org_id=org_id, require_identity_assurance=True, require_passkey_stepup=True
         )
@@ -519,6 +523,7 @@ async def test_root_bootstrap_concurrent_race_serializes_cleanly():
         )
 
         # Two distinct initiation ceremonies for Org
+        actor, authenticator_key, credential = await qualify_owner(engine, actor)
         init1 = await svc.initiate_root_bootstrap(
             actor, org_id=org_id, require_identity_assurance=True
         )
@@ -530,6 +535,9 @@ async def test_root_bootstrap_concurrent_race_serializes_cleanly():
         )
 
         # Complete first bootstrap
+        assertion = await root_completion_assertion(
+            svc, actor, init1, pub1, authenticator_key, credential
+        )
         res1 = await svc.complete_root_bootstrap(
             actor,
             org_id=org_id,
@@ -537,6 +545,7 @@ async def test_root_bootstrap_concurrent_race_serializes_cleanly():
             nonce=init1["nonce"],
             root_public_key=pub1,
             root_signature=pop1,
+            webauthn_assertion=assertion,
             scope_description="Root 1",
             purpose="Race testing",
             allowed_action_types=["test.action"],
@@ -615,6 +624,7 @@ async def test_root_bootstrap_genuine_unseeded_customer_enrollment_and_bridging(
             membership_status="ACTIVE",
         )
 
+        actor, authenticator_key, credential = await qualify_owner(engine, actor)
         init_res = await svc.initiate_root_bootstrap(
             actor, org_id=org_id, require_identity_assurance=True
         )
@@ -627,6 +637,9 @@ async def test_root_bootstrap_genuine_unseeded_customer_enrollment_and_bridging(
             )
         )
 
+        assertion = await root_completion_assertion(
+            svc, actor, init_res, pub_hex, authenticator_key, credential
+        )
         # Complete root bootstrap without any manual seeding
         res = await svc.complete_root_bootstrap(
             actor,
@@ -635,6 +648,7 @@ async def test_root_bootstrap_genuine_unseeded_customer_enrollment_and_bridging(
             nonce=boot_nonce,
             root_public_key=pub_hex,
             root_signature=pop_sig,
+            webauthn_assertion=assertion,
             scope_description="Production Root Authority",
             purpose="Autonomous Agent Operations",
             allowed_action_types=["agent.execute", "tool.invoke"],
@@ -845,6 +859,7 @@ async def test_root_bootstrap_identifier_collision_fails_closed():
             membership_status="ACTIVE",
         )
 
+        actor, authenticator_key, credential = await qualify_owner(engine, actor)
         init_res = await svc.initiate_root_bootstrap(
             actor, org_id=org_id, require_identity_assurance=True
         )
@@ -855,6 +870,9 @@ async def test_root_bootstrap_identifier_collision_fails_closed():
             )
         )
 
+        assertion = await root_completion_assertion(
+            svc, actor, init_res, pub_hex, authenticator_key, credential
+        )
         with pytest.raises(EnterpriseError) as exc:
             await svc.complete_root_bootstrap(
                 actor,
@@ -863,6 +881,7 @@ async def test_root_bootstrap_identifier_collision_fails_closed():
                 nonce=init_res["nonce"],
                 root_public_key=pub_hex,
                 root_signature=pop_sig,
+                webauthn_assertion=assertion,
                 scope_description="Scope",
                 purpose="Collision test",
                 allowed_action_types=["test.act"],
@@ -1034,10 +1053,14 @@ async def test_root_bootstrap_transaction_rollback_preserves_clean_state():
             membership_status="ACTIVE",
         )
 
+        actor, authenticator_key, credential = await qualify_owner(engine, actor)
         init_res = await svc.initiate_root_bootstrap(
             actor, org_id=org_id, require_identity_assurance=True
         )
         _, pub_hex, _ = _gen_ed25519()
+        assertion = await root_completion_assertion(
+            svc, actor, init_res, pub_hex, authenticator_key, credential
+        )
 
         # Provide an invalid root signature
         invalid_pop = _b64url(b"invalid_signature_bytes_32_chars_ok")
@@ -1050,6 +1073,7 @@ async def test_root_bootstrap_transaction_rollback_preserves_clean_state():
                 nonce=init_res["nonce"],
                 root_public_key=pub_hex,
                 root_signature=invalid_pop,
+                webauthn_assertion=assertion,
                 scope_description="Rollback test",
                 purpose="Rollback test",
                 allowed_action_types=["test.action"],
@@ -1093,9 +1117,23 @@ async def test_root_bootstrap_identifier_recycling_after_revocation():
         shared_email = f"shared.{suffix}@example.com"
         old_uid, old_token = await web_repo.register("Old Owner", shared_email, "Password123!@#")
         await web_repo.verify_email(old_token)
+        old_workspace = await iam.create_workspace(
+            actor_user_id=old_uid,
+            name=f"Old workspace {suffix}",
+            slug=f"old-workspace-{suffix}",
+            kind="ORGANIZATION",
+        )
+        async with engine.raw.begin() as conn:
+            await conn.execute(
+                update(web_users)
+                .where(web_users.c.id == old_uid)
+                .values(email=f"retired.{old_uid}@example.com")
+            )
+        new_uid, new_token = await web_repo.register("New Owner", shared_email, "Password123!@#")
+        await web_repo.verify_email(new_token)
 
         org = await iam.create_workspace(
-            actor_user_id=old_uid,
+            actor_user_id=new_uid,
             name=f"Recycle Org {suffix}",
             slug=f"recycle-org-{suffix}",
             kind="ORGANIZATION",
@@ -1133,29 +1171,6 @@ async def test_root_bootstrap_identifier_recycling_after_revocation():
                     created_at=now_iso,
                 )
             )
-            # Deprovision old account's email address to simulate account retirement
-            await conn.execute(
-                update(web_users)
-                .where(web_users.c.id == old_uid)
-                .values(email=f"retired.{old_uid}@example.com")
-            )
-
-        # New legitimate owner with recycled identifier
-        new_uid, new_token = await web_repo.register("New Owner", shared_email, "Password123!@#")
-        await web_repo.verify_email(new_token)
-        # Add new owner to organization
-        async with engine.raw.begin() as conn:
-            await conn.execute(
-                insert(web_memberships).values(
-                    id=f"wp_mem_{uuid.uuid4().hex[:8]}",
-                    org_id=org_id,
-                    user_id=new_uid,
-                    role=Role.OWNER.value,
-                    status="ACTIVE",
-                    created_at=now_iso,
-                    updated_at=now_iso,
-                )
-            )
 
         actor_new = Actor(
             actor_type="USER",
@@ -1166,6 +1181,7 @@ async def test_root_bootstrap_identifier_recycling_after_revocation():
             membership_status="ACTIVE",
         )
 
+        actor_new, authenticator_key, credential = await qualify_owner(engine, actor_new)
         init_res = await svc.initiate_root_bootstrap(
             actor_new, org_id=org_id, require_identity_assurance=True
         )
@@ -1176,6 +1192,9 @@ async def test_root_bootstrap_identifier_recycling_after_revocation():
             )
         )
 
+        assertion = await root_completion_assertion(
+            svc, actor_new, init_res, pub_hex, authenticator_key, credential
+        )
         res = await svc.complete_root_bootstrap(
             actor_new,
             org_id=org_id,
@@ -1183,6 +1202,7 @@ async def test_root_bootstrap_identifier_recycling_after_revocation():
             nonce=init_res["nonce"],
             root_public_key=pub_hex,
             root_signature=pop_sig,
+            webauthn_assertion=assertion,
             scope_description="Recycled Root",
             purpose="Recycled testing",
             allowed_action_types=["test.recycled"],
@@ -1210,6 +1230,43 @@ async def test_root_bootstrap_identifier_recycling_after_revocation():
             assert len(rows) == 2
             principals = {r.principal_id for r in rows}
             assert principals == {old_uid, new_uid}
+            assert next(r for r in rows if r.principal_id == old_uid).revoked_at is not None
+            assert (
+                await conn.scalar(
+                    select(trust_fabric_principals.c.lifecycle_state).where(
+                        trust_fabric_principals.c.id == old_uid
+                    )
+                )
+                == PrincipalState.REVOKED.value
+            )
+            assert (
+                await conn.scalar(
+                    select(organizations.c.owner_user_id).where(organizations.c.id == org_id)
+                )
+                == new_uid
+            )
+            assert (
+                await conn.scalar(
+                    select(organizations.c.owner_user_id).where(
+                        organizations.c.id == old_workspace["id"]
+                    )
+                )
+                == old_uid
+            )
+
+        # Recycled email grants no ownership or membership of the old workspace.
+        with pytest.raises(EnterpriseError):
+            await svc.initiate_root_bootstrap(actor_new, org_id=old_workspace["id"])
+        old_actor = Actor(
+            actor_type="USER",
+            actor_id=old_uid,
+            user_id=old_uid,
+            org_id=org_id,
+            role=Role.OWNER,
+            membership_status="ACTIVE",
+        )
+        with pytest.raises(EnterpriseError):
+            await svc.initiate_root_bootstrap(old_actor, org_id=org_id)
 
 
 @pytest.mark.asyncio
@@ -1400,6 +1457,7 @@ async def test_root_bootstrap_pending_principal_promotion():
             membership_status="ACTIVE",
         )
 
+        actor, authenticator_key, credential = await qualify_owner(engine, actor)
         init_res = await svc.initiate_root_bootstrap(
             actor, org_id=org_id, require_identity_assurance=True
         )
@@ -1410,6 +1468,9 @@ async def test_root_bootstrap_pending_principal_promotion():
             )
         )
 
+        assertion = await root_completion_assertion(
+            svc, actor, init_res, pub_hex, authenticator_key, credential
+        )
         res = await svc.complete_root_bootstrap(
             actor,
             org_id=org_id,
@@ -1417,6 +1478,7 @@ async def test_root_bootstrap_pending_principal_promotion():
             nonce=init_res["nonce"],
             root_public_key=pub_hex,
             root_signature=pop_sig,
+            webauthn_assertion=assertion,
             scope_description="Pending promotion",
             purpose="Pending promotion test",
             allowed_action_types=["test.promo"],
@@ -1471,6 +1533,7 @@ async def test_root_bootstrap_unicode_domain_idna_consistency_and_collision():
             membership_status="ACTIVE",
         )
 
+        actor, authenticator_key, credential = await qualify_owner(engine, actor)
         init_res = await svc.initiate_root_bootstrap(
             actor, org_id=org_id, require_identity_assurance=True
         )
@@ -1481,6 +1544,9 @@ async def test_root_bootstrap_unicode_domain_idna_consistency_and_collision():
             )
         )
 
+        assertion = await root_completion_assertion(
+            svc, actor, init_res, pub_hex, authenticator_key, credential
+        )
         res = await svc.complete_root_bootstrap(
             actor,
             org_id=org_id,
@@ -1488,6 +1554,7 @@ async def test_root_bootstrap_unicode_domain_idna_consistency_and_collision():
             nonce=init_res["nonce"],
             root_public_key=pub_hex,
             root_signature=pop_sig,
+            webauthn_assertion=assertion,
             scope_description="IDNA test",
             purpose="IDNA test",
             allowed_action_types=["test.idna"],

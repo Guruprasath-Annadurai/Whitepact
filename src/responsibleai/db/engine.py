@@ -120,6 +120,38 @@ organizations = Table(
     Index("idx_org_paddle_subscription", "paddle_subscription_id", unique=True),
 )
 
+runtime_containment_records = Table(
+    "runtime_containment_records",
+    metadata,
+    Column("execution_id", String(64), primary_key=True),
+    Column(
+        "organization_id",
+        String(36),
+        ForeignKey("organizations.id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    Column("owner_generation", String(64), nullable=False),
+    Column("backend_identity", String(128), nullable=False),
+    Column("authorization_id", String(64), nullable=False),
+    Column("action_digest", String(64), nullable=False),
+    Column("admission_epoch", Integer, nullable=False),
+    Column("expected_container_name", String(128), nullable=False),
+    Column("container_id", String(64), nullable=True),
+    Column("state", String(16), nullable=False),
+    Column("created_at", String(32), nullable=False),
+    Column("updated_at", String(32), nullable=False),
+    CheckConstraint(
+        "state IN ('PREPARING','ACTIVE','UNRESOLVED','CONTAINED')",
+        name="chk_runtime_containment_state",
+    ),
+    CheckConstraint("admission_epoch >= 0", name="chk_runtime_containment_epoch"),
+    CheckConstraint(
+        "state NOT IN ('ACTIVE','CONTAINED') OR container_id IS NOT NULL",
+        name="chk_runtime_containment_receipt",
+    ),
+    Index("idx_runtime_containment_org_state", "organization_id", "state"),
+)
+
 mcp_tool_calls = Table(
     "mcp_tool_calls",
     metadata,
@@ -2773,7 +2805,12 @@ authority_recovery_votes = Table(
     "authority_recovery_votes",
     metadata,
     Column("id", String(64), primary_key=True),
-    Column("request_id", String(64), ForeignKey("authority_recovery_requests.id", ondelete="CASCADE"), nullable=False),
+    Column(
+        "request_id",
+        String(64),
+        ForeignKey("authority_recovery_requests.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
     Column("voter_user_id", String(36), nullable=False),
     Column("decision", String(20), nullable=False),
     Column("action_digest", String(64), nullable=False),

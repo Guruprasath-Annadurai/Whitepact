@@ -14,6 +14,7 @@ import responsibleai.isolation.in_flight as tracking
 from responsibleai.isolation.container_backend import DockerContainerBackend
 from responsibleai.isolation.filesystem import EphemeralWorkspace
 from responsibleai.isolation.models import (
+    ExecutionOutcome,
     IsolatedExecutionRequest,
     IsolationProfile,
     NetworkPolicy,
@@ -23,6 +24,12 @@ from responsibleai.isolation.models import (
 
 @pytest.fixture
 def registry(tmp_path, monkeypatch):
+    from responsibleai.isolation.durable_intent import required_journal
+
+    # Resolve the existing explicit development-mode configuration before the
+    # test's bounded scheduling probe, not during its first event-loop turn.
+    # This module is a controlled process double, not hosted journal evidence.
+    assert required_journal() is None
     monkeypatch.setattr(tracking, "_DISTRIBUTED_REGISTRY_DIR", tmp_path / "tracking")
     tracking.InFlightExecutionRegistry.reset_instance()
     yield tracking.InFlightExecutionRegistry.get_instance()
@@ -77,6 +84,7 @@ async def test_failed_rejected_execution_termination_remains_tracked(registry):
 async def test_execute_termination_callback_rejects_plugin_absence_error(registry):
     backend = DockerContainerBackend()
     running, release = asyncio.Event(), asyncio.Event()
+    inspected = []
 
     class Process:
         returncode = 0
@@ -95,10 +103,16 @@ async def test_execute_termination_callback_rejects_plugin_absence_error(registr
 
     def docker(command, **kwargs):
         if "inspect" in command:
+            inspected.append(command[-1])
             return subprocess.CompletedProcess(
                 command, 1, stdout="", stderr="authorization plugin not found"
             )
         return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    def acknowledge_inert_create(command, receipt):
+        cid = "d" * 64
+        receipt.write_text(cid, encoding="utf-8")
+        return cid
 
     request = IsolatedExecutionRequest(
         action_id=f"action-{uuid.uuid4().hex}", organization_id=f"org-{uuid.uuid4().hex}",
@@ -111,7 +125,7 @@ async def test_execute_termination_callback_rejects_plugin_absence_error(registr
         patch("responsibleai.isolation.container_backend.grant_container_read"),
         patch.object(EphemeralWorkspace, "prepare_for_container"),
         patch("asyncio.create_subprocess_exec", return_value=Process()),
-        patch.object(backend, "_remove_containers", return_value=None),
+        patch.object(backend, "_create_stopped_container", side_effect=acknowledge_inert_create),
         patch("subprocess.run", side_effect=docker),
     ):
         task = asyncio.create_task(backend.execute(request))
@@ -119,11 +133,48 @@ async def test_execute_termination_callback_rejects_plugin_absence_error(registr
             await asyncio.wait_for(running.wait(), 3)
             entry = next(iter(registry._active.values()))
             assert entry.terminate_callback is not None
-            with pytest.raises(RuntimeError, match="inspect"):
+            with pytest.raises(RuntimeError, match="containment unconfirmed"):
                 await entry.terminate_callback()
         finally:
             release.set()
-            await asyncio.gather(task, return_exceptions=True)
+            results = await asyncio.gather(task, return_exceptions=True)
+        assert isinstance(results[0], ExecutionOutcome)
+        assert not results[0].is_success and results[0].result_payload is None
+        assert inspected and all(target == "d" * 64 for target in inspected)
+        assert registry.has_unresolved(request.organization_id)
+        assert any(tracking._DISTRIBUTED_REGISTRY_DIR.glob("*.json"))
+        with pytest.raises(PermissionError, match="revoked in-flight"):
+            await registry.register("subsequent", request.organization_id, "action")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("inspection_error", [
+    "authorization plugin not found",
+    "Error: No such container: owned; authorization plugin not found",
+    "daemon unavailable",
+])
+async def test_actual_cleanup_inspection_uncertainty_retains_denial(registry, inspection_error):
+    backend = DockerContainerBackend()
+    org, execution = f"uncertain-{uuid.uuid4().hex}", uuid.uuid4().hex
+
+    def docker(command, **kwargs):
+        return subprocess.CompletedProcess(
+            command, 1 if "inspect" in command else 0, stdout="", stderr=inspection_error
+        )
+
+    async def terminate():
+        await backend._remove_containers_uninterruptible(
+            ["e" * 64], stable_seconds=0, wait_seconds=0.03
+        )
+        return True
+
+    with patch("subprocess.run", side_effect=docker):
+        await registry.register(execution, org, "action", terminate_callback=terminate)
+        assert await registry.terminate_in_flight(organization_id=org) == []
+        assert registry.has_unresolved(org)
+        assert any(tracking._DISTRIBUTED_REGISTRY_DIR.glob("*.json"))
+        with pytest.raises(PermissionError, match="revoked in-flight"):
+            await registry.register("subsequent", org, "action", admission_epoch=100)
 
 
 @pytest.mark.asyncio
@@ -158,6 +209,13 @@ async def test_cancellation_waits_for_contended_registry_transition(registry):
         assert release.wait(5)
         raise RuntimeError("unconfirmed under contention")
 
+    def acknowledge_inert_create(command, receipt):
+        # Supply only the earlier inert-CREATE transport boundary. The original
+        # contended registry transition and cancellation assertions stay real.
+        cid = "c" * 64
+        receipt.write_text(cid, encoding="utf-8")
+        return cid
+
     org = f"org-{uuid.uuid4().hex}"
     request = IsolatedExecutionRequest(
         action_id=f"action-{uuid.uuid4().hex}", organization_id=org,
@@ -171,6 +229,7 @@ async def test_cancellation_waits_for_contended_registry_transition(registry):
         patch("responsibleai.isolation.container_backend.grant_container_read"),
         patch.object(EphemeralWorkspace, "prepare_for_container"),
         patch("asyncio.create_subprocess_exec", return_value=Process()),
+        patch.object(backend, "_create_stopped_container", side_effect=acknowledge_inert_create),
         patch.object(backend, "_remove_containers", side_effect=cleanup),
     ):
         task = asyncio.create_task(backend.execute(request))

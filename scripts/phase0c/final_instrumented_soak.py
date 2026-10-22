@@ -9,7 +9,6 @@ import asyncio
 import json
 import os
 import signal
-import statistics
 import subprocess
 import sys
 import time
@@ -109,8 +108,9 @@ def _http_mix(base: str, paths: list[str]) -> tuple[int, float]:
 async def _prepare_pg() -> str:
     sys.path.insert(0, str(ROOT / "src"))
     sys.path.insert(0, str(ROOT))
-    from responsibleai.db.migrate import _find_alembic_ini, _migration_env, _run_alembic
     from tests.pg_test_url import isolated_pg_url
+
+    from responsibleai.db.migrate import _find_alembic_ini, _migration_env, _run_alembic
 
     async for url in isolated_pg_url("wp_phase0c_soak"):
         ini = _find_alembic_ini()

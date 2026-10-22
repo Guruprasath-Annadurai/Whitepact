@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime
 from enum import StrEnum
 from typing import Any
 
@@ -74,6 +75,9 @@ class IsolatedExecutionRequest:
     environment_overrides: dict[str, str] = field(default_factory=dict)
     workspace_files: dict[str, str | bytes] = field(default_factory=dict)
     admission_epoch: int = 0
+    authorization_id: str | None = None
+    action_digest: str | None = None
+    authorization_expires_at: datetime | None = None
 
 
 @dataclass(frozen=True)

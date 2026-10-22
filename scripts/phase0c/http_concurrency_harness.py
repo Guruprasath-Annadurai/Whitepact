@@ -29,8 +29,9 @@ STRONG = "Phase0c-Secure-42!"
 async def _prepare_pg() -> str:
     sys.path.insert(0, str(ROOT / "src"))
     sys.path.insert(0, str(ROOT))
-    from responsibleai.db.migrate import _find_alembic_ini, _migration_env, _run_alembic
     from tests.pg_test_url import isolated_pg_url
+
+    from responsibleai.db.migrate import _find_alembic_ini, _migration_env, _run_alembic
 
     async for url in isolated_pg_url("wp_phase0c_http"):
         ini = _find_alembic_ini()
@@ -72,6 +73,7 @@ def _onboard_owner(client: httpx.Client) -> tuple[str, str, str]:
     import datetime as dt
     import hashlib
     import hmac
+
     from responsibleai.enterprise.preflight import DEV_IDENTITY_WEBHOOK_SECRET
     reg = client.post(
         "/api/v1/web/auth/register",
