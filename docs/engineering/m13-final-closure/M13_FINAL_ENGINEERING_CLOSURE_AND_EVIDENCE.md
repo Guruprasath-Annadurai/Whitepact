@@ -206,3 +206,22 @@ independent qualification are not complete. No production or M14 authority.
   run39PASS/1FAIL on3.12. Production correctly retains uncertainty. Formal
   disposition requested for explicit True success fixture plus additive None
   negative test; original assertion not weakened or silently replaced.
+
+### Data inventory completeness (Codex integration ownership)
+
+- Reproduced original inventory gate1FAIL/2PASS: five authority/journal tables
+  lacked classification. Added explicit CRITICAL security classifications;
+  exportable=False, erasable=False and SECURITY_EVIDENCE_DEFAULT preserve the
+  previous fail-closed fallback. No root/WebAuthn/journal enforcement, schema,
+  migration or production operation changed. All original inventory assertions
+  retained; five additional cases protect the non-export/non-erasure posture.
+- Inventory/export10PASS on Python3.11 and3.12. Erasure/retention/tenant-export
+  scope5PASS on3.12 with one existing legacy-static-key deprecation warning.
+- Outage tests now require OSError/SQLAlchemy OperationalError rather than any
+  Exception; unrelated logic/attribute failures no longer count as proof of a
+  database outage. Collection10cases PASS; realPG execution remains pending.
+- Actual customer artifact39738299380 confirms17PASS/1BLOCKED/7NOT_EXECUTED:
+  judgment403 IDENTITY_VERIFICATION_REQUIRED, BASIC_VERIFIED/no provider.
+  Passkey success is not external identity qualification. No assurance flags,
+  provider credentials or authority are fabricated to bypass this blocker.
+  Legacy browser probe separately reports downstream contracts unqualified.

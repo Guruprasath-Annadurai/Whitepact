@@ -54,3 +54,21 @@ def test_canonical_evidence_tables_cannot_be_erased():
         assert entry is not None
         assert entry.classification == DataClassification.CANONICAL_SECURITY_EVIDENCE
         assert entry.erasable is False
+
+
+@pytest.mark.parametrize(
+    "table",
+    [
+        "authority_containment_records",
+        "authority_recovery_requests",
+        "authority_recovery_votes",
+        "authority_step_up_challenges",
+        "runtime_containment_records",
+    ],
+)
+def test_authority_and_journal_inventory_keeps_fail_closed_controls(table):
+    entry = TABLE_CLASSIFICATIONS[table]
+    assert entry.sensitivity == SensitivityTier.CRITICAL
+    assert entry.exportable is False
+    assert entry.erasable is False
+    assert entry.retention_default == "SECURITY_EVIDENCE_DEFAULT"
