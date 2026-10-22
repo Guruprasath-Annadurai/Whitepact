@@ -92,7 +92,7 @@ def openapi_compat() -> str:
 
     lines = [
         "# API contract / OpenAPI compatibility (v1.3.1 addendum)\n\n",
-        f"Current schema generated in-process from FastAPI `app.openapi()`.\n\n",
+        "Current schema generated in-process from FastAPI `app.openapi()`.\n\n",
         f"Baseline note: {old_note}\n\n",
     ]
     if cur["exit"] == 0:

@@ -85,7 +85,7 @@ def main() -> int:
         "## Totals",
         "",
         f"- Pure branch coverage: **{pct:.2f}%** ({cb}/{nb})",
-        f"- OpenSSF required: **80.00%**",
+        "- OpenSSF required: **80.00%**",
         f"- Gap: **{max(0.0, 80.0 - pct):.2f}** percentage points",
         f"- Branches to cover (approx): **{max(0, int(0.805 * nb) - cb)}** for 80.5% buffer target",
         "",
