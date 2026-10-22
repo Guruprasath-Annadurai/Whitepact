@@ -91,6 +91,7 @@ async def test_02_changed_policy_before_resume_denies_execution(live_customer):
     # Policy update: remove existing approval rule and add deny rule
     from responsibleai.governance.models import GovernanceDecision
     from responsibleai.governance.policy import PolicyRule
+
     await dashboard._policy_repo.remove_rule(org_id, "require-test-counter")
     deny_rule = PolicyRule(
         rule_id="deny_all_counter",
@@ -171,6 +172,7 @@ async def test_05_revoked_identity_or_api_key_blocks_resume(live_customer):
 
     # Revoke the API key used by the agent
     from responsibleai.db.org_repository import OrgRepository
+
     principal = await OrgRepository(dashboard._db_engine).authenticate(key)
     assert principal is not None
     del_res = await browser.delete(
@@ -189,6 +191,7 @@ async def test_05_revoked_identity_or_api_key_blocks_resume(live_customer):
 async def test_06_tenant_switching_and_isolation(live_customer):
     """Requirement 6: Tenant B cannot inspect, resolve, or execute Tenant A's approval."""
     import httpx
+
     browser, sdk, org_id, key = live_customer
     pending = await sdk.call_tool(SYNTHETIC_COUNTER_TOOL, purpose=PURPOSE)
     approval_id = pending.approval_id
@@ -257,6 +260,7 @@ async def test_08_revocation_epoch_bump_rejects_resume(live_customer):
 
     # Bump org revocation epoch
     from responsibleai.db.revocation_epoch_repository import RevocationEpochRepository
+
     epoch_repo = RevocationEpochRepository(dashboard._db_engine)
     await epoch_repo.bump(org_id)
 

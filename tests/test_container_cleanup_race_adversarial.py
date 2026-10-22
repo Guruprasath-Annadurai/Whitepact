@@ -45,7 +45,9 @@ def reset_in_flight_registry(monkeypatch, tmp_path):
         receipt.write_text(cid, encoding="utf-8")
         return cid
 
-    monkeypatch.setattr(DockerContainerBackend, "_create_stopped_container", acknowledge_inert_create)
+    monkeypatch.setattr(
+        DockerContainerBackend, "_create_stopped_container", acknowledge_inert_create
+    )
     monkeypatch.setattr(
         "responsibleai.isolation.in_flight._DISTRIBUTED_REGISTRY_DIR", tmp_path / "tracking"
     )
@@ -99,11 +101,13 @@ async def test_container_removal_failure_preserves_unresolved_containment() -> N
     def _failing_remove(targets, *, stable_seconds, wait_seconds):
         raise RuntimeError("docker rm -f failed: permission denied or container locked")
 
-    with patch.object(backend, "is_available", return_value=True), \
-         patch("responsibleai.isolation.container_backend.grant_container_read"), \
-         patch.object(EphemeralWorkspace, "prepare_for_container"), \
-         patch("asyncio.create_subprocess_exec", return_value=MockProc()), \
-         patch.object(backend, "_remove_containers", side_effect=_failing_remove):
+    with (
+        patch.object(backend, "is_available", return_value=True),
+        patch("responsibleai.isolation.container_backend.grant_container_read"),
+        patch.object(EphemeralWorkspace, "prepare_for_container"),
+        patch("asyncio.create_subprocess_exec", return_value=MockProc()),
+        patch.object(backend, "_remove_containers", side_effect=_failing_remove),
+    ):
         outcome = await backend.execute(request)
         assert outcome.is_success is True
 
@@ -119,7 +123,9 @@ async def test_container_removal_failure_preserves_unresolved_containment() -> N
 
 @pytest.mark.asyncio
 async def test_mocked_cleanup_fixture_never_contacts_docker_create():
-    with patch("subprocess.run", side_effect=AssertionError("Unit probe contacted host daemon")) as run:
+    with patch(
+        "subprocess.run", side_effect=AssertionError("Unit probe contacted host daemon")
+    ) as run:
         await test_container_removal_failure_preserves_unresolved_containment()
     run.assert_not_called()
 
@@ -237,11 +243,13 @@ async def test_fail_closed_denial_when_unresolved_containment_active() -> None:
     def _failing_remove(targets, *, stable_seconds, wait_seconds):
         raise RuntimeError("dockerd disconnected during cleanup")
 
-    with patch.object(backend, "is_available", return_value=True), \
-         patch("responsibleai.isolation.container_backend.grant_container_read"), \
-         patch.object(EphemeralWorkspace, "prepare_for_container"), \
-         patch("asyncio.create_subprocess_exec", return_value=MockProc()), \
-         patch.object(backend, "_remove_containers", side_effect=_failing_remove):
+    with (
+        patch.object(backend, "is_available", return_value=True),
+        patch("responsibleai.isolation.container_backend.grant_container_read"),
+        patch.object(EphemeralWorkspace, "prepare_for_container"),
+        patch("asyncio.create_subprocess_exec", return_value=MockProc()),
+        patch.object(backend, "_remove_containers", side_effect=_failing_remove),
+    ):
         # Initial execution fails cleanup during execute(), naturally transitioning to unresolved
         await backend.execute(req1)
         assert registry.has_unresolved(org_id) is True
@@ -258,6 +266,7 @@ async def test_fail_closed_denial_when_unresolved_containment_active() -> None:
 async def test_repeated_cancellation_during_cleanup_restores_all_cancellations() -> None:
     """Repeated task.cancel() requests during cleanup are tracked and restored."""
     import threading
+
     backend = DockerContainerBackend()
     started = threading.Event()
     cleanup_calls = []

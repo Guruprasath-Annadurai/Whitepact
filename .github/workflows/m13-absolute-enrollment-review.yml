@@ -44,6 +44,8 @@ jobs:
         run: |
           python -m pip install -r tests/requirements-m11.txt
           python -m pip install '.[dashboard,postgres,mcp,sso]' alembic ruff==0.17.0
+      - name: Verify approved formatting evidence relationships
+        run: python scripts/engineering/m13_approved_formatting.py
       - name: Record exact source and immutable original evidence
         run: |
           git rev-parse HEAD 'HEAD^{tree}' 'HEAD^'
@@ -54,7 +56,7 @@ jobs:
           PYTHONPATH: src:.
           WHITEPACT_QUALIFICATION_SKIP_LOG: /tmp/m13-absolute-enrollment-skips.json
         run: |
-          python -m pytest scripts/engineering/reproducers/test_m13_absolute_first_passkey.py tests/test_enterprise_layer2_identity_security.py tests/test_enterprise_security_branch_campaign.py tests/test_enterprise_security_branch_campaign_batch2.py tests/test_m13_titan_root_adversarial.py tests/test_m13_titan_authority_closure.py -o addopts='' --tb=short -ra
+          python -m pytest scripts/engineering/reproducers/test_m13_absolute_first_passkey.py tests/test_enterprise_layer2_identity_security.py tests/test_enterprise_security_branch_campaign.py tests/test_enterprise_security_branch_campaign_batch2.py tests/test_m13_titan_root_adversarial.py tests/test_m13_titan_authority_closure.py tests/test_m13_root_real_concurrency.py tests/test_m13_convergence_fixture_integrity.py -o addopts='' --tb=short -ra
           python -c 'import json; r=json.load(open("/tmp/m13-absolute-enrollment-skips.json")); assert r["exit_status"] == 0 and r["skip_count"] == 0, r'
       - name: Source lint and unchanged supply-chain policies
         run: |

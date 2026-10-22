@@ -206,7 +206,9 @@ def _register_fake_passkey(user_id: str, rp_id: str = "localhost"):
     public_key = private_key.public_key()
     numbers = public_key.public_numbers()
     uncompressed = b"\x04" + numbers.x.to_bytes(32, "big") + numbers.y.to_bytes(32, "big")
-    cred_id = hashlib.sha256(numbers.x.to_bytes(32, "big") + numbers.y.to_bytes(32, "big")).digest()[:16]
+    cred_id = hashlib.sha256(
+        numbers.x.to_bytes(32, "big") + numbers.y.to_bytes(32, "big")
+    ).digest()[:16]
     cred_id_b64 = b64url_encode(cred_id)
     pub_b64 = b64url_encode(uncompressed)
     return private_key, cred_id_b64, pub_b64
@@ -323,15 +325,14 @@ async def _create_containment_assertion(
 # 1. WebAuthn Step-Up Assurance Tests (Founder Decision A)
 # ==============================================================================
 
+
 @pytest.mark.asyncio
 async def test_bootstrap_requires_stepup_when_configured():
     actor, user_id, org_id, _, _ = await _create_test_owner()
     engine = get_enterprise_engine()
     svc = CustomerAuthorityService(engine)
 
-    init_res = await svc.initiate_root_bootstrap(
-        actor, org_id=org_id, require_passkey_stepup=True
-    )
+    init_res = await svc.initiate_root_bootstrap(actor, org_id=org_id, require_passkey_stepup=True)
     assert init_res["require_passkey_stepup"] is True
 
     # Attempting complete_root_bootstrap without passkey assertion must fail closed
@@ -377,9 +378,7 @@ async def test_bootstrap_with_valid_passkey_stepup_succeeds():
         )
 
     # 2. Initiate bootstrap with step-up required
-    init_res = await svc.initiate_root_bootstrap(
-        actor, org_id=org_id, require_passkey_stepup=True
-    )
+    init_res = await svc.initiate_root_bootstrap(actor, org_id=org_id, require_passkey_stepup=True)
 
     root_key, root_signature = _fresh_root_proof(org_id, init_res)
     token_hash = hashlib.sha256(init_res["token"].encode("utf-8")).hexdigest()
@@ -466,9 +465,7 @@ async def test_stepup_rejects_replayed_challenge():
             )
         )
 
-    init_res = await svc.initiate_root_bootstrap(
-        actor, org_id=org_id, require_passkey_stepup=True
-    )
+    init_res = await svc.initiate_root_bootstrap(actor, org_id=org_id, require_passkey_stepup=True)
     root_key, root_signature = _fresh_root_proof(org_id, init_res)
     token_hash = hashlib.sha256(init_res["token"].encode("utf-8")).hexdigest()
     op_digest = compute_canonical_operation_digest(
@@ -553,7 +550,11 @@ async def test_stepup_rejects_expired_challenge():
 
     op_digest = "test_digest_123"
     ch_res = await svc.create_authority_stepup_challenge(
-        actor, org_id=org_id, action="EMERGENCY_CONTAINMENT", operation_digest=op_digest, ttl_seconds=300
+        actor,
+        org_id=org_id,
+        action="EMERGENCY_CONTAINMENT",
+        operation_digest=op_digest,
+        ttl_seconds=300,
     )
 
     # Fast forward challenge expiration in DB
@@ -651,6 +652,7 @@ async def test_stepup_rejects_digest_mismatch():
 # 2. Root Key Provenance & Proof-of-Possession (PoP) Tests
 # ==============================================================================
 
+
 @pytest.mark.asyncio
 async def test_root_proof_of_possession_valid_and_forged():
     actor, user_id, org_id, _, _ = await _create_test_owner()
@@ -709,6 +711,7 @@ async def test_root_proof_of_possession_valid_and_forged():
 # 3. Read-Only Deterministic Status Reconciliation Tests
 # ==============================================================================
 
+
 @pytest.mark.asyncio
 async def test_reconcile_bootstrap_status_deterministic():
     actor, user_id, org_id, _, _ = await _create_test_owner()
@@ -757,6 +760,7 @@ async def test_reconcile_bootstrap_status_deterministic():
 # ==============================================================================
 # 4. Emergency Containment & Kill-Switch Tests (Founder Decision B)
 # ==============================================================================
+
 
 @pytest.mark.asyncio
 async def test_emergency_agent_containment_quarantines_and_bumps_epoch():
@@ -903,6 +907,7 @@ async def test_containment_rejects_unauthorized_caller():
 # ==============================================================================
 # 5. M-of-N Quorum Recovery Tests (Founder Decision B)
 # ==============================================================================
+
 
 @pytest.mark.asyncio
 async def test_quorum_recovery_full_lifecycle_2_of_3():

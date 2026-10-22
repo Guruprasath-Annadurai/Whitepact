@@ -88,7 +88,9 @@ def _register_fake_passkey(user_id: str):
     public_key = private_key.public_key()
     numbers = public_key.public_numbers()
     uncompressed = b"\x04" + numbers.x.to_bytes(32, "big") + numbers.y.to_bytes(32, "big")
-    cred_id = hashlib.sha256(numbers.x.to_bytes(32, "big") + numbers.y.to_bytes(32, "big")).digest()[:16]
+    cred_id = hashlib.sha256(
+        numbers.x.to_bytes(32, "big") + numbers.y.to_bytes(32, "big")
+    ).digest()[:16]
     cred_id_b64 = b64url_encode(cred_id)
     pub_b64 = b64url_encode(uncompressed)
     return private_key, cred_id_b64, pub_b64
@@ -112,7 +114,11 @@ async def _setup_test_org_and_users(engine: DatabaseEngine):
         )
 
         users = {}
-        for role, name in [(Role.OWNER, "Alice Owner"), (Role.ADMIN, "Bob Admin"), (Role.ADMIN, "Charlie Admin")]:
+        for role, name in [
+            (Role.OWNER, "Alice Owner"),
+            (Role.ADMIN, "Bob Admin"),
+            (Role.ADMIN, "Charlie Admin"),
+        ]:
             uid = f"usr_{uuid.uuid4().hex[:12]}"
             await conn.execute(
                 insert(web_users).values(
@@ -180,7 +186,12 @@ async def _register_passkey_in_db(engine: DatabaseEngine, user_id: str):
     return priv_key, cred_id_b64
 
 
-def _build_signed_assertion(priv_key: ec.EllipticCurvePrivateKey, cred_id_b64: str, ch_dict: dict[str, Any], sign_count: int = 1) -> dict[str, Any]:
+def _build_signed_assertion(
+    priv_key: ec.EllipticCurvePrivateKey,
+    cred_id_b64: str,
+    ch_dict: dict[str, Any],
+    sign_count: int = 1,
+) -> dict[str, Any]:
     raw_challenge = b64url_decode(ch_dict["challenge"])
     cdata, auth_data, sig = assertion_blob(
         rp_id="localhost",
@@ -208,9 +219,30 @@ async def test_quorum_role_demotion_invalidates_recovery():
     bob = users["Bob Admin"]
     charlie = users["Charlie Admin"]
 
-    actor_alice = Actor(actor_type="USER", actor_id=alice["user_id"], user_id=alice["user_id"], role=Role.OWNER, org_id=org_id, membership_status="ACTIVE")
-    actor_bob = Actor(actor_type="USER", actor_id=bob["user_id"], user_id=bob["user_id"], role=Role.ADMIN, org_id=org_id, membership_status="ACTIVE")
-    actor_charlie = Actor(actor_type="USER", actor_id=charlie["user_id"], user_id=charlie["user_id"], role=Role.ADMIN, org_id=org_id, membership_status="ACTIVE")
+    actor_alice = Actor(
+        actor_type="USER",
+        actor_id=alice["user_id"],
+        user_id=alice["user_id"],
+        role=Role.OWNER,
+        org_id=org_id,
+        membership_status="ACTIVE",
+    )
+    actor_bob = Actor(
+        actor_type="USER",
+        actor_id=bob["user_id"],
+        user_id=bob["user_id"],
+        role=Role.ADMIN,
+        org_id=org_id,
+        membership_status="ACTIVE",
+    )
+    actor_charlie = Actor(
+        actor_type="USER",
+        actor_id=charlie["user_id"],
+        user_id=charlie["user_id"],
+        role=Role.ADMIN,
+        org_id=org_id,
+        membership_status="ACTIVE",
+    )
 
     # 1. Alice creates recovery request
     req = await service.create_recovery_request(
@@ -275,8 +307,22 @@ async def test_quorum_anti_self_approval_and_duplicate_voting():
     alice = users["Alice Owner"]
     bob = users["Bob Admin"]
 
-    actor_alice = Actor(actor_type="USER", actor_id=alice["user_id"], user_id=alice["user_id"], role=Role.OWNER, org_id=org_id, membership_status="ACTIVE")
-    actor_bob = Actor(actor_type="USER", actor_id=bob["user_id"], user_id=bob["user_id"], role=Role.ADMIN, org_id=org_id, membership_status="ACTIVE")
+    actor_alice = Actor(
+        actor_type="USER",
+        actor_id=alice["user_id"],
+        user_id=alice["user_id"],
+        role=Role.OWNER,
+        org_id=org_id,
+        membership_status="ACTIVE",
+    )
+    actor_bob = Actor(
+        actor_type="USER",
+        actor_id=bob["user_id"],
+        user_id=bob["user_id"],
+        role=Role.ADMIN,
+        org_id=org_id,
+        membership_status="ACTIVE",
+    )
 
     # 1. Alice creates recovery request
     req = await service.create_recovery_request(
@@ -343,7 +389,14 @@ async def test_webauthn_policy_path_a_and_path_b():
     org_id, root_id, users = await _setup_test_org_and_users(engine)
 
     alice = users["Alice Owner"]
-    actor_alice = Actor(actor_type="USER", actor_id=alice["user_id"], user_id=alice["user_id"], role=Role.OWNER, org_id=org_id, membership_status="ACTIVE")
+    actor_alice = Actor(
+        actor_type="USER",
+        actor_id=alice["user_id"],
+        user_id=alice["user_id"],
+        role=Role.OWNER,
+        org_id=org_id,
+        membership_status="ACTIVE",
+    )
     priv_key, cred_id = await _register_passkey_in_db(engine, alice["user_id"])
 
     # Register an agent to contain
@@ -467,7 +520,14 @@ async def test_path_b_operation_mismatch_and_scope_restriction():
     org_id, root_id, users = await _setup_test_org_and_users(engine)
 
     alice = users["Alice Owner"]
-    actor_alice = Actor(actor_type="USER", actor_id=alice["user_id"], user_id=alice["user_id"], role=Role.OWNER, org_id=org_id, membership_status="ACTIVE")
+    actor_alice = Actor(
+        actor_type="USER",
+        actor_id=alice["user_id"],
+        user_id=alice["user_id"],
+        role=Role.OWNER,
+        org_id=org_id,
+        membership_status="ACTIVE",
+    )
     priv_key, cred_id = await _register_passkey_in_db(engine, alice["user_id"])
 
     # Attempting to mint Path B for non-containment action is strictly BARRED

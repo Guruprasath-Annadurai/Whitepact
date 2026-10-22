@@ -57,10 +57,14 @@ async def qualify_owner(engine, actor):
         credential_id=credential,
         org_id=actor.org_id,
     )
+    assert verified.user_id == actor.user_id
+    assert verified.org_id == actor.org_id
     return replace(actor, session_id=verified.session_id), key, credential
 
 
-async def root_completion_assertion(service, actor, ceremony, public_key, key, credential):
+async def root_completion_assertion(
+    service, actor, ceremony, public_key, key, credential, *, sign_count=2
+):
     digest = compute_canonical_operation_digest(
         "COMPLETE_ROOT_BOOTSTRAP",
         {
@@ -81,7 +85,7 @@ async def root_completion_assertion(service, actor, ceremony, public_key, key, c
         origin=challenge["origin"],
         challenge=b64url_decode(challenge["challenge"]),
         private_key=key,
-        sign_count=2,
+        sign_count=sign_count,
     )
     return {
         "credential_id": credential,

@@ -63,7 +63,9 @@ async def pg_engine():
 
 
 @pytest.mark.asyncio
-async def test_reproducer_containment_terminate_in_flight_raises_blocks_ready(pg_engine, tmp_path, monkeypatch):
+async def test_reproducer_containment_terminate_in_flight_raises_blocks_ready(
+    pg_engine, tmp_path, monkeypatch
+):
     """Proves that when terminate_in_flight raises, recovery must NOT advance to READY."""
     now = datetime.now(UTC)
     async with pg_engine.raw.begin() as conn:
@@ -107,7 +109,9 @@ async def test_reproducer_containment_terminate_in_flight_raises_blocks_ready(pg
 
 
 @pytest.mark.asyncio
-async def test_reproducer_unconfirmed_container_termination_blocks_ready(pg_engine, tmp_path, monkeypatch):
+async def test_reproducer_unconfirmed_container_termination_blocks_ready(
+    pg_engine, tmp_path, monkeypatch
+):
     """Proves that when container callback returns False (unconfirmed), recovery must NOT enter READY."""
     monkeypatch.setattr(tracking, "_DISTRIBUTED_REGISTRY_DIR", tmp_path / "tracking")
     now = datetime.now(UTC)
@@ -281,14 +285,16 @@ async def test_reproducer_detached_alive_container_blocks_ready(pg_engine, tmp_p
     try:
         trk_file = tracking_dir / "trk_detached_proc.json"
         trk_file.write_text(
-            json.dumps({
-                "execution_id": "exec-detached-1",
-                "organization_id": "tenant-detached",
-                "action_id": "act-detached",
-                "pid": proc.pid,
-                "containment_status": "active",
-                "created_at": time.time(),
-            }),
+            json.dumps(
+                {
+                    "execution_id": "exec-detached-1",
+                    "organization_id": "tenant-detached",
+                    "action_id": "act-detached",
+                    "pid": proc.pid,
+                    "containment_status": "active",
+                    "created_at": time.time(),
+                }
+            ),
             encoding="utf-8",
         )
 
@@ -307,7 +313,9 @@ async def test_reproducer_detached_alive_container_blocks_ready(pg_engine, tmp_p
 
 
 @pytest.mark.asyncio
-async def test_reproducer_corrupted_registry_directory_blocks_ready(pg_engine, tmp_path, monkeypatch):
+async def test_reproducer_corrupted_registry_directory_blocks_ready(
+    pg_engine, tmp_path, monkeypatch
+):
     """Proves that corrupted or inaccessible registry files cause fail-closed rejection."""
     tracking_dir = tmp_path / "tracking_corrupt"
     tracking_dir.mkdir(parents=True, exist_ok=True)
@@ -353,7 +361,9 @@ async def test_reproducer_corrupted_registry_directory_blocks_ready(pg_engine, t
 
 
 @pytest.mark.asyncio
-async def test_reproducer_unresolved_legacy_execution_blocks_ready(pg_engine, tmp_path, monkeypatch):
+async def test_reproducer_unresolved_legacy_execution_blocks_ready(
+    pg_engine, tmp_path, monkeypatch
+):
     """Proves that pre-existing unresolved or unattributed legacy executions block READY."""
     tracking_dir = tmp_path / "tracking_legacy"
     tracking_dir.mkdir(parents=True, exist_ok=True)
@@ -606,7 +616,9 @@ def _issue_kwargs(org_id: str, digest: str = "a" * 64, key: str | None = None, *
 
 
 @pytest.mark.asyncio
-async def test_reproducer_credential_fencing_matrix_full_verification(pg_engine, tmp_path, monkeypatch):
+async def test_reproducer_credential_fencing_matrix_full_verification(
+    pg_engine, tmp_path, monkeypatch
+):
     """Direct integration test against Phase7AAuthorityKernel verifying all 7 credential fencing scenarios."""
     tracking_dir = tmp_path / "tracking_kernel"
     tracking_dir.mkdir(parents=True, exist_ok=True)
@@ -618,7 +630,13 @@ async def test_reproducer_credential_fencing_matrix_full_verification(pg_engine,
 
     # Setup base organizations in Store A
     async with pg_engine.raw.begin() as conn:
-        for org_id in ["org-s123", "org-s4-revoked", "org-s5-tombstone", "org-s6-consumed", "org-s7-stale"]:
+        for org_id in [
+            "org-s123",
+            "org-s4-revoked",
+            "org-s5-tombstone",
+            "org-s6-consumed",
+            "org-s7-stale",
+        ]:
             await conn.execute(
                 insert(organizations).values(
                     id=org_id,
@@ -638,7 +656,13 @@ async def test_reproducer_credential_fencing_matrix_full_verification(pg_engine,
             )
 
     provider = InMemoryLifecycleStateProvider()
-    for org_id in ["org-s123", "org-s4-revoked", "org-s5-tombstone", "org-s6-consumed", "org-s7-stale"]:
+    for org_id in [
+        "org-s123",
+        "org-s4-revoked",
+        "org-s5-tombstone",
+        "org-s6-consumed",
+        "org-s7-stale",
+    ]:
         provider.record_state(
             LifecycleStateRecord(
                 tenant_id=org_id,
@@ -655,9 +679,15 @@ async def test_reproducer_credential_fencing_matrix_full_verification(pg_engine,
     # -------------------------------------------------------------
     issued_123 = await kernel.issue(**_issue_kwargs("org-s123"))
     assert issued_123.observed_epoch == 5
-    await kernel.acquire_lease(request_id=issued_123.request_id, worker_id="w-1", organization_id="org-s123")
-    await kernel.admit(request_id=issued_123.request_id, worker_id="w-1", organization_id="org-s123")
-    claim_123 = await kernel.claim_backend_start(request_id=issued_123.request_id, worker_id="w-1", organization_id="org-s123")
+    await kernel.acquire_lease(
+        request_id=issued_123.request_id, worker_id="w-1", organization_id="org-s123"
+    )
+    await kernel.admit(
+        request_id=issued_123.request_id, worker_id="w-1", organization_id="org-s123"
+    )
+    claim_123 = await kernel.claim_backend_start(
+        request_id=issued_123.request_id, worker_id="w-1", organization_id="org-s123"
+    )
     assert claim_123.organization_id == "org-s123"
 
     # -------------------------------------------------------------
@@ -665,7 +695,9 @@ async def test_reproducer_credential_fencing_matrix_full_verification(pg_engine,
     # -------------------------------------------------------------
     issued_4 = await kernel.issue(**_issue_kwargs("org-s4-revoked"))
     assert issued_4.observed_epoch == 5
-    await kernel.acquire_lease(request_id=issued_4.request_id, worker_id="w-4", organization_id="org-s4-revoked")
+    await kernel.acquire_lease(
+        request_id=issued_4.request_id, worker_id="w-4", organization_id="org-s4-revoked"
+    )
     # Later revocation recorded in Store B (floor elevated to 8)
     provider.record_state(
         LifecycleStateRecord(
@@ -682,13 +714,17 @@ async def test_reproducer_credential_fencing_matrix_full_verification(pg_engine,
     await reconciler.reconcile_post_restore("reconciler-p0")
     # Verification of credential issued at epoch 5 must be rejected
     with pytest.raises(AuthorizationIneligibleError, match="Authorization epoch mismatch"):
-        await kernel.admit(request_id=issued_4.request_id, worker_id="w-4", organization_id="org-s4-revoked")
+        await kernel.admit(
+            request_id=issued_4.request_id, worker_id="w-4", organization_id="org-s4-revoked"
+        )
 
     # -------------------------------------------------------------
     # Scenario 5: Tenant lifecycle state is TOMBSTONED
     # -------------------------------------------------------------
     issued_5 = await kernel.issue(**_issue_kwargs("org-s5-tombstone"))
-    await kernel.acquire_lease(request_id=issued_5.request_id, worker_id="w-5", organization_id="org-s5-tombstone")
+    await kernel.acquire_lease(
+        request_id=issued_5.request_id, worker_id="w-5", organization_id="org-s5-tombstone"
+    )
     # Store B marks tenant as TOMBSTONED
     provider.record_state(
         LifecycleStateRecord(
@@ -704,17 +740,25 @@ async def test_reproducer_credential_fencing_matrix_full_verification(pg_engine,
     await reconciler.reconcile_post_restore("reconciler-p0")
     # Verifier must reject because organization is disabled / quarantined
     with pytest.raises(AuthorityKernelError, match="Organization is not ACTIVE"):
-        await kernel.admit(request_id=issued_5.request_id, worker_id="w-5", organization_id="org-s5-tombstone")
+        await kernel.admit(
+            request_id=issued_5.request_id, worker_id="w-5", organization_id="org-s5-tombstone"
+        )
 
     # -------------------------------------------------------------
     # Scenario 6: A grant was already consumed before backup / nonce replayed
     # -------------------------------------------------------------
     issued_6 = await kernel.issue(**_issue_kwargs("org-s6-consumed"))
-    await kernel.acquire_lease(request_id=issued_6.request_id, worker_id="w-6", organization_id="org-s6-consumed")
-    await kernel.admit(request_id=issued_6.request_id, worker_id="w-6", organization_id="org-s6-consumed")
+    await kernel.acquire_lease(
+        request_id=issued_6.request_id, worker_id="w-6", organization_id="org-s6-consumed"
+    )
+    await kernel.admit(
+        request_id=issued_6.request_id, worker_id="w-6", organization_id="org-s6-consumed"
+    )
     # 6a: Attempting to admit an already consumed authorization
     with pytest.raises(AuthorizationIneligibleError, match="Authorization is not ISSUED"):
-        await kernel.admit(request_id=issued_6.request_id, worker_id="w-6", organization_id="org-s6-consumed")
+        await kernel.admit(
+            request_id=issued_6.request_id, worker_id="w-6", organization_id="org-s6-consumed"
+        )
     # 6b: If authorization status was forcibly reset to ISSUED in DB, nonce uniqueness still blocks it
     async with pg_engine.raw.begin() as conn:
         await conn.execute(
@@ -728,13 +772,17 @@ async def test_reproducer_credential_fencing_matrix_full_verification(pg_engine,
             .values(state=AttemptState.LEASED.value)
         )
     with pytest.raises(AuthorizationIneligibleError, match="Oneshot authority already consumed"):
-        await kernel.admit(request_id=issued_6.request_id, worker_id="w-6", organization_id="org-s6-consumed")
+        await kernel.admit(
+            request_id=issued_6.request_id, worker_id="w-6", organization_id="org-s6-consumed"
+        )
 
     # -------------------------------------------------------------
     # Scenario 7: Stale authorization survives backup snapshot (expired or stale epoch)
     # -------------------------------------------------------------
     issued_7 = await kernel.issue(**_issue_kwargs("org-s7-stale"))
-    await kernel.acquire_lease(request_id=issued_7.request_id, worker_id="w-7", organization_id="org-s7-stale")
+    await kernel.acquire_lease(
+        request_id=issued_7.request_id, worker_id="w-7", organization_id="org-s7-stale"
+    )
     # 7a: Expired authorization
     async with pg_engine.raw.begin() as conn:
         await conn.execute(
@@ -743,7 +791,9 @@ async def test_reproducer_credential_fencing_matrix_full_verification(pg_engine,
             .values(expires_at=now - timedelta(seconds=60))
         )
     with pytest.raises(AuthorizationIneligibleError, match="Authorization expired"):
-        await kernel.admit(request_id=issued_7.request_id, worker_id="w-7", organization_id="org-s7-stale")
+        await kernel.admit(
+            request_id=issued_7.request_id, worker_id="w-7", organization_id="org-s7-stale"
+        )
 
     # 7b: Stale issuer epoch
     async with pg_engine.raw.begin() as conn:
@@ -753,13 +803,17 @@ async def test_reproducer_credential_fencing_matrix_full_verification(pg_engine,
             .values(expires_at=now + timedelta(seconds=60), issuer_epoch=1)
         )
     with pytest.raises(AuthorizationIneligibleError, match="Authorization epoch mismatch"):
-        await kernel.admit(request_id=issued_7.request_id, worker_id="w-7", organization_id="org-s7-stale")
+        await kernel.admit(
+            request_id=issued_7.request_id, worker_id="w-7", organization_id="org-s7-stale"
+        )
 
     tracking.InFlightExecutionRegistry.reset_instance()
 
 
 @pytest.mark.asyncio
-async def test_reproducer_task1_unresolved_execution_file_absent_fails_closed(pg_engine, tmp_path, monkeypatch):
+async def test_reproducer_task1_unresolved_execution_file_absent_fails_closed(
+    pg_engine, tmp_path, monkeypatch
+):
     """Task 1: Unresolved execution with absent tracking file and no callback MUST fail closed.
 
     Ensures that file absence, PID death, and callback absence are NOT treated as containment
@@ -893,7 +947,9 @@ async def test_reproducer_task2_store_b_empty_fails_closed_preserves_authority_d
     reconciler = RestoreReconciliationEngine(pg_engine, lifecycle_provider=provider, gate=gate)
 
     # Default call to reconcile_post_restore (fail_closed_on_unestablished_tenant=True by default)
-    with pytest.raises(RestoreReconciliationError, match="lacking authoritative Store B lifecycle record"):
+    with pytest.raises(
+        RestoreReconciliationError, match="lacking authoritative Store B lifecycle record"
+    ):
         await reconciler.reconcile_post_restore("task2-test")
 
     assert gate.state != RestoreReadinessState.READY
@@ -903,8 +959,9 @@ async def test_reproducer_task2_store_b_empty_fails_closed_preserves_authority_d
     async with pg_engine.raw.begin() as conn:
         org_row = (
             await conn.execute(
-                select(organizations.c.governance_status, organizations.c.name)
-                .where(organizations.c.id == "tenant-task2-active")
+                select(organizations.c.governance_status, organizations.c.name).where(
+                    organizations.c.id == "tenant-task2-active"
+                )
             )
         ).fetchone()
         assert org_row[0] == "DISABLED"
@@ -913,7 +970,9 @@ async def test_reproducer_task2_store_b_empty_fails_closed_preserves_authority_d
         # CRITICAL SAFETY CHECK: Customer authority data MUST be preserved (NOT deleted!)
         policy_row = (
             await conn.execute(
-                select(governance_policies.c.id).where(governance_policies.c.org_id == "tenant-task2-active")
+                select(governance_policies.c.id).where(
+                    governance_policies.c.org_id == "tenant-task2-active"
+                )
             )
         ).fetchone()
         assert policy_row is not None and policy_row[0] == "policy-task2"
@@ -927,7 +986,9 @@ async def test_reproducer_task2_store_b_empty_fails_closed_preserves_authority_d
 
         app_row = (
             await conn.execute(
-                select(governance_approvals.c.id).where(governance_approvals.c.org_id == "tenant-task2-active")
+                select(governance_approvals.c.id).where(
+                    governance_approvals.c.org_id == "tenant-task2-active"
+                )
             )
         ).fetchone()
         assert app_row is not None and app_row[0] == "app-task2"
@@ -950,6 +1011,7 @@ async def test_reproducer_task3_persistent_admission_proof_across_restart(tmp_pa
 
     # Simulate process crash and restart: reset global gate
     from responsibleai.data_governance import backup_defense
+
     backup_defense.set_restore_readiness_gate(None)
 
     # 1. Independent gate initialized as READY by a new process must NOT admit traffic!
@@ -969,6 +1031,7 @@ async def test_reproducer_task3_persistent_admission_proof_across_restart(tmp_pa
     from responsibleai.iam.guard import PrivilegedSurfaceGuard
     from responsibleai.iam.models import PrivilegedCallerContext
     from responsibleai.rbac.models import Role
+
     with pytest.raises(RestoreQuarantineError, match="FAILED"):
         iam_guard = PrivilegedSurfaceGuard.__new__(PrivilegedSurfaceGuard)
         caller = PrivilegedCallerContext(
@@ -985,6 +1048,7 @@ async def test_reproducer_task3_persistent_admission_proof_across_restart(tmp_pa
 
     # Subsystem B: Data Governance TenantDeletionOrchestrator
     from responsibleai.data_governance.deletion_orchestrator import TenantDeletionOrchestrator
+
     with pytest.raises(RestoreQuarantineError, match="FAILED"):
         del_orch = TenantDeletionOrchestrator.__new__(TenantDeletionOrchestrator)
         await del_orch.delete_tenant(
@@ -1016,6 +1080,7 @@ async def test_reproducer_p0_01_corrupt_store_b_at_startup_fails_closed(tmp_path
     monkeypatch.delenv("WHITEPACT_RESTORE_PENDING", raising=False)
 
     from responsibleai.data_governance import backup_defense
+
     backup_defense.set_restore_readiness_gate(None)
 
     gate = backup_defense.get_restore_readiness_gate()
@@ -1082,7 +1147,9 @@ async def test_reproducer_p0_02_quarantined_tenant_detached_unresolved_blocks_re
     gate = RestoreReadinessGate(initial_state=RestoreReadinessState.RESTORE_PENDING)
     reconciler = RestoreReconciliationEngine(pg_engine, lifecycle_provider=provider, gate=gate)
 
-    with pytest.raises(RestoreReconciliationError, match="Containment unconfirmed for quarantined tenant"):
+    with pytest.raises(
+        RestoreReconciliationError, match="Containment unconfirmed for quarantined tenant"
+    ):
         await reconciler.reconcile_post_restore("p0-02-auditor")
 
     assert gate.state != RestoreReadinessState.READY
@@ -1091,7 +1158,9 @@ async def test_reproducer_p0_02_quarantined_tenant_detached_unresolved_blocks_re
 
 
 @pytest.mark.asyncio
-async def test_reproducer_p0_04_crash_consistency_database_status_never_prematurely_reconciled(pg_engine, monkeypatch):
+async def test_reproducer_p0_04_crash_consistency_database_status_never_prematurely_reconciled(
+    pg_engine, monkeypatch
+):
     """Proves that PostgreSQL status is never marked RECONCILED before containment completes, and failures record FAILED cleanly."""
     now = datetime.now(UTC).isoformat()
     org_id = f"org-crash-{uuid.uuid4().hex[:8]}"
@@ -1201,7 +1270,9 @@ async def test_reproducer_p0_05_multiprocess_authority_consistency(tmp_path, mon
 
 
 @pytest.mark.asyncio
-async def test_adversarial_p0_01_detached_alive_container_without_tracking_fails_closed(pg_engine, tmp_path, monkeypatch):
+async def test_adversarial_p0_01_detached_alive_container_without_tracking_fails_closed(
+    pg_engine, tmp_path, monkeypatch
+):
     """Adversarial P0-01: Proves that a detached container whose tracking file disappears
     remains in _unresolved and blocks READY until Docker authoritatively establishes termination.
     """
@@ -1353,7 +1424,11 @@ async def test_adversarial_p0_01_docker_timeout_daemon_failure_fails_closed(tmp_
 
     # 2. Simulate Docker daemon error
     def mock_daemon_error(cmd, *args, **kwargs):
-        raise subprocess.CalledProcessError(1, cmd, stderr="Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?")
+        raise subprocess.CalledProcessError(
+            1,
+            cmd,
+            stderr="Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?",
+        )
 
     monkeypatch.setattr(subprocess, "run", mock_daemon_error)
 

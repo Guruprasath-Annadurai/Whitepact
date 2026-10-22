@@ -70,8 +70,11 @@ async def test_actual_execute_preserves_cancellation_and_containment(tmp_path, c
         wrapper.chmod(0o700)
         backend = DockerContainerBackend(docker_cmd=str(wrapper))
     request = IsolatedExecutionRequest(
-        action_id="native-cancel", organization_id=org, action_type="test.harmless",
-        arguments={}, profile=IsolationProfile(resources=ResourceLimits(wall_timeout_seconds=30)),
+        action_id="native-cancel",
+        organization_id=org,
+        action_type="test.harmless",
+        arguments={},
+        profile=IsolationProfile(resources=ResourceLimits(wall_timeout_seconds=30)),
         workspace_files={"runner.py": "import time\ntime.sleep(60)\n"},
     )
     registry = tracking.InFlightExecutionRegistry.get_instance()
@@ -113,13 +116,17 @@ async def test_actual_worker_exit_does_not_clear_running_container(tmp_path):
     name = f"wp_iso_{org}_owned"
     image = os.environ["WHITEPACT_ISOLATION_IMAGE"]
     child = await asyncio.create_subprocess_exec(
-        sys.executable, "-c",
+        sys.executable,
+        "-c",
         "import json,os,subprocess,sys; "
         "cid=subprocess.check_output([sys.argv[1],'run','-d','--name',sys.argv[2],"
         "'--entrypoint','python',sys.argv[3],'-c','import time;time.sleep(90)'],text=True); "
         "print(json.dumps({'pid':os.getpid(),'container':cid.strip()}))",
-        shutil.which("docker"), name, image,
-        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+        shutil.which("docker"),
+        name,
+        image,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
     )
     try:
         stdout, stderr = await asyncio.wait_for(child.communicate(), timeout=30)
@@ -128,9 +135,15 @@ async def test_actual_worker_exit_does_not_clear_running_container(tmp_path):
         assert docker("inspect", "-f", "{{.State.Running}}", result["container"]) == "true"
         tracking._ensure_distributed_dir()
         record = tracking._DISTRIBUTED_REGISTRY_DIR / f"{org}_execution.json"
-        record.write_text(json.dumps({
-            "organization_id": org, "execution_id": "execution", "pid": result["pid"],
-        }))
+        record.write_text(
+            json.dumps(
+                {
+                    "organization_id": org,
+                    "execution_id": "execution",
+                    "pid": result["pid"],
+                }
+            )
+        )
         registry = tracking.InFlightExecutionRegistry.get_instance()
         assert registry.has_unresolved(org)
         assert record.exists()
@@ -154,8 +167,11 @@ async def test_actual_tracking_directory_write_denial_terminates_owned_container
     org = f"abs-write-{uuid.uuid4().hex}"
     try:
         request = IsolatedExecutionRequest(
-            action_id="native-write-denial", organization_id=org, action_type="test.harmless",
-            arguments={}, profile=IsolationProfile(resources=ResourceLimits(wall_timeout_seconds=30)),
+            action_id="native-write-denial",
+            organization_id=org,
+            action_type="test.harmless",
+            arguments={},
+            profile=IsolationProfile(resources=ResourceLimits(wall_timeout_seconds=30)),
             workspace_files={"runner.py": "import time\ntime.sleep(60)\n"},
         )
         outcome = await asyncio.wait_for(DockerContainerBackend().execute(request), timeout=25)

@@ -51,9 +51,7 @@ async def test_01_sigterm_resistant_subprocess_escalates_to_sigkill() -> None:
 
     # Tool code that traps and ignores SIGTERM, running for 10s
     _resistant_code = (
-        "import signal, time\n"
-        "signal.signal(signal.SIGTERM, signal.SIG_IGN)\n"
-        "time.sleep(10.0)\n"
+        "import signal, time\nsignal.signal(signal.SIGTERM, signal.SIG_IGN)\ntime.sleep(10.0)\n"
     )
 
     req = IsolatedExecutionRequest(
@@ -193,7 +191,9 @@ async def test_05_container_daemon_disconnection_treated_as_unresolved(monkeypat
     # Simulate Docker backend termination callback encountering daemon disconnect
     def _disconnected_docker_rm():
         # subprocess returns non-zero with daemon connection error
-        raise RuntimeError("Docker rm -f failed: Cannot connect to the Docker daemon at unix:///var/run/docker.sock")
+        raise RuntimeError(
+            "Docker rm -f failed: Cannot connect to the Docker daemon at unix:///var/run/docker.sock"
+        )
 
     await registry.register(
         execution_id=exec_id,
@@ -224,7 +224,9 @@ async def test_06_docker_inspection_failures_fail_closed() -> None:
 
     def _failing_inspect_callback():
         # Inspection failed with unexpected error code
-        raise RuntimeError("Docker inspect failed authoritatively confirming containment: permission denied")
+        raise RuntimeError(
+            "Docker inspect failed authoritatively confirming containment: permission denied"
+        )
 
     await registry.register(
         execution_id=exec_id,

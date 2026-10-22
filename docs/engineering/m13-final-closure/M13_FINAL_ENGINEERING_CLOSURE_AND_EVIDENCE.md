@@ -385,3 +385,29 @@ historical assertion remains unchanged and OPEN.
   Antigravity acceptance are pending, not inherited from earlier commits.
 - The historical outage-recovery assertion is unchanged: the latest approval
   authorizes only the two specified runtime corrections, not an outage disposition.
+
+### Subsequent founder-approved recovery/enrollment convergence
+
+The preceding checkpoint is historical. Publication of e4f3f128 was recovered
+through approved network access; PR223 remained OPEN DRAFT. The founder then
+explicitly authorized the post-reconnection503 disposition, durable Store B
+startup fixture, legitimate new-workspace-owner recycled-identifier fixture and
+the exact14-file formatting allowlist. These approvals do not weaken production
+authority, recovery, WebAuthn, revocation or containment policy.
+
+Current integrated evidence and remaining requirements are recorded in
+`M13_FINAL_INTEGRATED_CLOSURE_CANDIDATE.md`. The immutable formatting manifest is
+`M13_APPROVED_14_FILE_FORMATTING.md`; every original/revised blob, complete AST,
+comments/directives and exact source relationship is checked. Existing independent
+reproducer and cancellation provenance checks remain in place. Full-history
+checkout is required so CI can actually retrieve the historical originals.
+
+Real PostgreSQL16.15 receipts demonstrate post-outage denial/no new grants,
+customer self-reconciliation rejection, preserved owner-quorum/rollback checks,
+and genuine concurrent completion with exactly one persisted root. These are
+not positive authorized operator recovery proof: the public reconciliation
+endpoint remains qualification-blocked. No automatic FAILED-to-READY transition
+or fake operator assurance was introduced. Strict-default external identity
+assurance and independent Antigravity acceptance remain separate requirements.
+
+M13 remains OPEN, statusC; GLOBAL PRODUCTION NO-GO; M14 NOT AUTHORIZED.
