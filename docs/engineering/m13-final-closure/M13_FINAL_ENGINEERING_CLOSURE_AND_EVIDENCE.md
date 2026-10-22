@@ -98,3 +98,50 @@ Antigravity review. Mandatory failures remain, not just human acceptance.
 No main merge, force push, release/package publication, deployment, cloud/DNS
 mutation, paid provisioning, public restore activation or M14.
 M13 OPEN — GLOBAL PRODUCTION NO-GO.
+
+## Red-to-Green execution update (2026-10-22)
+
+- Corrected fixture source890ad7a0e89fb436955aac325fdee302748da456 was
+  actually checked out in runtime run39735534564 (verified checkout/source logs).
+  Artifact labels contain synthetic PR merge SHA f0749756 and must not be used
+  as the tested source. Parsed restore JUnit:4PASS on each interpreter, including
+  uncertainty denial. Contended-registry original passes. Runtime3.12 is
+  54PASS/1FAIL(plugin);3.11 is53PASS/2FAIL(plugin plus a different original
+  cleanup-after-cancellation case). No blanket runtime PASS is claimed.
+- Added exact historical source-process test atd1f6f748b3f296e94505330d1f30a243bf159680.
+  It archives the actualbff5f143 source, starts its real ASGI lifespan in a
+  separate interpreter against migrated0066 and requires incompatible startup
+  refusal before serving. Dedicated run39735880980 passed both interpreters;
+  exact-source manifests and historical JUnit downloaded to
+  `/private/tmp/m13-redgreen-historical-d1f6f748`. This covers that ancestor,
+  not every historical release or production credential retirement.
+- Root-hardening original baseline:9FAIL/4PASS on3.12; missing recent ownerUV.
+  Fixtures now enroll and authenticate actual test signing keys through
+  IdentitySecurityService, retain the server session binding, sign root PoP,
+  request exact-operation challenges and advance authenticator counters.
+  No PASSKEY_UV facts or generic verification flags are written directly.
+  The original39 assert ASTs remain identical. Current complete module:
+  **13PASS/0FAIL/0SKIP on3.12 (40.22s) and3.11 (30.60s)**. Earlier incremental
+  attempts6FAIL/7PASS are preserved; they exposed missing operation assertions
+  and a nonadvancing test counter, not missing production authentication checks.
+  Receipts `/private/tmp/m13-redgreen-root-qualified-counters-py312.xml` andpy311.
+- Static cleanup uses explicit unused bindings rather than removing effectful
+  calls, removes unused imports (preserving imported pytest fixture via explicit
+  re-export), and normalizes nonprotected import order and literal encodings.
+  No original security assertion removed or weakened. Broader Ruff fell from188
+  to11 remaining findings:4immutable independent import-order issues and7blind
+  exception assertions. These are OPEN, not excluded from final qualification.
+  One SDK timeout test calls nonexistent `get_compliance_report()` and accepts
+  AttributeError as success under broad Exception. A narrow correction was
+  requested; it is not accepted as actual timeout proof.
+- Added native pre-START crash probes at before-CREATE, after-CREATE/before
+  acknowledgement and acknowledged/before-START. Pause hooks exist only in
+  the disposable test-worker script; actual backend CREATE, PostgreSQL journal,
+  Docker identity and labels are exercised. Cleanup targets only a fullCID
+  independently checked against exact tenant/execution/generation labels.
+  Execution of these additional cases is PENDING; no native PASS transferred.
+
+Founder decisions still pending include the plugin fixture seam correction;
+further protected-test disposition, authentic historical DCO and legal policy
+must remain explicit. Remaining actionable engineering/full matrix and
+independent qualification are not complete. No production or M14 authority.

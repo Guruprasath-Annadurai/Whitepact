@@ -12,11 +12,9 @@ Verifies:
 
 from __future__ import annotations
 
-import asyncio
 import hashlib
-import json
-import secrets
 import uuid
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -27,39 +25,25 @@ from cryptography.hazmat.primitives.serialization import (
     PublicFormat,
 )
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import insert, select, update
+from sqlalchemy import select, update
 
 from responsibleai.dashboard.app import app, limiter, settings
 from responsibleai.db.engine import (
     authority_containment_records,
-    authority_recovery_requests,
-    authority_recovery_votes,
     authority_step_up_challenges,
-    governance_consent_proofs,
-    governance_delegations,
-    governance_root_authority_records,
     passkey_credentials,
-    trust_fabric_bootstrap_records,
     trust_fabric_principals,
-    trust_fabric_trust_roots,
     web_memberships,
-    web_users,
 )
 from responsibleai.db.revocation_epoch_repository import RevocationEpochRepository
 from responsibleai.db.web_identity_repository import WebIdentityRepository
 from responsibleai.enterprise.authority.errors import (
     ALREADY_VOTED,
-    BOOTSTRAP_TOKEN_EXPIRED,
-    BOOTSTRAP_TOKEN_REPLAY,
-    CONTAINMENT_FORBIDDEN,
-    CONTAINMENT_INVALID_TARGET,
     PASSKEY_STEP_UP_REQUIRED,
     PROOF_OF_POSSESSION_INVALID,
     QUORUM_NOT_MET,
     RECOVERY_ALREADY_EXECUTED,
     RECOVERY_DIGEST_MISMATCH,
-    RECOVERY_EXPIRED,
-    RECOVERY_REQUEST_NOT_FOUND,
     SELF_APPROVAL_BLOCKED,
     UNAUTHORIZED_BOOTSTRAP_CALLER,
     WEBAUTHN_ASSERTION_INVALID,
@@ -71,17 +55,22 @@ from responsibleai.enterprise.authority.service import (
     compute_canonical_operation_digest,
     verify_root_proof_of_possession,
 )
-from responsibleai.enterprise.runtime import get_enterprise_engine
+from responsibleai.enterprise.runtime import configure_enterprise, get_enterprise_engine
+from responsibleai.enterprise.security.policy import SensitiveAction
+from responsibleai.enterprise.security.service import IdentitySecurityService
 from responsibleai.enterprise.security.webauthn import b64url_decode, b64url_encode
-from responsibleai.enterprise.runtime import configure_enterprise
 from responsibleai.enterprise.service import Actor, EnterpriseIAM
 from responsibleai.rbac.models import Role
-from tests.webauthn_fakes import assertion_blob, client_data
+from tests.webauthn_fakes import assertion_blob, registration_blob
+
+_OWNER_SIGNERS = {}
 
 
 @pytest.fixture(autouse=True)
 async def _configure_test_env(monkeypatch: pytest.MonkeyPatch, tmp_path):
     from responsibleai.db.engine import create_engine
+
+    monkeypatch.setitem(globals(), "_OWNER_SIGNERS", {})
 
     db_file = tmp_path / "m12fs_test.db"
     db_url = f"sqlite+aiosqlite:///{db_file}"
@@ -135,6 +124,51 @@ async def _create_test_owner(email: str = "founder@m12fs.com", org_slug: str = "
         role=Role.OWNER,
         membership_status="ACTIVE",
     )
+    # Qualify the owner through the real enrollment and UV-authentication
+    # services. Never seed PASSKEY_UV/session assurance or bypass the owner gate.
+    identity = IdentitySecurityService(engine, origin="http://localhost", rp_id="localhost")
+    _, _, password_session = await identity.load_session(session_token)
+    owner_key = ec.generate_private_key(ec.SECP256R1())
+    registration = await identity.begin_webauthn(
+        user_id=user_id,
+        session_id=password_session.session_id,
+        ceremony="register",
+        org_id=org_id,
+    )
+    cdata, auth_data, credential, _ = registration_blob(
+        rp_id="localhost",
+        origin="http://localhost",
+        challenge=b64url_decode(registration["challenge"]),
+        private_key=owner_key,
+    )
+    grant = await identity.issue_step_up(
+        password_session, SensitiveAction.ADD_PASSKEY, org_id=org_id
+    )
+    await identity.finish_passkey_registration(
+        user_id=user_id,
+        session=password_session,
+        client_data_b64=cdata,
+        authenticator_data_b64=auth_data,
+        grant=grant,
+    )
+    authentication = await identity.begin_webauthn(
+        user_id=None, session_id=None, ceremony="authenticate"
+    )
+    cdata, auth_data, signature = assertion_blob(
+        rp_id="localhost",
+        origin="http://localhost",
+        challenge=b64url_decode(authentication["challenge"]),
+        private_key=owner_key,
+    )
+    session_token, csrf_token, session = await identity.authenticate_passkey(
+        client_data_b64=cdata,
+        authenticator_data_b64=auth_data,
+        signature_b64=signature,
+        credential_id=credential,
+        org_id=org_id,
+    )
+    actor = replace(actor, session_id=session.session_id)
+    _OWNER_SIGNERS[user_id] = (owner_key, credential)
     return actor, user_id, org_id, session_token, csrf_token
 
 
@@ -176,6 +210,55 @@ def _register_fake_passkey(user_id: str, rp_id: str = "localhost"):
     cred_id_b64 = b64url_encode(cred_id)
     pub_b64 = b64url_encode(uncompressed)
     return private_key, cred_id_b64, pub_b64
+
+
+def _fresh_root_proof(org_id, ceremony):
+    private = ed25519.Ed25519PrivateKey.generate()
+    public = private.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw).hex()
+    token_hash = hashlib.sha256(ceremony["token"].encode()).hexdigest()
+    message = f"WP_ROOT_POP:{org_id}:{ceremony['nonce']}:{token_hash}".encode()
+    return public, b64url_encode(private.sign(message))
+
+
+async def _root_operation_assertion(svc, actor, ceremony, public):
+    private, credential = _OWNER_SIGNERS[actor.user_id]
+    digest = compute_canonical_operation_digest(
+        "COMPLETE_ROOT_BOOTSTRAP",
+        {
+            "org_id": actor.org_id,
+            "nonce": ceremony["nonce"],
+            "token_hash": hashlib.sha256(ceremony["token"].encode()).hexdigest(),
+            "root_public_key": public,
+        },
+    )
+    challenge = await svc.create_authority_stepup_challenge(
+        actor,
+        org_id=actor.org_id,
+        action="COMPLETE_ROOT_BOOTSTRAP",
+        operation_digest=digest,
+    )
+    client, authenticator, signature = assertion_blob(
+        rp_id=challenge["rp_id"],
+        origin=challenge["origin"],
+        challenge=b64url_decode(challenge["challenge"]),
+        private_key=private,
+        sign_count=2,  # Initial owner authentication consumed counter 1.
+    )
+    return {
+        "credential_id": credential,
+        "client_data_json": client,
+        "authenticator_data": authenticator,
+        "signature": signature,
+    }
+
+
+async def _qualified_bootstrap_arguments(svc, actor, ceremony):
+    public, signature = _fresh_root_proof(actor.org_id, ceremony)
+    return {
+        "root_public_key": public,
+        "root_signature": signature,
+        "webauthn_assertion": await _root_operation_assertion(svc, actor, ceremony, public),
+    }
 
 
 async def _create_containment_assertion(
@@ -298,7 +381,7 @@ async def test_bootstrap_with_valid_passkey_stepup_succeeds():
         actor, org_id=org_id, require_passkey_stepup=True
     )
 
-    root_key = "test_ed25519_root_public_key"
+    root_key, root_signature = _fresh_root_proof(org_id, init_res)
     token_hash = hashlib.sha256(init_res["token"].encode("utf-8")).hexdigest()
     op_digest = compute_canonical_operation_digest(
         "COMPLETE_ROOT_BOOTSTRAP",
@@ -340,6 +423,7 @@ async def test_bootstrap_with_valid_passkey_stepup_succeeds():
         root_public_key=root_key,
         scope_description="Step-up protected scope",
         purpose="Step-up root creation",
+        root_signature=root_signature,
         allowed_action_types=["admin:*"],
         allowed_targets=["*"],
         webauthn_assertion=assertion,
@@ -385,6 +469,7 @@ async def test_stepup_rejects_replayed_challenge():
     init_res = await svc.initiate_root_bootstrap(
         actor, org_id=org_id, require_passkey_stepup=True
     )
+    root_key, root_signature = _fresh_root_proof(org_id, init_res)
     token_hash = hashlib.sha256(init_res["token"].encode("utf-8")).hexdigest()
     op_digest = compute_canonical_operation_digest(
         "COMPLETE_ROOT_BOOTSTRAP",
@@ -392,7 +477,7 @@ async def test_stepup_rejects_replayed_challenge():
             "org_id": org_id,
             "nonce": init_res["nonce"],
             "token_hash": token_hash,
-            "root_public_key": "pubkey",
+            "root_public_key": root_key,
         },
     )
 
@@ -421,9 +506,10 @@ async def test_stepup_rejects_replayed_challenge():
         org_id=org_id,
         token=init_res["token"],
         nonce=init_res["nonce"],
-        root_public_key="pubkey",
+        root_public_key=root_key,
         scope_description="First",
         purpose="First",
+        root_signature=root_signature,
         allowed_action_types=["*"],
         allowed_targets=["*"],
         webauthn_assertion=assertion,
@@ -582,7 +668,7 @@ async def test_root_proof_of_possession_valid_and_forged():
     nonce = init_res["nonce"]
 
     # Valid PoP message signature
-    message = f"WP_ROOT_POP:{org_id}:{nonce}:{token_hash}".encode("utf-8")
+    message = f"WP_ROOT_POP:{org_id}:{nonce}:{token_hash}".encode()
     valid_sig = b64url_encode(ed_priv.sign(message))
 
     # Test verify_root_proof_of_possession directly
@@ -595,7 +681,7 @@ async def test_root_proof_of_possession_valid_and_forged():
     assert exc_info.value.code == PROOF_OF_POSSESSION_INVALID
 
     # Adversarial: Signature over tampered nonce
-    tampered_msg = f"WP_ROOT_POP:{org_id}:tampered_nonce:{token_hash}".encode("utf-8")
+    tampered_msg = f"WP_ROOT_POP:{org_id}:tampered_nonce:{token_hash}".encode()
     tampered_sig = b64url_encode(ed_priv.sign(tampered_msg))
     with pytest.raises(Exception) as exc_info2:
         verify_root_proof_of_possession(org_id, nonce, token_hash, pub_hex, tampered_sig)
@@ -613,6 +699,7 @@ async def test_root_proof_of_possession_valid_and_forged():
         allowed_action_types=["*"],
         allowed_targets=["*"],
         root_signature=valid_sig,
+        webauthn_assertion=await _root_operation_assertion(svc, actor, init_res, pub_hex),
     )
     assert complete_res["status"] == "BOOTSTRAPPED"
     assert complete_res["proof_of_possession_verified"] is True
@@ -653,7 +740,7 @@ async def test_reconcile_bootstrap_status_deterministic():
         org_id=org_id,
         token=init_res["token"],
         nonce=init_res["nonce"],
-        root_public_key="some_key",
+        **(await _qualified_bootstrap_arguments(svc, actor, init_res)),
         scope_description="Scope",
         purpose="Purpose",
         allowed_action_types=["read"],
@@ -684,7 +771,7 @@ async def test_emergency_agent_containment_quarantines_and_bumps_epoch():
         org_id=org_id,
         token=init_res["token"],
         nonce=init_res["nonce"],
-        root_public_key="key",
+        **(await _qualified_bootstrap_arguments(svc, actor, init_res)),
         scope_description="Scope",
         purpose="Purpose",
         allowed_action_types=["read", "write"],
@@ -758,7 +845,7 @@ async def test_emergency_organization_lockdown():
         org_id=org_id,
         token=init_res["token"],
         nonce=init_res["nonce"],
-        root_public_key="key",
+        **(await _qualified_bootstrap_arguments(svc, actor, init_res)),
         scope_description="Scope",
         purpose="Purpose",
         allowed_action_types=["*"],
@@ -833,7 +920,7 @@ async def test_quorum_recovery_full_lifecycle_2_of_3():
         org_id=org_id,
         token=init_res["token"],
         nonce=init_res["nonce"],
-        root_public_key="initial_key",
+        **(await _qualified_bootstrap_arguments(svc, owner, init_res)),
         scope_description="Scope",
         purpose="Purpose",
         allowed_action_types=["*"],
@@ -954,7 +1041,7 @@ async def test_quorum_pre_execution_deactivation_check():
         org_id=org_id,
         token=init_res["token"],
         nonce=init_res["nonce"],
-        root_public_key="k",
+        **(await _qualified_bootstrap_arguments(svc, owner, init_res)),
         scope_description="S",
         purpose="P",
         allowed_action_types=["*"],
