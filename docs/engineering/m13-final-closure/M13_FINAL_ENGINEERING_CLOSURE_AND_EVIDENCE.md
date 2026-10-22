@@ -175,3 +175,19 @@ independent qualification are not complete. No production or M14 authority.
   Those results do not qualify the next commit. DCO, customer journey, original
   independent security and full lint failures remain OPEN pending exact receipts
   and scoped dispositions. GLOBAL PRODUCTION NO-GO; M13 OPEN; M14 unauthorized.
+
+### Successor receipts and persisted-owner fixture
+
+- CA-bundle successor752d68ace0efd7d1d9e5404c01feff2cb3309b65/tree
+  e002863cdd9caae0e25b3000a7a8ddb0bb8c2611: security scan39740194707 SUCCESS.
+  Floor/default-TLS regressions3PASS on both local Python3.11/3.12;42SDK
+  transport/credential/package checks PASS on3.12. Full matrix39740255590
+  queued at inspection; no complete-suite success claimed.
+- Current independent root reproducer failed before its mutation because it
+  lacked verified owner WebAuthn. Its fixture now enrolls/authenticates through
+  IdentitySecurityService, retains the resulting server session, and obtains
+  an exact-operation assertion before revoking email/membership/organization.
+  No assurance flag or production repository state is seeded. All original
+  assertion ASTs remain identical. New positive control PASS on3.12; original
+  thirteen root-hardening tests13PASS. Real PostgreSQL reproduction of the
+  three persisted-revocation cases remains PENDING exact-head Linux CI.
