@@ -363,3 +363,25 @@ historical assertion remains unchanged and OPEN.
 - Full Ruff, actionlint, pinned-action checks PASS. Source/readiness rules remain
   unchanged. Independent Antigravity review and exact-head Linux/PG16 CI are
   mandatory before qualification. M13 OPEN; GLOBAL PRODUCTION NO-GO.
+
+### Follow-on inventory reconciliation and SDK checks
+
+- Reproduced duplicate sibling React keys in AgentInventoryPage: both authority
+  panels used the organization ID. The new regression failed (1 failed, 5 passed)
+  before correction. Distinct panel-prefixed keys retain organization-change
+  remounts without changing requests, authorization or authority state.
+- After correction: frontend ESLint PASS, Vitest 316 passed / 0 failed / 0 skipped,
+  TypeScript and production build PASS. No duplicate-key warning remains. Generated
+  bundled assets are rebuilt with the source; no browser/visual qualification is
+  inferred from these unit/build results.
+- Python SDK unit/contract/negative scope: 92 passed. Actual SDK wheel built and
+  installed offline into a separate clean virtual environment outside the checkout;
+  installed-package import, remote HTTP credential rejection and certifi floor pass.
+- TypeScript SDK compilation passes; complete unit run reports 36 passed, 20 failed,
+  0 skipped. Every failure encounters local `listen EPERM` on loopback. Those tests
+  remain unchanged and require real Linux execution; this is not a green SDK suite.
+- Go is absent from the local PATH; local race/package qualification remains blocked.
+  GitHub API status queries currently fail to connect. Exact-head CI and independent
+  Antigravity acceptance are pending, not inherited from earlier commits.
+- The historical outage-recovery assertion is unchanged: the latest approval
+  authorizes only the two specified runtime corrections, not an outage disposition.

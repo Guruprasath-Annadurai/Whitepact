@@ -12,6 +12,16 @@ function page(id: string) {
   return <MemoryRouter><Routes><Route element={<Outlet context={session(id)} />}><Route index element={<AgentInventoryPage />} /></Route></Routes></MemoryRouter>;
 }
 
+it("keeps authority panel identities distinct across organization changes", async () => {
+  const errors = vi.spyOn(console, "error");
+  vi.spyOn(window, "fetch").mockImplementation(async () => Response.json({ agents: [] }));
+  const { rerender } = render(page("org-a"));
+  await screen.findByText(/No agent registrations were returned by this read/);
+  rerender(page("org-b"));
+  await screen.findByText(/No agent registrations were returned by this read/);
+  expect(errors.mock.calls.filter((args) => args.some((value) => typeof value === "string" && /same key/.test(value)))).toEqual([]);
+});
+
 it("loads the actual session-addressed GET and renders only returned read fields", async () => {
   const fetch = vi.spyOn(window, "fetch").mockResolvedValue(Response.json({ agents: [record("org-a")] }));
   render(page("org-a"));
