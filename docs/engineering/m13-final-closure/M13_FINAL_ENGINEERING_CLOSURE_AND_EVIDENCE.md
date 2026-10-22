@@ -145,3 +145,33 @@ Founder decisions still pending include the plugin fixture seam correction;
 further protected-test disposition, authentic historical DCO and legal policy
 must remain explicit. Remaining actionable engineering/full matrix and
 independent qualification are not complete. No production or M14 authority.
+
+## Red-to-green CA-bundle remediation and native receipts
+
+- Exact prior head `30d0be53550fc95a595f567788cec90feea82ede`, tree
+  `674646ffc77f4b35adbeee40f1936a7a2ad112ff`, native run39738289826:
+  both Python3.11/3.12 artifacts independently record that head/tree/parent.
+  Each has35unit,19native,5cold,5migration,1historical tests:65PASS,
+  0FAIL/ERROR/SKIP. Five cold cases include the three new pre-START windows.
+  This supersedes only their PENDING execution note, not the full crash matrix.
+- Security run39738408701 failed on certifi2026.7.22/PYSEC-2026-4320.
+  The root package, independently distributed Python SDK and security-tool input
+  now require certifi>=2026.10.19. Both locks target2026.10.19; no unrelated
+  dependency version changed. TLS/hostname validation and transport code remain
+  unchanged. Upstream advisory GHSA-6q48-6c7w-9gw2 and OSV identify the compromised
+  CA trust issue; official PyPI artifact hashes match both generated locks.
+- New floor/lock regression tests first failed2/2 against the prior manifests.
+  Corrected Python3.12 tests pass3/3, including actual HTTPcore default context
+  loading the installed corrected bundle with CERT_REQUIRED/hostname checking.
+  `uv lock --check --offline`, hash-enforced tooling installation, `pip check`,
+  scoped Ruff/format/diff checks pass. Tooling-lock pip-audit reports no known
+  vulnerabilities (nonfatal advisory/cache warnings retained, not suppressed).
+- Broader local egress scope:109PASS/7FAIL; socket binding/DNS unavailable in
+  this execution environment. These are NOT waived or claimed green. Fresh
+  exact-head Linux CI remains required. Independent read-only patch review
+  found no concrete surviving bypass or legitimate regression.
+- Prior-head CodeQL/Gitleaks/SDK-package/product/Sovereign workflows succeeded;
+  runtime and independent integration failed, full matrix remained queued.
+  Those results do not qualify the next commit. DCO, customer journey, original
+  independent security and full lint failures remain OPEN pending exact receipts
+  and scoped dispositions. GLOBAL PRODUCTION NO-GO; M13 OPEN; M14 unauthorized.
