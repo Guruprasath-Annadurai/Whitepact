@@ -33,6 +33,7 @@ from unittest.mock import MagicMock
 
 import pytest
 from sqlalchemy import delete, insert, select, update
+from sqlalchemy.exc import IntegrityError
 
 from responsibleai.db import EvidenceRepository, create_engine
 from responsibleai.db.engine import governance_evidence, governance_evidence_chain_heads
@@ -271,7 +272,7 @@ async def test_10_replayed_evidence_nonce_rejected(engine):
     await repo.record(rec1)
 
     # Re-recording with identical evidence_id is rejected by primary key integrity
-    with pytest.raises(Exception):
+    with pytest.raises(IntegrityError, match="(?i)unique|duplicate"):
         await repo.record(rec1)
 
 

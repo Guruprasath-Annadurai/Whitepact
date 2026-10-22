@@ -191,3 +191,18 @@ independent qualification are not complete. No production or M14 authority.
   assertion ASTs remain identical. New positive control PASS on3.12; original
   thirteen root-hardening tests13PASS. Real PostgreSQL reproduction of the
   three persisted-revocation cases remains PENDING exact-head Linux CI.
+
+### Audit/backup assertion specificity
+
+- Original H3 blob882b5e7ad0965485867f337e8d86fba65f6024af and H4
+  e56029775e6746dd94a15bffa2a3508cd4deb296 remain available in parent history.
+  Three blind Exception assertions now require duplicate/unique IntegrityError
+  or SQLite's invalid-database DatabaseError. Focused tests3PASS on3.12.
+  Corrupt-file connections close explicitly. No acceptance of AttributeError,
+  unrelated setup failure or nonintegrity exception as a security success.
+- H4 tracking uses a temporary per-test directory, preserving every outer
+  unresolved record. This reproduced a distinct original fixture contract gap:
+  test07's callback returnsNone but expects confirmed termination. Full H3/H4
+  run39PASS/1FAIL on3.12. Production correctly retains uncertainty. Formal
+  disposition requested for explicit True success fixture plus additive None
+  negative test; original assertion not weakened or silently replaced.

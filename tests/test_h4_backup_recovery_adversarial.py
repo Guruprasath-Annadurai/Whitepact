@@ -31,9 +31,11 @@ import asyncio
 import shutil
 import sqlite3
 import uuid
+from contextlib import closing
 
 import pytest
 from sqlalchemy import delete, insert, select
+from sqlalchemy.exc import IntegrityError
 
 from responsibleai.data_governance.backup_defense import (
     InMemoryLifecycleStateProvider,
@@ -76,6 +78,18 @@ from responsibleai.governance.evidence_publication import (
 from responsibleai.isolation.in_flight import (
     InFlightExecutionRegistry,
 )
+
+
+@pytest.fixture(autouse=True)
+def isolated_execution_tracking(tmp_path, monkeypatch):
+    # A restored fixture must not inherit another test's unresolved execution.
+    # The outer tracking directory and all its records remain untouched.
+    monkeypatch.setattr(
+        "responsibleai.isolation.in_flight._DISTRIBUTED_REGISTRY_DIR", tmp_path / "tracking"
+    )
+    InFlightExecutionRegistry.reset_instance()
+    yield
+    InFlightExecutionRegistry.reset_instance()
 
 
 @pytest.fixture()
@@ -246,7 +260,7 @@ async def test_04_restored_database_replayed_nonces_rejected(db_engine):
         )
 
     # Attempt to replay the existing nonce after restore violates primary key
-    with pytest.raises(Exception):
+    with pytest.raises(IntegrityError, match="(?i)unique|duplicate"):
         async with db_engine.raw.begin() as conn:
             await conn.execute(
                 insert(governance_execution_nonces).values(
@@ -485,10 +499,10 @@ def test_13_corrupted_backup_archive_detected(tmp_path):
     corrupt_file = tmp_path / "corrupt_backup.tar.gz"
     corrupt_file.write_bytes(b"NOT_A_VALID_TAR_OR_SQLITE_STREAM")
 
-    with pytest.raises(Exception):
+    with pytest.raises(sqlite3.DatabaseError, match="file is not a database"):
         # sqlite3 connect on garbage file
-        conn = sqlite3.connect(str(corrupt_file))
-        conn.execute("SELECT count(*) FROM sqlite_master").fetchall()
+        with closing(sqlite3.connect(str(corrupt_file))) as conn:
+            conn.execute("SELECT count(*) FROM sqlite_master").fetchall()
 
 
 # Scenario 14: Incomplete restore fail-closed
