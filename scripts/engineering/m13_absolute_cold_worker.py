@@ -4,11 +4,13 @@
 
 import asyncio
 import os
+import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from responsibleai.db.engine import create_engine
 from responsibleai.enterprise.runtime import configure_enterprise
+from responsibleai.isolation import container_backend as backend_module
 from responsibleai.isolation import in_flight
 from responsibleai.isolation.container_backend import DockerContainerBackend
 from responsibleai.isolation.models import (
@@ -24,6 +26,35 @@ async def main() -> None:
     in_flight._DISTRIBUTED_REGISTRY_DIR = Path(os.environ["WP_ABSOLUTE_TRACKING"])
     backend = DockerContainerBackend()
     backend._containment_probe_enabled = True
+    # Disposable test-worker fault injection only; production has no such hook.
+    phase = os.environ.get("WP_ABSOLUTE_PAUSE_PHASE")
+    if phase:
+        marker = Path(os.environ["WP_ABSOLUTE_PHASE_FILE"])
+
+        def pause():
+            marker.write_text(phase, encoding="utf-8")
+            time.sleep(120)
+
+        create = backend._create_stopped_container
+
+        def paused_create(command, receipt):
+            if phase == "before_create":
+                pause()
+            cid = create(command, receipt)
+            if phase == "after_create":
+                pause()
+            return cid
+
+        backend._create_stopped_container = paused_create
+        start = backend_module.asyncio.create_subprocess_exec
+
+        async def paused_start(*command, **kwargs):
+            if phase == "before_start" and command[1] == "start":
+                marker.write_text(phase, encoding="utf-8")
+                await asyncio.sleep(120)
+            return await start(*command, **kwargs)
+
+        backend_module.asyncio.create_subprocess_exec = paused_start
     try:
         await backend.execute(
             IsolatedExecutionRequest(
