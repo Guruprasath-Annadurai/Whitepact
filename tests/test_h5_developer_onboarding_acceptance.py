@@ -141,7 +141,8 @@ async def test_04c_unrelated_errors_cannot_satisfy_timeout_proof(monkeypatch, ki
 
 
 @pytest.mark.asyncio
-async def test_04b_python_sdk_actual_read_deadline(monkeypatch):
+@pytest.mark.parametrize("deadline", [0.05, 2.0])
+async def test_04b_python_sdk_actual_read_deadline(monkeypatch, deadline):
     """A real local socket withholds the response; HTTPX must enforce its deadline."""
     monkeypatch.setenv("NO_PROXY", "127.0.0.1")
     accepted, release = asyncio.Event(), asyncio.Event()
@@ -152,17 +153,27 @@ async def test_04b_python_sdk_actual_read_deadline(monkeypatch):
         try:
             await reader.readuntil(b"\r\n\r\n")
             accepted.set()
-            await release.wait()
+            try:
+                await asyncio.wait_for(release.wait(), timeout=0.5)
+            except TimeoutError:
+                # An ignored read timeout would receive valid success instead.
+                writer.write(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}")
+                await writer.drain()
         finally:
             writer.close()
             await writer.wait_closed()
 
     server = await asyncio.start_server(delayed, "127.0.0.1", 0)
     port = server.sockets[0].getsockname()[1]
-    client = RAIClient(base_url=f"http://127.0.0.1:{port}", timeout=0.05, max_retries=1)
+    client = RAIClient(base_url=f"http://127.0.0.1:{port}", timeout=deadline, max_retries=1)
     try:
-        with pytest.raises(httpx.ReadTimeout):
-            await asyncio.wait_for(client.health(), timeout=3)
+        async with client:
+            assert client._client.timeout.read == deadline
+            if deadline < 0.5:
+                with pytest.raises(httpx.ReadTimeout):
+                    await asyncio.wait_for(client.health(), timeout=3)
+            else:
+                assert await asyncio.wait_for(client.health(), timeout=3) == {}
         assert accepted.is_set()
     finally:
         release.set()
