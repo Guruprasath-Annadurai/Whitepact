@@ -47,7 +47,8 @@ def protocol(monkeypatch, tmp_path):
         if state["mode"] == "failure":
             raise subprocess.CalledProcessError(1, command)
         receipt.write_text("c" * (31 if state["mode"] == "partial" else 64))
-        return subprocess.CompletedProcess(command, 0, stdout=cid, stderr="")
+        acknowledgement = "d" * 64 if state["mode"] == "mismatch" else cid
+        return subprocess.CompletedProcess(command, 0, stdout=acknowledgement, stderr="")
 
     class Process:
         returncode = None
@@ -111,6 +112,15 @@ async def test_unacknowledged_create_cannot_start_workload(protocol, mode):
     backend, events, state, _, _ = protocol
     state["mode"] = mode
     with pytest.raises((subprocess.CalledProcessError, IsolationBackendUnavailableError)):
+        await backend.execute(request())
+    assert events == ["create"]
+
+
+@pytest.mark.asyncio
+async def test_mismatched_create_acknowledgement_never_starts(protocol):
+    backend, events, state, _, _ = protocol
+    state["mode"] = "mismatch"
+    with pytest.raises(IsolationBackendUnavailableError, match="acknowledgement is incomplete"):
         await backend.execute(request())
     assert events == ["create"]
 

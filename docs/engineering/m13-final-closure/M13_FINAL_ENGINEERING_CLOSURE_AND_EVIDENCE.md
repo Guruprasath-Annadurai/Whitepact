@@ -320,3 +320,46 @@ SDK read-deadline successor8c27c764 adds an actual delayed successful response
 control:50ms deadline must time out;2s deadline must receive success after500ms.
 This verifies read timeout behavior, not a total mutation/execution deadline.
 Real socket execution remains blocked locally and mandatory in Linux CI.
+
+## Approved callback/cancellation completion checkpoint
+
+Founder explicitly approved the callback matcher 'containment unconfirmed' and
+the cancellation CREATE acknowledgement/pre-resolved development configuration.
+No outage-expectation disposition was included in that reply; that unrelated
+historical assertion remains unchanged and OPEN.
+
+- Corrected callback records actual mocked Docker inspect targets and requires
+  RuntimeError from the real cleanup helper. Its final ExecutionOutcome is
+  unsuccessful, uncertainty remains registered, tracking remains present and
+  subsequent admission is denied. The natural5s execution wall timeout is not
+  used as proof of plugin handling; the separate real-helper RuntimeError and
+  inspected exact CID establish that path. No timeout bound was extended.
+- Original cancellation source at969c97ae975c6dc271b8d139318a9a91bb2a6f08,
+  blob `bc00c78e9cafa461b58cde388610b43c5866acfe`,
+  remains pinned. Revised blob08e36bbf2c6ac0a412d397ae1c248d816190852a adds
+  only the approved fixture setup. All9 original assertions remain intact;
+  one additional check requires the existing explicit development journal mode.
+- Provenance checks both original Git availability and the exact revised blob,
+  then constructs the only permitted AST transformation. Altered cancellation
+  counts, timeouts, CID, logic or missing original evidence are rejected. The
+  workflow's old single-hash assertion is replaced by this relationship check,
+  not by an unconditional new hash or a blanket either-hash exception.
+- Callback/cancellation/provenance/CREATE scope29PASS on each Python3.11/3.12.
+  Exact two corrected tests plus provenance16PASS each with no skips/errors:
+  /private/tmp/m13-approved-exact-callback-cancellation-py311.xml andpy312.xml.
+  Invalid/partial/mismatched CREATE acknowledgement never sends START.
+- Broader initial3.12 scope79PASS/3FAIL: two neighboring supposed-unit probes
+  contacted actual Docker CREATE, one PostgreSQL case could not connect under
+  local restrictions.3.11 initially lacked Hypothesis, now installed. Nothing
+  is waived or described as a successful complete neighborhood run.
+- Separate ordinary unit-fixture repair: cleanup-race probes mocked START and
+  failure of removal but left CREATE real, potentially leaking stopped daemon
+  objects into later native tests. Their CREATE is now inert and tracking paths
+  are per-test, with every original assertion preserved. Sentinel test proves
+  the controlled probe makes zero subprocess/daemon calls. Native tests remain
+  untouched by this module fixture. Neighbor containment/revocation scope43PASS
+  per interpreter; sentinel separately1PASS on3.12. Fresh Linux verification of
+  the broad-suite cold-worker failure cause remains PENDING, not presumed fixed.
+- Full Ruff, actionlint, pinned-action checks PASS. Source/readiness rules remain
+  unchanged. Independent Antigravity review and exact-head Linux/PG16 CI are
+  mandatory before qualification. M13 OPEN; GLOBAL PRODUCTION NO-GO.

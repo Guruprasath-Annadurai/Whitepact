@@ -55,7 +55,6 @@ jobs:
         run: |
           git rev-parse HEAD 'HEAD^{tree}' 'HEAD^'
           python scripts/engineering/m13p4_security_acceptance.py --repo "$PWD" --candidate "$(git rev-parse HEAD)"
-          test "$(git rev-parse HEAD:scripts/engineering/reproducers/test_m13_dual_titan_cancellation.py)" = bc00c78e9cafa461b58cde388610b43c5866acfe
       - name: Additional persistence and PostgreSQL startup counterexamples
         env:
           PYTHONPATH: src:.

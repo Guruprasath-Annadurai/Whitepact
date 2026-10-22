@@ -14,6 +14,7 @@ import responsibleai.isolation.in_flight as tracking
 from responsibleai.isolation.container_backend import DockerContainerBackend
 from responsibleai.isolation.filesystem import EphemeralWorkspace
 from responsibleai.isolation.models import (
+    ExecutionOutcome,
     IsolatedExecutionRequest,
     IsolationProfile,
     NetworkPolicy,
@@ -83,6 +84,7 @@ async def test_failed_rejected_execution_termination_remains_tracked(registry):
 async def test_execute_termination_callback_rejects_plugin_absence_error(registry):
     backend = DockerContainerBackend()
     running, release = asyncio.Event(), asyncio.Event()
+    inspected = []
 
     class Process:
         returncode = 0
@@ -101,6 +103,7 @@ async def test_execute_termination_callback_rejects_plugin_absence_error(registr
 
     def docker(command, **kwargs):
         if "inspect" in command:
+            inspected.append(command[-1])
             return subprocess.CompletedProcess(
                 command, 1, stdout="", stderr="authorization plugin not found"
             )
@@ -130,12 +133,14 @@ async def test_execute_termination_callback_rejects_plugin_absence_error(registr
             await asyncio.wait_for(running.wait(), 3)
             entry = next(iter(registry._active.values()))
             assert entry.terminate_callback is not None
-            with pytest.raises(RuntimeError, match="inspect"):
+            with pytest.raises(RuntimeError, match="containment unconfirmed"):
                 await entry.terminate_callback()
         finally:
             release.set()
             results = await asyncio.gather(task, return_exceptions=True)
-        assert isinstance(results[0], RuntimeError)
+        assert isinstance(results[0], ExecutionOutcome)
+        assert not results[0].is_success and results[0].result_payload is None
+        assert inspected and all(target == "d" * 64 for target in inspected)
         assert registry.has_unresolved(request.organization_id)
         assert any(tracking._DISTRIBUTED_REGISTRY_DIR.glob("*.json"))
         with pytest.raises(PermissionError, match="revoked in-flight"):

@@ -54,3 +54,31 @@ def test_unknown_blob_is_refused_even_when_original_is_available(monkeypatch):
     )
     with pytest.raises(guard.PreflightError, match="pinned"):
         guard.verify_reproducer_manifest(ROOT, actual)
+
+
+def runtime_original():
+    return subprocess.check_output(
+        ["git", "show", f"{guard.RUNTIME_REFERENCE}:{guard.RUNTIME_PATH}"], cwd=ROOT, text=True
+    )
+
+
+def test_cancellation_fixture_contains_only_approved_setup():
+    guard.verify_cancellation_revision(runtime_original(), (ROOT / guard.RUNTIME_PATH).read_text())
+
+
+@pytest.mark.parametrize(
+    "before,after",
+    [("== 2", "== 1"), ("started.wait, 3", "started.wait, 30"), ('"c" * 64', '"z" * 64')],
+)
+def test_cancellation_counts_bounds_and_acknowledgement_cannot_be_changed(before, after):
+    source = (ROOT / guard.RUNTIME_PATH).read_text()
+    modified = source.replace(before, after)
+    assert modified != source
+    with pytest.raises(guard.PreflightError, match="Unauthorized cancellation"):
+        guard.verify_cancellation_revision(runtime_original(), modified)
+
+
+def test_missing_original_cancellation_evidence_is_refused(monkeypatch):
+    monkeypatch.setattr(guard, "git_read", lambda *args: "missing")
+    with pytest.raises(guard.PreflightError, match="Original cancellation"):
+        guard.verify_runtime_fixture(ROOT, "a" * 40)

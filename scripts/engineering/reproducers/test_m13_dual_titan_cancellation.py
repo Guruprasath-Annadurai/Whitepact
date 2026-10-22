@@ -57,6 +57,9 @@ async def test_cleanup_preserves_exact_cancellation_request_count() -> None:
 @pytest.mark.asyncio
 async def test_execute_cleanup_failure_retains_tracking_after_cancellation() -> None:
     """Exercise actual execute(), replacing Docker transport only; not native evidence."""
+    from responsibleai.isolation.durable_intent import required_journal
+
+    assert required_journal() is None
     InFlightExecutionRegistry.reset_instance()
     backend = DockerContainerBackend()
     registry = InFlightExecutionRegistry.get_instance()
@@ -92,11 +95,17 @@ async def test_execute_cleanup_failure_retains_tracking_after_cancellation() -> 
             resources=ResourceLimits(wall_timeout_seconds=5),
         ),
     )
+    def acknowledge_inert_create(command, receipt):
+        cid = "c" * 64
+        receipt.write_text(cid, encoding="utf-8")
+        return cid
+
     with (
         patch.object(backend, "is_available", return_value=True),
         patch("responsibleai.isolation.container_backend.grant_container_read"),
         patch.object(EphemeralWorkspace, "prepare_for_container"),
         patch("asyncio.create_subprocess_exec", return_value=Process()),
+        patch.object(backend, "_create_stopped_container", side_effect=acknowledge_inert_create),
         patch.object(backend, "_remove_containers", side_effect=cleanup),
     ):
         task = asyncio.create_task(backend.execute(request))

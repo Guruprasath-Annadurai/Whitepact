@@ -37,7 +37,18 @@ from responsibleai.isolation.models import (
 
 
 @pytest.fixture(autouse=True)
-def reset_in_flight_registry():
+def reset_in_flight_registry(monkeypatch, tmp_path):
+    # These are controlled unit probes, not native Docker qualification. The
+    # CREATE-before-START boundary must not leak real stopped daemon objects.
+    def acknowledge_inert_create(self, command, receipt):
+        cid = "a" * 64
+        receipt.write_text(cid, encoding="utf-8")
+        return cid
+
+    monkeypatch.setattr(DockerContainerBackend, "_create_stopped_container", acknowledge_inert_create)
+    monkeypatch.setattr(
+        "responsibleai.isolation.in_flight._DISTRIBUTED_REGISTRY_DIR", tmp_path / "tracking"
+    )
     InFlightExecutionRegistry.reset_instance()
     yield
     InFlightExecutionRegistry.reset_instance()
@@ -104,6 +115,13 @@ async def test_container_removal_failure_preserves_unresolved_containment() -> N
         assert len(unresolved) == 1
         assert "docker rm -f failed" in (unresolved[0].last_termination_error or "")
         assert unresolved[0].containment_status == "unresolved"
+
+
+@pytest.mark.asyncio
+async def test_mocked_cleanup_fixture_never_contacts_docker_create():
+    with patch("subprocess.run", side_effect=AssertionError("Unit probe contacted host daemon")) as run:
+        await test_container_removal_failure_preserves_unresolved_containment()
+    run.assert_not_called()
 
 
 @pytest.mark.asyncio

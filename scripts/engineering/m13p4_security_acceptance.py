@@ -34,6 +34,10 @@ APPROVED_BLOBS = {
     "test_m13r_migration_roundtrip.py": "661b08b9150e93babf282294199639592b3384b4",
     "test_m13r_verified_containment.py": "137c337e4a33305f1168e1babf53f44dee0ce362",
 }
+RUNTIME_REFERENCE = "969c97ae975c6dc271b8d139318a9a91bb2a6f08"
+RUNTIME_PATH = "scripts/engineering/reproducers/test_m13_dual_titan_cancellation.py"
+RUNTIME_ORIGINAL = "bc00c78e9cafa461b58cde388610b43c5866acfe"
+RUNTIME_REVISED = "08e36bbf2c6ac0a412d397ae1c248d816190852a"
 CANONICAL_ORIGINS = {
     "https://github.com/Guruprasath-Annadurai/Whitepact",
     "https://github.com/Guruprasath-Annadurai/Whitepact.git",
@@ -141,6 +145,59 @@ def verify_reproducer_manifest(repo: Path, actual: dict[str, str]) -> None:
         )
 
 
+def verify_cancellation_revision(original: str, revised: str) -> None:
+    before, after = ast.parse(original), ast.parse(revised)
+    function = next(
+        node
+        for node in before.body
+        if isinstance(node, ast.AsyncFunctionDef)
+        and node.name == "test_execute_cleanup_failure_retains_tracking_after_cancellation"
+    )
+    function.body[1:1] = ast.parse(
+        "from responsibleai.isolation.durable_intent import required_journal\n"
+        "assert required_journal() is None\n"
+    ).body
+    position = next(i for i, node in enumerate(function.body) if isinstance(node, ast.With))
+    helper = ast.parse(
+        "def acknowledge_inert_create(command, receipt):\n"
+        '    cid = "c" * 64\n'
+        '    receipt.write_text(cid, encoding="utf-8")\n'
+        "    return cid\n"
+    ).body[0]
+    function.body.insert(position, helper)
+    operation = function.body[position + 1]
+    addition = (
+        ast.parse(
+            'with patch.object(backend, "_create_stopped_container", '
+            "side_effect=acknowledge_inert_create):\n    pass\n"
+        )
+        .body[0]
+        .items[0]
+    )
+    operation.items.insert(len(operation.items) - 1, addition)
+    if ast.dump(before, include_attributes=False) != ast.dump(after, include_attributes=False):
+        raise PreflightError("Unauthorized cancellation fixture modification")
+
+
+def verify_runtime_fixture(repo: Path, candidate: str) -> dict[str, str]:
+    original = git_read(repo, "rev-parse", f"{RUNTIME_REFERENCE}:{RUNTIME_PATH}")
+    revised = git_read(repo, "rev-parse", f"{candidate}:{RUNTIME_PATH}")
+    if original != RUNTIME_ORIGINAL:
+        raise PreflightError("Original cancellation evidence is unavailable or changed")
+    if revised != original:
+        if revised != RUNTIME_REVISED:
+            raise PreflightError("Unapproved cancellation fixture blob")
+        verify_cancellation_revision(
+            git_read(repo, "cat-file", "blob", original),
+            git_read(repo, "cat-file", "blob", revised),
+        )
+    return {
+        "original_reference": RUNTIME_REFERENCE,
+        "original_blob": original,
+        "candidate_blob": revised,
+    }
+
+
 def preflight(repo: Path, candidate: str) -> dict[str, object]:
     if not re.fullmatch(r"[0-9a-f]{40}", candidate):
         raise PreflightError("--candidate must be an exact full lowercase 40-character commit SHA")
@@ -165,6 +222,7 @@ def preflight(repo: Path, candidate: str) -> dict[str, object]:
             raise PreflightError("Original reproducer manifest has an unsupported entry")
         actual[path] = fields[2]
     verify_reproducer_manifest(repo, actual)
+    runtime_fixture = verify_runtime_fixture(repo, candidate)
     for path in PLANNED_TESTS[1:]:
         if not git_read(repo, "ls-tree", candidate, "--", path):
             raise PreflightError("A required planned regression suite is missing")
@@ -183,6 +241,7 @@ def preflight(repo: Path, candidate: str) -> dict[str, object]:
         "security_reference": SECURITY_REFERENCE,
         "original_reproducer_blobs": expected,
         "candidate_reproducer_blobs": actual,
+        "runtime_fixture_provenance": runtime_fixture,
         "repository": str(repo.resolve()),
         "planned_command": shlex.join(
             ["python", "-m", "pytest", *PLANNED_TESTS, "-o", "addopts=", "-v"]
