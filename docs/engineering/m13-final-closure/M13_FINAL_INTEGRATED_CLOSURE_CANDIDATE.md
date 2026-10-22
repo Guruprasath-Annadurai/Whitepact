@@ -150,3 +150,27 @@ receipt; real unresolved-execution/journal verification remains a separate gate.
 
 No merge, deployment, package publication, DNS/cloud mutation, paid resource,
 public restore activation, release tag, history rewrite or M14 execution.
+
+## Exact-head CI follow-on: historical checkout availability
+
+Published9c980bac7381b7f9fd1dfbd04badb90be09462bd (tree
+4549b1ce67aaf01a495a83fab0da2f799f9cc98f) received fresh hosted successes for
+First Enrollment113 tests on each interpreter, SDK Integration, SDK/package,
+security scan, native containment, Enterprise Completion, M11, M12-P, M12 Product
+and Sovereign lanes. Full matrix and other lanes remain pending; no overall
+qualification is claimed.
+
+M13-I1 run39828489715 fails its historical-evidence preflight because that job's
+checkout has default shallow history. The completed job reports Read-only Git
+inspection failed. Local clean full-history preflight passes with original eight
+independent blobs and the original-to-revised cancellation guard intact.
+A new workflow regression reproduced1 failed/2 passed before correction.
+The narrow correction adds only fetch-depth0 to that checkout, preserving exact
+ref and disabled credential persistence. Provenance/workflow scope then passes
+32 tests on each interpreter. No original hash, security assertion, cleanliness
+check or acceptance requirement was removed. Fresh successor CI is mandatory.
+
+The same hosted run separately reports the known historical DCO requirement and
+failed/BLOCKED customer-journey gates; these are not converted into successes by
+the checkout correction. Current customer artifacts require independent reading
+before any old stage-count result can be attributed to the new head.
