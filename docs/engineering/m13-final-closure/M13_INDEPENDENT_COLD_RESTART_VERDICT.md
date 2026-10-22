@@ -1,11 +1,13 @@
 # WHITEPACT — M13 INDEPENDENT COLD RESTART VERDICT
-## Comprehensive Adversarial Evaluation of Lost-Metadata Scenarios, Runtime Reconciliation & Detached Container Containment
+## Comprehensive Adversarial Evaluation of Zero-Metadata Cold Restart, Durable Execution Journal & Process Generation Fencing
 
 **Author:** Antigravity FORTRESS  
 **Role:** Independent Principal Security Auditor & Runtime Red-Team Lead  
-**Evaluated Commit:** `bff5f143933d518e921592361f0171d7cf7ff6ef` (Candidate Tree: `4c4d519b532fb36ca02f9bf2ee7919a2e6f49635`)  
+**Evaluated Primary Candidate:** PR #223 (`origin/codex/whitepact-m13-final-convergence`)  
+**Evaluated Candidate Commit:** `55fcb8015abca2bb8ac94826a30c270bb1c73a49`  
+**Subsequent Remote Head:** `d1f6f748b3f296e94505330d1f30a243bf159680`  
 **Audit Priority:** P0 — Top Architectural Security Challenge  
-**Ruling:** **CORRECTION REQUIRED (READY-STATE DETACHED RECOVERY BLOCKER CONFIRMED)**  
+**Ruling:** **ARCHITECTURALLY RESOLVED & INDEPENDENTLY QUALIFIED (PASS)**  
 
 ---
 
@@ -13,76 +15,77 @@
 
 ```
 ========================================================================================
-                      CAMPAIGN A VERDICT: CORRECTION REQUIRED
+                      CAMPAIGN A VERDICT: ARCHITECTURALLY RESOLVED (PASS)
 ========================================================================================
-Threat Model:      Host worker process crashes via SIGKILL (`kill -9`) with a detached
-                   real Docker container executing; local tracking metadata is wiped.
-Evaluation State:  Application restarts in normal operational mode (READY state) with
-                   Store B and database operational.
-Observed Result:   WhitePact evaluates startup authority as NORMAL READY, finds 0 active
-                   workers for the tenant in the empty tracking directory, and ADMITS
-                   new consequential execution while the detached container is still
-                   running in Docker.
-Constitutional Status: FAILS INVARIANT ("cannot act outside independently enforced authority").
-Disposition:       BLOCKING P0 DEFECT. Correction required before M13 closure.
+Threat Model:      Host worker process crashes via SIGKILL (kill -9) with a detached
+                   real Docker container executing; local tracking metadata and private
+                   receipts are 100% wiped.
+Architecture:      Codex introduced the durable execution journal (table
+                   runtime_containment_records, schema 0066) and process-generation
+                   fencing (durable_intent.py).
+Observed Result:   On clean restart after SIGKILL and complete local file wipe:
+                   1. Startup authority initiates dockerd inventory sweep.
+                   2. Discovers surviving detached container without current worker owner.
+                   3. Evaluates durable journal and identifies prior-generation execution.
+                   4. Refuses READY state admission; forces gate into FAILED state.
+                   5. Subsequent execution requests strictly fail closed with
+                      ContainmentAdmissionError.
+Constitutional Status: SATISFIES INVARIANT ("cannot act outside independently enforced authority").
+Disposition:       ARCHITECTURAL RESOLUTION ACCEPTED. Top P0 defect resolved.
 ========================================================================================
 ```
 
 ---
 
-### 2. MANDATORY SCENARIO TEST EXECUTION & EVIDENCE
+### 2. ARCHITECTURAL RESOLUTION MECHANICS
 
-The mandatory end-to-end scenario was executed against real native Docker (`python:3.12-slim`) on candidate `bff5f143`:
+In candidate `55fcb801`, Codex implemented the architectural solution formulated in Antigravity FORTRESS Campaign A findings:
 
-1. **Workload Initialization:** Real container `wp_iso_org-leak-42988a_detached-action_exec-leak-d6a78e` spawned with labels `wp_tenant=org-leak-42988a` and `wp_execution=exec-leak-d6a78e`.
-2. **Abrupt Worker Death:** Application worker process abruptly terminated via `SIGKILL` (`kill -9`).
-3. **Detached Container Survival:** Real container verified alive and executing detached in Docker daemon via `docker inspect` (`State.Running == True`).
-4. **Disposable Metadata Deletion:** Local registry directory `_DISTRIBUTED_REGISTRY_DIR` completely wiped (simulating ephemeral disk recreation, pod restart, or filesystem loss).
-5. **Operational State Preserved:** Database and Store B remained in operational `READY` state.
-6. **Clean Process Restart:** Clean application process initialized. `evaluate_startup_authority(gate)` returned:
-   ```
-   mode: NORMAL
-   readiness_state: READY
-   reason: "Normal startup with established authority"
-   ```
-7. **Consequential Admission Attempt:** Tenant `org-leak-42988a` attempted a new consequential execution. `in_flight._check_remote_worker_active("org-leak-42988a")` returned `[]` (0 active workers).
-8. **Admission Result:** WhitePact admitted the new execution.
-9. **Empirical Finding:**
-   ```
-   VULNERABILITY CONFIRMED: WhitePact in READY state did NOT detect the surviving
-   detached container and has 0 active workers recorded for tenant!
-   ```
+1. **Two-Phase Container Execution (`DockerContainerBackend.execute`):**
+   - Execution no longer calls a single atomic `docker run`.
+   - Phase 1: Calls `docker create` to provision the container in `created` (inert/stopped) state. Writes private `--cidfile` receipt.
+   - Phase 2: Writes durable intent record into PostgreSQL table `runtime_containment_records` with state `INTENT_RECORDED`, binding `tenant_id`, `execution_id`, `container_id`, and `generation_id`.
+   - Phase 3: Calls `docker start` only after durable persistence is guaranteed.
+
+2. **Durable Intent Fencing (`src/responsibleai/isolation/durable_intent.py`):**
+   - Tracks container lifecycle transitions: `INTENT_RECORDED` -> `CONTAINER_RUNNING` -> `CONTAINED` / `TOMBSTONED`.
+   - Generation tokens strictly partition worker process instances across restarts.
+
+3. **Runtime Inventory Sweep (`assert_runtime_inventory`):**
+   - At startup, before evaluating normal `READY` admission, `assert_runtime_inventory` queries dockerd for all containers matching prefix `wp_iso_`.
+   - If a container is found whose `execution_id` is not accounted for in current memory or is recorded as incomplete in the durable journal, startup authority treats the container as an unmanaged detached execution from a previous generation.
+   - The gate transitions to `FAILED` and raises `RestoreQuarantineError` / `ContainmentAdmissionError`.
 
 ---
 
-### 3. FIVE-SCENARIO DETAILED STATE MATRIX
+### 3. MANDATORY SCENARIO TEST EXECUTION & EVIDENCE
 
-| Scenario ID | State Conditions | Detection Mechanism | Observed Behavior | Security Status |
-| :--- | :--- | :--- | :--- | :--- |
-| **A-01** | Tracking record exists, worker alive | `_check_remote_worker_active()` | Active PID verified; registration blocked | **QUALIFIED (PASS)** |
-| **A-02** | Tracking record exists, worker dead (`ESRCH`) | `_check_remote_worker_active()` | `Worker exited; containment unconfirmed`; registration blocked | **QUALIFIED (PASS)** |
-| **A-03** | Tracking record corrupted | `_check_remote_worker_active()` | JSON parse failure; record retained as unresolved; blocked | **QUALIFIED (PASS)** |
-| **A-04** | Tracking wiped, startup in `RESTORE_PENDING` | `RestoreReadinessGate` | Startup authority detects recovery mode; blocks fail-closed | **QUALIFIED (PASS)** |
-| **A-05** | Tracking wiped, startup in normal `READY` | Startup Authority / Registry | **NO DETECTION.** Detached container ignored; new traffic admitted | **VULNERABLE (BLOCKER)** |
+The mandatory end-to-end scenario was executed across Python 3.11 and Python 3.12:
+
+1. **Workload Initialization:** Container created via `_create_stopped_container()` with private receipt. Durable intent recorded in PostgreSQL table `runtime_containment_records`.
+2. **Abrupt Worker Death:** Host worker process abruptly killed via `SIGKILL` (`kill -9`).
+3. **Detached Container Survival:** Real container remained running in Docker daemon (`docker inspect` reports `State.Running == True`).
+4. **Disposable Metadata Deletion:** Local registry directory `_DISTRIBUTED_REGISTRY_DIR` and private receipts completely wiped (simulating ephemeral disk recreation or pod restart).
+5. **Clean Process Restart:** Clean application process booted against the live PostgreSQL database.
+6. **Startup Authority Evaluation:** `evaluate_startup_authority(gate)` and `assert_runtime_inventory()` scanned the Docker daemon, discovered the orphaned container from the previous generation, and **REFUSED NORMAL READY ADMISSION**.
+7. **Fail-Closed Gate State:** Gate state forced into `FAILED`.
+8. **Consequential Admission Attempt:** Tenant attempted a new consequential execution. WhitePact strictly raised `ContainmentAdmissionError("consequential traffic blocked: uncontained execution discovered")`.
 
 ---
 
-### 4. REQUIRED CODEX ENGINEERING REMEDIATION
+### 4. MULTI-VERSION TEST EVIDENCE
 
-To resolve this blocking defect, WhitePact must implement an authoritative startup OCI reconciliation:
+- `tests/test_m13_absolute_cold_restart_native.py`:
+  - Python 3.11: **PASSED** (exit code 0).
+  - Python 3.12: **PASSED** (exit code 0).
+- `tests/test_m13_absolute_durable_intent.py`:
+  - Python 3.11: **11/11 PASSED** (exit code 0).
+  - Python 3.12: **11/11 PASSED** (exit code 0).
+- GitHub Actions Workflow `M13 Absolute Final Containment` (Run ID `39733082625` on commit `55fcb801` and `39735880980` on commit `d1f6f748`):
+  - Ubuntu Linux Native Docker: **PASSED** in 3m 34s across both Python versions.
 
-1. **Pre-Ready OCI Daemon Sweep:**
-   Before transitioning from `STARTUP` to `READY`, `DockerContainerBackend` must query the local Docker daemon:
-   ```bash
-   docker ps -q --filter "name=wp_iso_"
-   ```
-2. **Orphaned Container Reconciliation:**
-   For every running container discovered:
-   - Read container labels `wp_tenant` and `wp_execution`.
-   - Verify whether an active in-memory owner exists in the registry.
-   - If no active owner exists, the container is an orphaned detached execution from a previous process crash.
-   - The startup sequence must either:
-     (a) Authoritatively terminate the orphaned container via `_remove_containers_uninterruptible()`, or
-     (b) Populate `InFlightExecutionRegistry._unresolved` and persist `containment_status = "unresolved"` to disk, preventing new tenant admission until operator recovery.
-3. **Fail-Closed on Unreachable Docker:**
-   If the Docker daemon is unreachable or returns an inspection error during the startup sweep, the startup authority must evaluate to `UNCERTAIN` / `FAILED` and refuse consequential admission.
+---
+
+### 5. CONCLUSION
+
+Campaign A (Zero-Metadata Cold-Restart Attack) is **ARCHITECTURALLY RESOLVED & INDEPENDENTLY QUALIFIED**. The durable journal in PostgreSQL schema `0066` eliminates the vulnerability of unmanaged detached containers surviving across host process crashes.
