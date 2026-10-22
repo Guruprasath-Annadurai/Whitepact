@@ -225,3 +225,68 @@ independent qualification are not complete. No production or M14 authority.
   Passkey success is not external identity qualification. No assurance flags,
   provider credentials or authority are fabricated to bypass this blocker.
   Legacy browser probe separately reports downstream contracts unqualified.
+
+## Founder-approved fixture/provenance dispositions (2026-10-22)
+
+Approval received for the callback CREATE/no-op seams, SDK false-positive tests,
+four import-order corrections, awaited restore-check patch, historical0064
+fixture and explicit backup termination acknowledgement. No production security
+checks, timeout guarantees, migrations or SDK retry behavior changed.
+
+### Recoverable original evidence
+
+Independent source commit57c69344961196fd89b40e8ffec65c06a1898fce remains pinned.
+
+| File under tests/independent_m13r2 | Original blob | Approved revised blob |
+| --- | --- | --- |
+| test_m13p_postgres_schema.py | a0b0953ab261079b28e516760921b5892aa71c63 | 3d46e3616990f3c364e244ae277b74149ceb992c |
+| test_m13p_security_contract_acceptance.py | 99cd279b17c53f01a1f876480a4435b0504ca2e1 | cda15e380ecd36b845561644ca8cb8a2fd2a292a |
+| test_m13r_migration_roundtrip.py | f4d5731e9b2792b18a69e1fcfd475164ee4f0898 | 661b08b9150e93babf282294199639592b3384b4 |
+| test_m13r_verified_containment.py | 4d0d984d2a84e53cd503696e2e3b9d3a19ef2ede | 137c337e4a33305f1168e1babf53f44dee0ce362 |
+
+All26 original assertion ASTs match. Three files change import order only;
+migration-roundtrip additionally changes exactly two upgrade targets from head
+to0064, under its separate approval. Its second runtime-ID test still uses
+current head. All constraint/downgrade assertions remain intact.
+
+Immediate pre-change parent59e9ac62197e05f10dbf3fe3dc916cd037fd04af blobs:
+callback module60e0b8005279020f4a094e96fc0b089e410e292d;
+backup065f54ea88c2bf75de7fb6d228b1958317810f4b;
+egress0918f4c1811da2d1e661a22323a6cb52d84953ee;
+SDK08fe3a00b315b7ad3688a1b9be3b8224f14c44db.
+Original callback55fcb blob4d7d39934f7f3a87c3e833e9176f5e8cf29aad00 remains
+recoverable independently of subsequent contention-fixture correction.
+
+### Verification and limits
+
+- Provenance guard keeps all eight original hashes, verifies their original
+  Git-reference availability, requires the exact approved revised blobs, and
+  compares complete import/non-import ASTs with only the two authorized0064
+  substitutions. Unknown hashes, changed imports/assertions, missing originals
+  and unauthorized logic fail closed. Three workflow single-hash checks now
+  call this stronger full-manifest preflight; no unconditional hash waiver.
+- Guard/preflight16PASS on3.12. Combined approved guard/SDK/backup/egress scope
+  45PASS on3.11. Both corrected SQLite independent modules12PASS on3.12 and
+  those modules plus three real-helper ambiguity probes15PASS on3.11; one
+  existing static-key deprecation warning each. No assertions skipped.
+- SDK's original test was executed and PASSED despite its method being absent:
+  confirmed AttributeError false-positive. Corrected existing IDs require
+  ReadTimeout with configured timeout propagation and HTTPStatusError502 with
+  exactly one mutation. AttributeError/TypeError/authentication cannot satisfy
+  the timeout proof (three additive controls). Five focused cases PASS on3.12.
+  Added real delayed-socket deadline test; local bind is platform-denied, not
+  skipped. Linux dual-Python execution is mandatory, not inferred from injection.
+- H3/H4/SDK/egress local cohort56PASS/1FAIL on3.12 before the three additional
+  wrong-error controls: sole failure is forbidden local socket bind; one existing
+  Starlette deprecation warning. Backup success now explicitly returnsTrue;
+  None/False/exception retain tracking, produce no confirmed IDs and deny new
+  admission. Actual containment evidence is NOT manufactured from these doubles.
+- The original callback now reaches real cleanup, but its unchanged matcher
+  requires 'inspect' while production raises 'containment unconfirmed after
+  12.0s'. One FAIL remains; requested a separate message-only disposition.
+  Production remains fail-closed. Three additive actual-helper plugin/daemon
+  ambiguity tests PASS and preserve unresolved tracking/subsequent denial.
+- Full Ruff src/tests/scripts PASS; actionlint and immutable-action checks PASS.
+  Added missing copyright/SPDX headers to three new Codex test helpers without
+  changing their logic. RealPG16 roundtrip, fresh CI and independent Antigravity
+  verification remain PENDING. No qualification or M13 closure is claimed.

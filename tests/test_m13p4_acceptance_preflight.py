@@ -40,6 +40,8 @@ def git_environment(monkeypatch, tmp_path):
             output = state["head"]
         elif args == ["rev-parse", "HEAD^{tree}"]:
             output = TREE
+        elif args[0] == "rev-parse" and args[1].startswith(preflight.SECURITY_REFERENCE + ":"):
+            output = preflight.ORIGINAL_BLOBS[Path(args[1]).name]
         elif args[0] == "status":
             output = state["dirty"]
         elif args == ["remote", "get-url", "origin"]:

@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Prevent package and tooling locks from restoring a distrusted CA bundle."""
 
 import re

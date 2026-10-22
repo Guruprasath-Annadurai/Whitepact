@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Controlled authenticator fixture using real server enrollment and verification."""
 
 import hashlib

@@ -43,7 +43,7 @@ jobs:
       - name: Record exact source and preserved evidence
         run: |
           git rev-parse HEAD 'HEAD^{tree}' 'HEAD^'
-          test "$(git rev-parse HEAD:tests/independent_m13r2/test_m13r_migration_roundtrip.py)" = f4d5731e9b2792b18a69e1fcfd475164ee4f0898
+          python scripts/engineering/m13p4_security_acceptance.py --repo "$PWD" --candidate "$(git rev-parse HEAD)"
           test "$(git rev-parse HEAD:scripts/engineering/reproducers/test_m13_apex_titan_acceptance.py)" = 7e3500ca714701553e69afb2de12174a72d08a22
       - name: Prepare disposable PostgreSQL, browser and native container environment
         id: environment

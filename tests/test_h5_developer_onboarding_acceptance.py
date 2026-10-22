@@ -19,6 +19,8 @@ Mandatory 12-Scenario DX Verification Matrix:
 
 from __future__ import annotations
 
+import asyncio
+
 import httpx
 import pytest
 import respx
@@ -85,17 +87,88 @@ async def test_03_python_sdk_credential_redaction():
     assert "[REDACTED]" in message
 
 
-# Scenario 4: Python SDK timeout and cancellation behavior
+# Scenario 4: Timeout propagation/configuration, not an elapsed-time claim.
 @pytest.mark.asyncio
-async def test_04_python_sdk_timeout_enforcement():
+async def test_04_python_sdk_timeout_enforcement(monkeypatch):
+    original_client = httpx.AsyncClient
+    requests = []
+
+    def timeout(request):
+        requests.append(request)
+        assert request.extensions["timeout"] == dict.fromkeys(
+            ("connect", "read", "write", "pool"), 0.001
+        )
+        raise httpx.ReadTimeout("controlled read deadline", request=request)
+
+    def configured_client(**kwargs):
+        assert kwargs["timeout"] == 0.001
+        return original_client(**kwargs, transport=httpx.MockTransport(timeout))
+
+    monkeypatch.setattr(httpx, "AsyncClient", configured_client)
     client = RAIClient(
         api_key="wp_test_key",
         base_url="https://api.whitepact.io",
         timeout=0.001,
         max_retries=1,
     )
-    with pytest.raises(Exception):
-        await client.get_compliance_report()
+    with pytest.raises(httpx.ReadTimeout, match="controlled read deadline"):
+        await client.health()
+    assert len(requests) == 1
+    assert requests[0].method == "GET"
+    assert requests[0].url.path == "/api/v1/health"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("kind", ["attribute", "type", "authentication"])
+async def test_04c_unrelated_errors_cannot_satisfy_timeout_proof(monkeypatch, kind):
+    errors = {
+        "attribute": AttributeError("not a timeout"),
+        "type": TypeError("not a timeout"),
+        "authentication": httpx.HTTPStatusError(
+            "unauthenticated",
+            request=httpx.Request("GET", "https://example.test"),
+            response=httpx.Response(401),
+        ),
+    }
+    error = errors[kind]
+
+    async def unrelated(self):
+        raise error
+
+    monkeypatch.setattr(RAIClient, "health", unrelated)
+    with pytest.raises(type(error)):
+        await test_04_python_sdk_timeout_enforcement(monkeypatch)
+
+
+@pytest.mark.asyncio
+async def test_04b_python_sdk_actual_read_deadline(monkeypatch):
+    """A real local socket withholds the response; HTTPX must enforce its deadline."""
+    monkeypatch.setenv("NO_PROXY", "127.0.0.1")
+    accepted, release = asyncio.Event(), asyncio.Event()
+    handlers = []
+
+    async def delayed(reader, writer):
+        handlers.append(asyncio.current_task())
+        try:
+            await reader.readuntil(b"\r\n\r\n")
+            accepted.set()
+            await release.wait()
+        finally:
+            writer.close()
+            await writer.wait_closed()
+
+    server = await asyncio.start_server(delayed, "127.0.0.1", 0)
+    port = server.sockets[0].getsockname()[1]
+    client = RAIClient(base_url=f"http://127.0.0.1:{port}", timeout=0.05, max_retries=1)
+    try:
+        with pytest.raises(httpx.ReadTimeout):
+            await asyncio.wait_for(client.health(), timeout=3)
+        assert accepted.is_set()
+    finally:
+        release.set()
+        server.close()
+        await server.wait_closed()
+        await asyncio.gather(*handlers)
 
 
 # Scenario 5: Python SDK retry and backoff behavior
@@ -111,8 +184,9 @@ async def test_05_python_sdk_mutation_non_retry():
         base_url="https://api.whitepact.io",
         max_retries=3,
     )
-    with pytest.raises(Exception):
+    with pytest.raises(httpx.HTTPStatusError) as caught:
         await client.record_usage("openai", "gpt-4", 100, 50)
+    assert caught.value.response.status_code == 502
     # Mutation must only be dispatched exactly once
     assert route.call_count == 1
 
@@ -137,6 +211,7 @@ def test_06_mcp_stdio_initialize_handshake():
 def test_07_mcp_http_transport_auth_gate():
     app = _build_http_app()
     from starlette.testclient import TestClient
+
     client = TestClient(app)
 
     # Calling SSE / messages without authorization header fails
@@ -147,6 +222,7 @@ def test_07_mcp_http_transport_auth_gate():
 # Scenario 8: MCP tool schema publication with typed contracts
 def test_08_mcp_tool_schema_publication():
     from responsibleai.mcp.tools import TOOL_DEFS
+
     assert len(TOOL_DEFS) > 0
     # Every published tool must define valid name, description, and inputSchema
     for tool in TOOL_DEFS:

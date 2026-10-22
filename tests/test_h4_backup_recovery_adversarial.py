@@ -312,7 +312,9 @@ def test_06_witness_publication_divergence_detected(tmp_path):
     )
 
     # Disaster recovery restored DB back to sequence 1 (rollback behind publication tip 2!)
-    with pytest.raises(WitnessPublicationError, match="database head rolled back behind the publication"):
+    with pytest.raises(
+        WitnessPublicationError, match="database head rolled back behind the publication"
+    ):
         verify_published_head(
             log,
             organization_id="org-diverge",
@@ -334,6 +336,7 @@ async def test_07_active_container_detected_and_fenced():
     def mock_terminate():
         nonlocal terminated
         terminated = True
+        return True
 
     await registry.register(
         execution_id=exec_id,
@@ -348,6 +351,28 @@ async def test_07_active_container_detected_and_fenced():
     assert exec_id in term_ids
     assert terminated is True
     InFlightExecutionRegistry.reset_instance()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("result", [None, False, "exception"])
+async def test_unconfirmed_backup_termination_preserves_tracking_and_denies_admission(result):
+    registry = InFlightExecutionRegistry.get_instance()
+    org_id, execution_id = "unconfirmed-backup", "uncertain-execution"
+
+    def terminate():
+        if result == "exception":
+            raise RuntimeError("Containment unconfirmed")
+        return result
+
+    await registry.register(execution_id, org_id, "action", terminate_callback=terminate)
+    assert await registry.terminate_in_flight(organization_id=org_id) == []
+    assert registry.has_unresolved(org_id)
+    assert any(registry.get_unresolved_containments(org_id))
+    from responsibleai.isolation import in_flight
+
+    assert any(in_flight._DISTRIBUTED_REGISTRY_DIR.glob("*.json"))
+    with pytest.raises(PermissionError, match="revoked in-flight"):
+        await registry.register("subsequent", org_id, "action", admission_epoch=100)
 
 
 # Scenario 8: Concurrent execution during backup snapshot
@@ -449,18 +474,14 @@ async def test_11_restored_deleted_tenant_quarantined_and_authority_purged(db_en
     # Quarantine uses schema-valid DISABLED plus the explicit quarantine evidence.
     async with db_engine.raw.connect() as conn:
         org_row = (
-            await conn.execute(
-                select(organizations).where(organizations.c.id == deleted_org_id)
-            )
+            await conn.execute(select(organizations).where(organizations.c.id == deleted_org_id))
         ).fetchone()
         assert org_row.governance_status == "DISABLED"
         assert "RESTORE_QUARANTINED" in org_row.name
 
         # API keys and delegations MUST be completely erased
         keys = (
-            await conn.execute(
-                select(org_api_keys).where(org_api_keys.c.org_id == deleted_org_id)
-            )
+            await conn.execute(select(org_api_keys).where(org_api_keys.c.org_id == deleted_org_id))
         ).fetchall()
         assert len(keys) == 0
 

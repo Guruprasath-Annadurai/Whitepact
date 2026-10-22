@@ -54,14 +54,22 @@ jobs:
       - name: Record source and immutable original evidence
         run: |
           git rev-parse HEAD 'HEAD^{tree}' 'HEAD^'
-          test "$(git rev-parse HEAD:tests/independent_m13r2/test_m13r_migration_roundtrip.py)" = f4d5731e9b2792b18a69e1fcfd475164ee4f0898
+          python scripts/engineering/m13p4_security_acceptance.py --repo "$PWD" --candidate "$(git rev-parse HEAD)"
           test "$(git rev-parse HEAD:scripts/engineering/reproducers/test_m13_dual_titan_cancellation.py)" = bc00c78e9cafa461b58cde388610b43c5866acfe
       - name: Additional persistence and PostgreSQL startup counterexamples
         env:
           PYTHONPATH: src:.
         run: |
           python -m pytest scripts/engineering/reproducers/test_m13_convergence_tracking.py tests/test_m13_convergence_tracking.py tests/test_m13_runtime_schema_compatibility.py tests/test_m13_apex_database_role_retirement.py -o addopts='' --tb=short -ra
+      - name: Founder-approved fixture and evidence-provenance regressions
+        if: ${{ !cancelled() }}
+        env:
+          PYTHONPATH: src:sdk/python:.
+        run: |
+          python -m pytest tests/test_m13p4_acceptance_preflight.py tests/test_m13_approved_reproducer_provenance.py tests/test_h3_audit_evidence_adversarial.py tests/test_h4_backup_recovery_adversarial.py tests/test_h5_developer_onboarding_acceptance.py tests/test_isolation_egress_boundary.py::test_execution_boundary_restore_readiness_failure_rejects_sandbox -o addopts='' --junitxml=/tmp/approved-fixtures.xml --tb=short -ra
+          python -c 'import xml.etree.ElementTree as E; r=E.parse("/tmp/approved-fixtures.xml"); assert not list(r.iter("skipped")) and not list(r.iter("failure")) and not list(r.iter("error"))'
       - name: Unchanged counterexamples and neighboring runtime contracts
+        if: ${{ !cancelled() }}
         env:
           PYTHONPATH: src:.
         run: |
@@ -81,6 +89,7 @@ jobs:
           path: |
             /tmp/runtime.xml
             /tmp/restore.xml
+            /tmp/approved-fixtures.xml
       - if: always()
         run: |
           ruff check src/responsibleai/isolation/container_backend.py src/responsibleai/isolation/in_flight.py scripts/engineering/reproducers/test_m13_absolute_runtime.py tests/test_m13_absolute_native_runtime.py tests/test_m13_apex_database_role_retirement.py

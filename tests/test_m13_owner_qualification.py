@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Positive control for the authenticator used before persisted-revocation probes."""
 
 import uuid
