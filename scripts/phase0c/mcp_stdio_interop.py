@@ -57,7 +57,7 @@ async def _run() -> dict:
             # Valid invocation (health-style tool if present)
             tool_name = "rai_health" if "rai_health" in names else names[0]
             try:
-                call = await session.call_tool(
+                _call = await session.call_tool(
                     tool_name,
                     arguments={},
                 )

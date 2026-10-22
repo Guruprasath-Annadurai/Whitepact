@@ -28,51 +28,34 @@ Mandatory 20-Scenario Disaster Recovery & Resilience Matrix:
 from __future__ import annotations
 
 import asyncio
-import json
-import os
 import shutil
 import sqlite3
-import tempfile
 import uuid
-from pathlib import Path
-from unittest.mock import MagicMock
 
 import pytest
-from sqlalchemy import delete, insert, select, update
+from sqlalchemy import delete, insert, select
 
 from responsibleai.data_governance.backup_defense import (
-    CurrentLifecycleStateProvider,
-    DurableLifecycleStateProvider,
     InMemoryLifecycleStateProvider,
     LifecycleRollbackError,
     LifecycleState,
     LifecycleStateRecord,
-    MissingLifecycleProviderError,
     RestoreQuarantineError,
     RestoreReadinessGate,
     RestoreReadinessState,
     RestoreReconciliationEngine,
     RestoreReconciliationError,
-    compute_lifecycle_digest,
 )
 from responsibleai.db import EvidenceRepository, create_engine
 from responsibleai.db.engine import (
-    governance_approvals,
     governance_delegations,
     governance_evidence,
     governance_evidence_chain_heads,
-    governance_execution_authorizations,
     governance_execution_nonces,
-    governance_policies,
-    governance_policy_versions,
     governance_revocation_epochs,
     governance_root_authority_records,
-    iam_sessions,
     org_api_keys,
     organizations,
-    restore_reconciliation_records,
-    tenant_tombstones,
-    web_sessions,
 )
 from responsibleai.governance import (
     ActionRequest,
@@ -91,7 +74,6 @@ from responsibleai.governance.evidence_publication import (
     verify_published_head,
 )
 from responsibleai.isolation.in_flight import (
-    InFlightExecution,
     InFlightExecutionRegistry,
 )
 
@@ -647,7 +629,7 @@ def test_19_witness_log_continuity_across_disaster_recovery(tmp_path):
     store = FileWitnessKeyStore.create(tmp_path / "keys")
     log = AppendOnlyWitnessLog(tmp_path / "log")
 
-    p1 = publish_evidence_head(
+    _p1 = publish_evidence_head(
         store,
         log,
         organization_id="org-witness-dr",
@@ -656,7 +638,7 @@ def test_19_witness_log_continuity_across_disaster_recovery(tmp_path):
         witnessed_at="2026-01-01T00:00:00Z",
         opaque_reference=False,
     )
-    p2 = publish_evidence_head(
+    _p2 = publish_evidence_head(
         store,
         log,
         organization_id="org-witness-dr",

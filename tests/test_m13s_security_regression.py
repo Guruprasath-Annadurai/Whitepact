@@ -30,17 +30,17 @@ from responsibleai.db.engine import (
     passkey_credentials,
 )
 from responsibleai.db.migrate import _find_alembic_ini, _migration_env, _run_alembic
+from responsibleai.db.web_identity_repository import WebIdentityRepository
 from responsibleai.enterprise.authority.service import (
     CustomerAuthorityService,
     compute_canonical_operation_digest,
 )
 from responsibleai.enterprise.errors import EnterpriseError
+from responsibleai.enterprise.runtime import configure_enterprise
 from responsibleai.enterprise.security.webauthn import b64url_decode, b64url_encode
 from responsibleai.enterprise.service import Actor, EnterpriseIAM
-from responsibleai.rbac.models import Role
-from responsibleai.enterprise.runtime import configure_enterprise
-from responsibleai.db.web_identity_repository import WebIdentityRepository
 from responsibleai.isolation.in_flight import InFlightExecutionRegistry
+from responsibleai.rbac.models import Role
 from tests.pg_test_url import isolated_pg_url
 from tests.webauthn_fakes import assertion_blob
 

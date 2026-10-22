@@ -14,30 +14,21 @@ S5 — Execution enforcement: Actions outside customer consent fail closed.
 from __future__ import annotations
 
 import asyncio
-import secrets
 import uuid
 from datetime import UTC, datetime, timedelta
 
 import pytest
 from asgi_lifespan import LifespanManager
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import insert, select, update
+from sqlalchemy import insert, update
 
 from responsibleai.dashboard.app import app, limiter, settings
 from responsibleai.db.consent_proof_repository import ConsentProofRepository
 from responsibleai.db.delegation_repository import DelegationRepository
 from responsibleai.db.engine import (
-    create_engine,
-    governance_consent_proofs,
-    governance_delegations,
-    governance_root_authority_records,
     trust_fabric_bootstrap_records,
-    trust_fabric_principals,
-    trust_fabric_trust_roots,
     web_memberships,
-    web_users,
 )
-from responsibleai.db.revocation_epoch_repository import RevocationEpochRepository
 from responsibleai.db.root_authority_repository import RootAuthorityRepository
 from responsibleai.db.web_identity_repository import WebIdentityRepository
 from responsibleai.enterprise.runtime import get_enterprise_engine
@@ -108,7 +99,7 @@ async def _create_authenticated_customer_owner(
         "wp_session": session_token,
         "wp_csrf": csrf_token,
     }
-    headers = {
+    _headers = {
         "X-WP-CSRF": csrf_token,
     }
 

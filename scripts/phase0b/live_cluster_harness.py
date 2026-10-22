@@ -15,7 +15,7 @@ import threading
 import time
 import urllib.error
 import urllib.request
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
@@ -73,8 +73,9 @@ def _barrier_burst(path: str, n: int) -> dict[str, Any]:
 async def _prepare_pg_url() -> str:
     sys.path.insert(0, str(ROOT / "src"))
     sys.path.insert(0, str(ROOT))
-    from responsibleai.db.migrate import _find_alembic_ini, _migration_env, _run_alembic
     from tests.pg_test_url import isolated_pg_url
+
+    from responsibleai.db.migrate import _find_alembic_ini, _migration_env, _run_alembic
 
     async for url in isolated_pg_url("wp_phase0b_cluster"):
         ini = _find_alembic_ini()

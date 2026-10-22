@@ -18,10 +18,8 @@ Directly validates:
 from __future__ import annotations
 
 import asyncio
-import time
 import uuid
 from datetime import UTC, datetime, timedelta
-from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -32,15 +30,10 @@ from responsibleai.isolation.in_flight import InFlightExecutionRegistry
 from responsibleai.rbac.models import Plan
 from responsibleai.runtime.authority_kernel import (
     AUTH_TTL,
-    LEASE_TTL,
     Phase7AAuthorityKernel,
-    PreEffectDecision,
 )
 from responsibleai.runtime.errors import (
-    AuthorityDatabaseError,
-    AuthorityKernelError,
     PreEffectCasRejected,
-    StaleWorkerError,
 )
 from tests.pg_test_url import create_isolated_database, drop_isolated_database
 
@@ -179,7 +172,7 @@ async def test_05_multi_worker_partition_cannot_commit_unauthorized_effect(pg_en
     repo = OrgRepository(pg_engine)
     org = await repo.create_org("Partition Org", f"prt-{uuid.uuid4().hex[:8]}", plan=Plan.ENTERPRISE)
     ka = Phase7AAuthorityKernel(pg_engine)
-    kb = Phase7AAuthorityKernel(pg_engine)
+    _kb = Phase7AAuthorityKernel(pg_engine)
 
     issued = await ka.issue(**_issue_kwargs(org.id))
     await ka.acquire_lease(request_id=issued.request_id, worker_id="w-partitioned", organization_id=org.id)
@@ -245,7 +238,7 @@ async def test_07_reconciliation_after_restart_syncs_with_db(pg_engine) -> None:
     await epoch_repo.bump(org.id)
 
     # Start reconciliation watcher with short interval
-    watcher = registry.start_reconciliation_watcher(pg_engine, interval=0.02)
+    _watcher = registry.start_reconciliation_watcher(pg_engine, interval=0.02)
     for _ in range(50):
         if term_invoked:
             break

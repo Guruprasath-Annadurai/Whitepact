@@ -8,7 +8,6 @@ from __future__ import annotations
 import json
 import os
 import subprocess
-import sys
 import time
 import urllib.request
 from pathlib import Path
@@ -20,7 +19,7 @@ ART = Path("/opt/cursor/artifacts/v131_95_phase0b")
 
 
 def main() -> int:
-    upstream_host = UPSTREAM.rsplit("://", 1)[-1]
+    _upstream_host = UPSTREAM.rsplit("://", 1)[-1]
     cfg = ART / "nginx_wp_live.conf"
     ART.mkdir(parents=True, exist_ok=True)
     tmp = ART / "nginx_runtime"

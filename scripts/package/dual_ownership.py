@@ -87,13 +87,13 @@ def write_wheel(
     ]
     for requirement in requires or []:
         metadata_lines.append(f"Requires-Dist: {requirement}")
-    metadata = ("\n".join(metadata_lines) + "\n").encode("utf-8")
+    metadata = ("\n".join(metadata_lines) + "\n").encode()
     wheel_meta = (
-        "Wheel-Version: 1.0\n"
-        "Generator: whitepact-dual-ownership\n"
-        "Root-Is-Purelib: true\n"
-        "Tag: py3-none-any\n"
-    ).encode("utf-8")
+        b"Wheel-Version: 1.0\n"
+        b"Generator: whitepact-dual-ownership\n"
+        b"Root-Is-Purelib: true\n"
+        b"Tag: py3-none-any\n"
+    )
     payload = {
         f"{dist_info}/METADATA": metadata,
         f"{dist_info}/WHEEL": wheel_meta,

@@ -33,31 +33,22 @@ Mandatory 25-Scenario Infrastructure Qualification:
 from __future__ import annotations
 
 import asyncio
-import os
-import signal
-import subprocess
 import time
 import uuid
-from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from responsibleai.governance.models import GovernanceDecision
 from responsibleai.isolation.container_backend import DockerContainerBackend
 from responsibleai.isolation.errors import (
     IsolationBackendUnavailableError,
     IsolationPolicyViolationError,
 )
 from responsibleai.isolation.in_flight import (
-    InFlightExecution,
     InFlightExecutionRegistry,
     _check_remote_worker_active,
-    _record_cross_worker_registration,
     _tracking_filename,
 )
 from responsibleai.isolation.models import (
-    ExecutionOutcome,
     IsolatedExecutionRequest,
     IsolationProfile,
     NetworkPolicy,
@@ -173,9 +164,8 @@ def test_06_filesystem_escape_attempt_rejected():
 
 # Scenario 7: Unauthorized host filesystem access rejection
 def test_07_unauthorized_host_filesystem_access():
-    from responsibleai.isolation.container_backend import _TRUSTED_RUNNER_MOUNT
 
-    backend = DockerContainerBackend()
+    _backend = DockerContainerBackend()
     cmd = [
         "--user=65534:65534",
         "--read-only",

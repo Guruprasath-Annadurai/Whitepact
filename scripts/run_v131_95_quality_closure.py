@@ -8,7 +8,6 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-import re
 import shutil
 import signal
 import statistics
@@ -18,8 +17,7 @@ import tempfile
 import time
 import urllib.error
 import urllib.request
-from collections import defaultdict
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -170,6 +168,7 @@ def stop_stack(stack: ServerStack) -> None:
 def discover_cli_verbs() -> list[str]:
     sys.path.insert(0, str(ROOT / "src"))
     import click
+
     from biasbuster.cli import main
 
     verbs: list[str] = []

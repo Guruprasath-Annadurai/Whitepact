@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import json
 import subprocess
-import sys
 from collections import Counter
 from pathlib import Path
 

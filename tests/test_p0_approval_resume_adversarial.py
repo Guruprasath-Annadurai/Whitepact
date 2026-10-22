@@ -18,19 +18,23 @@ Proves the 10 non-negotiable security requirements for human approval execution:
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
-import pytest
-from sqlalchemy import create_engine, select, update
 
+import pytest
+from sqlalchemy import update
+
+import responsibleai.dashboard.app as dashboard
 from responsibleai.db.engine import governance_approvals
-from responsibleai.governance.synthetic_counter import SYNTHETIC_COUNTER_TOOL, snapshot as counter_snapshot
+from responsibleai.governance.synthetic_counter import SYNTHETIC_COUNTER_TOOL
+from responsibleai.governance.synthetic_counter import snapshot as counter_snapshot
 from tests.test_customer_real_approval_journey import (
     ADMIN_EMAIL,
     PURPOSE,
     _counter,
     _execute,
     _resolve,
-    live_customer,
+)
+from tests.test_customer_real_approval_journey import (
+    live_customer as live_customer,
 )
 from tests.test_v1_customer_journey import (
     _login,
@@ -39,7 +43,6 @@ from tests.test_v1_customer_journey import (
     _token_from_url,
     _verify_login,
 )
-import responsibleai.dashboard.app as dashboard
 
 
 @pytest.mark.asyncio

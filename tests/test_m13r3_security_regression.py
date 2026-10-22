@@ -23,27 +23,21 @@ Validates:
 
 from __future__ import annotations
 
-import asyncio
 import hashlib
-import json
-import secrets
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from typing import Any
 
 import pytest
 from cryptography.hazmat.primitives.asymmetric import ec
-from sqlalchemy import insert, select, update
+from sqlalchemy import insert, update
 
 from responsibleai.dashboard.app import limiter, settings
 from responsibleai.db.engine import (
     DatabaseEngine,
-    authority_recovery_requests,
-    authority_recovery_votes,
     create_engine,
     organizations,
     passkey_credentials,
-    trust_fabric_bootstrap_records,
     trust_fabric_principals,
     trust_fabric_trust_roots,
     web_memberships,
@@ -52,7 +46,6 @@ from responsibleai.db.engine import (
 from responsibleai.enterprise.authority.errors import (
     ALREADY_VOTED,
     QUORUM_NOT_MET,
-    RECOVERY_DIGEST_MISMATCH,
     SELF_APPROVAL_BLOCKED,
     WEBAUTHN_ASSERTION_INVALID,
     WEBAUTHN_CHALLENGE_REPLAY,

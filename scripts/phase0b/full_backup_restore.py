@@ -8,24 +8,25 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import socket
 import subprocess
 import sys
-import socket
 import tempfile
 import time
 import urllib.request
 from pathlib import Path
 from typing import Any
 
-ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT))
-sys.path.insert(0, str(ROOT / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
 from sqlalchemy import text
+from tests.pg_test_url import isolated_pg_url
 
 from responsibleai.db.engine import create_engine
 from responsibleai.db.migrate import _find_alembic_ini, _migration_env, _run_alembic
-from tests.pg_test_url import isolated_pg_url
+
+ROOT = Path(__file__).resolve().parents[2]
 
 TABLES = (
     "organizations",
