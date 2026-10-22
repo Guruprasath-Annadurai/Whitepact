@@ -290,3 +290,33 @@ recoverable independently of subsequent contention-fixture correction.
   Added missing copyright/SPDX headers to three new Codex test helpers without
   changing their logic. RealPG16 roundtrip, fresh CI and independent Antigravity
   verification remain PENDING. No qualification or M13 closure is claimed.
+
+### Fresh full-matrix receipts and safe cold-worker diagnosis
+
+Run39741800960 at exact59e9ac62197e05f10dbf3fe3dc916cd037fd04af/tree
+7f5e95f7bcf7b637462fac5c225093920c3d7294 completed all16 shard plans.
+Each interpreter:8018PASS/84FAIL/0ERROR/34SKIP (8136 cases). Every plan records
+matching head/tree and clean source; execution inventories match. The separate
+External /Users/ag/WHITEPACT_M13_RED_TO_GREEN_59E9AC62_FAILURE_LEDGER.json retains all failure/skip IDs and
+diagnostic/JUnit hashes. No skip waived, no result transferred to later heads.
+
+Five cold-worker tests fail before reaching their real boundary in the broad
+matrix despite dedicated native success. Their stderr was intentionally discarded
+to protect credentials; the cause is not yet proven. Test-only worker diagnostics
+now emit only a bounded ASCII exception class into a private0600 create-once file.
+Tests display that sanitized category, never exception text, traces or connection
+strings. Corrupt/oversized/non-ASCII diagnostics are not reprinted. Focused
+diagnostic tests4PASS per interpreter before the create-once error-handling
+refinement; subsequent verification remains recorded by the next exact-head run.
+Native behavior, readiness and admission predicates are unchanged.
+
+SDK/package CI39741808004 and product CI39741808010 at59e9ac62 also identify
+the same single remaining actual customer test: expected automatic recovery
+after PostgreSQL outage, but the server retains503 FAILED quarantine. This is
+not silently relabeled an outage or bypassed. A narrow historical expectation
+disposition was requested; public restore activation remains CLOSED.
+
+SDK read-deadline successor8c27c764 adds an actual delayed successful response
+control:50ms deadline must time out;2s deadline must receive success after500ms.
+This verifies read timeout behavior, not a total mutation/execution deadline.
+Real socket execution remains blocked locally and mandatory in Linux CI.

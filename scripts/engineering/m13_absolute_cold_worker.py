@@ -4,6 +4,7 @@
 
 import asyncio
 import os
+import sys
 import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -74,5 +75,25 @@ async def main() -> None:
         await engine.close()
 
 
+def record_failure(error: Exception) -> None:
+    """Test-only diagnostics: never retain exception text, traces or credentials."""
+    destination = os.environ.get("WP_ABSOLUTE_FAILURE_FILE")
+    if destination:
+        category = type(error).__name__
+        if not category.isascii() or not category.isidentifier() or len(category) > 80:
+            category = "UnexpectedWorkerFailure"
+        try:
+            descriptor = os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        except OSError:
+            # Keep the original failing exit without printing a chained traceback.
+            return
+        with os.fdopen(descriptor, "w", encoding="ascii") as output:
+            output.write(category)
+
+
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except Exception as error:
+        record_failure(error)
+        sys.exit(1)

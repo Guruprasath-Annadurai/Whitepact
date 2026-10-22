@@ -36,6 +36,22 @@ def docker(*args):
     return result.stdout.strip()
 
 
+def safe_worker_failure(path):
+    try:
+        if path.is_symlink():
+            category = "InvalidDiagnostic"
+        elif path.exists():
+            with path.open("rb") as source:
+                category = source.read(81).decode("ascii")
+        else:
+            category = "NoDiagnostic"
+    except (OSError, UnicodeError):
+        category = "InvalidDiagnostic"
+    if not category.isidentifier() or len(category) > 80:
+        category = "InvalidDiagnostic"
+    return f"Controlled worker exited before its boundary: {category}"
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("metadata", ["deleted", "corrupt"])
 async def test_sigkill_and_lost_metadata_never_admit_normal_ready(metadata, tmp_path, monkeypatch):
@@ -66,12 +82,14 @@ async def test_sigkill_and_lost_metadata_never_admit_normal_ready(metadata, tmp_
         tracking.mkdir()
         private = tmp_path / "child-private"
         private.mkdir()
+        diagnostic = tmp_path / "child-failure"
         env = dict(
             os.environ,
             WHITEPACT_ALLOW_UNISOLATED_EXECUTION="0",
             WHITEPACT_ENV="staging",
             WP_ABSOLUTE_DISPOSABLE_DB=url,
             WP_ABSOLUTE_TRACKING=str(tracking),
+            WP_ABSOLUTE_FAILURE_FILE=str(diagnostic),
             TMPDIR=str(private),
         )
         child = await asyncio.create_subprocess_exec(
@@ -101,9 +119,7 @@ async def test_sigkill_and_lost_metadata_never_admit_normal_ready(metadata, tmp_
                 if inspected["State"]["Running"]:
                     break
             if child.returncode is not None:
-                pytest.fail(
-                    "Controlled child exited before a real running workload was established"
-                )
+                pytest.fail(safe_worker_failure(diagnostic))
             await asyncio.sleep(0.05)
         else:
             pytest.fail("No acknowledged running controlled Docker workload within the bound")

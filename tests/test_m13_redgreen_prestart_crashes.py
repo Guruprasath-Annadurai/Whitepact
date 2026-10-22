@@ -24,7 +24,7 @@ from responsibleai.db.engine import create_engine, organizations, runtime_contai
 from responsibleai.db.migrate import _find_alembic_ini, _migration_env, _run_alembic
 from tests.docker_runtime import require_container_isolation_host
 from tests.pg_test_url import isolated_pg_url
-from tests.test_m13_absolute_cold_restart_native import docker
+from tests.test_m13_absolute_cold_restart_native import docker, safe_worker_failure
 
 
 @pytest.mark.asyncio
@@ -36,6 +36,7 @@ async def test_prestart_sigkill_preserves_durable_fence(phase, tmp_path):
     await _run_alembic(_find_alembic_ini(), _migration_env(url), "upgrade", "0066")
     engine = create_engine(url)
     marker, tracking, private = (tmp_path / name for name in ("phase", "tracking", "private"))
+    diagnostic = tmp_path / "child-failure"
     tracking.mkdir()
     private.mkdir()
     child = None
@@ -63,6 +64,7 @@ async def test_prestart_sigkill_preserves_durable_fence(phase, tmp_path):
                 WP_ABSOLUTE_TRACKING=str(tracking),
                 WP_ABSOLUTE_PAUSE_PHASE=phase,
                 WP_ABSOLUTE_PHASE_FILE=str(marker),
+                WP_ABSOLUTE_FAILURE_FILE=str(diagnostic),
                 TMPDIR=str(private),
             ),
             stdout=asyncio.subprocess.DEVNULL,
@@ -70,7 +72,7 @@ async def test_prestart_sigkill_preserves_durable_fence(phase, tmp_path):
         )
         async with asyncio.timeout(45):
             while not marker.exists():
-                assert child.returncode is None, "Fixture exited before its exact crash boundary"
+                assert child.returncode is None, safe_worker_failure(diagnostic)
                 await asyncio.sleep(0.05)
         assert marker.read_text() == phase
         async with engine.raw.connect() as conn:
