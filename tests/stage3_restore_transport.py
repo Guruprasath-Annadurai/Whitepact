@@ -9,7 +9,7 @@ import shutil
 import socket
 import subprocess
 import sys
-from contextlib import asynccontextmanager
+from contextlib import ExitStack, asynccontextmanager, contextmanager
 from pathlib import Path
 
 import httpx
@@ -20,11 +20,24 @@ from responsibleai.data_governance.backup_defense import (
     RestoreReadinessState,
     SqliteDurableLifecycleStateProvider,
 )
+from responsibleai.data_governance.operator_recovery import RecoveryAuthorizationError
 from responsibleai.data_governance.operator_recovery_control import (
     OperatorProfile,
     _exclusive_operation,
     collect_recovery_evidence,
 )
+
+
+@contextmanager
+def _exclusive_restore_operation(profile):
+    # Translate only acquisition refusal. Preserve native R1 API exceptions and
+    # never misclassify a failure raised by the protected operation's own body.
+    with ExitStack() as stack:
+        try:
+            stack.enter_context(_exclusive_operation(profile))
+        except BlockingIOError as exc:
+            raise RecoveryAuthorizationError("Recovery operation already in progress") from exc
+        yield
 
 
 async def fence_restore_incident(engine, provider, profile_path):
@@ -130,7 +143,7 @@ async def postgres_snapshot(engine, archive, *, restore=False, provider=None):
             raise AssertionError("Restore incident and Store B target differ")
         # Same lock as the genuine R1 controller, held across the real command.
         # An independently signed recovery cannot race the destructive restore.
-        with _exclusive_operation(profile):
+        with _exclusive_restore_operation(profile):
             if provider.get_readiness_state() != RestoreReadinessState.RESTORE_PENDING:
                 raise AssertionError("Restore readiness changed before PostgreSQL restoration")
             result = await asyncio.to_thread(

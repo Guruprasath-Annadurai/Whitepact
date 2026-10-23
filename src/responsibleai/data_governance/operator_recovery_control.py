@@ -952,10 +952,7 @@ def _exclusive_operation(profile: OperatorProfile) -> Iterator[None]:
             or stat.S_IMODE(info.st_mode) != 0o600
         ):
             raise RecoveryAuthorizationError("Invalid recovery lock")
-        try:
-            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError as exc:
-            raise RecoveryAuthorizationError("Recovery operation already in progress") from exc
+        fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
         yield
     finally:
         os.close(descriptor)

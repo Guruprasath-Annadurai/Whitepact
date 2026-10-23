@@ -8,7 +8,7 @@ from types import SimpleNamespace
 import pytest
 
 from responsibleai.data_governance.operator_recovery import RecoveryAuthorizationError
-from responsibleai.data_governance.operator_recovery_control import _exclusive_operation
+from tests.stage3_restore_transport import _exclusive_restore_operation as _exclusive_operation
 
 
 def test_competing_operation_has_deterministic_refusal_and_cannot_enter(tmp_path):
