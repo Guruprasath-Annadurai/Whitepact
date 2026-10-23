@@ -8,6 +8,7 @@ import pytest
 
 from responsibleai.data_governance.backup_defense import (
     InMemoryLifecycleStateProvider,
+    LifecycleIntegrityError,
     LifecycleRollbackError,
     LifecycleState,
     LifecycleStateRecord,
@@ -96,3 +97,18 @@ def test_stricter_floor_is_not_dropped_as_duplicate(established):
     provider, original = established
     provider.record_state(replace(original, revocation_floor=7))
     assert provider.get_state(original.tenant_id).revocation_floor == 7
+
+
+def test_ordinary_caller_cannot_publish_initial_active_without_provisioning_authority(tmp_path):
+    """Mandatory open gate: a provider reference is not creation authorization."""
+    provider = SqliteDurableLifecycleStateProvider(tmp_path / "unestablished-store-b.sqlite3")
+    with pytest.raises((LifecycleIntegrityError, PermissionError)):
+        provider.record_state(
+            LifecycleStateRecord(
+                tenant_id="unverified-tenant",
+                generation_id="f" * 64,
+                state=LifecycleState.ACTIVE,
+                effective_at="2026-10-23T00:00:00+00:00",
+            )
+        )
+    assert provider.get_state("unverified-tenant") is None
