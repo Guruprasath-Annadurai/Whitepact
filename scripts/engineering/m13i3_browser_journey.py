@@ -14,7 +14,7 @@ import subprocess
 from pathlib import Path
 
 from scripts.engineering.m13i1_customer_journey import serve
-from scripts.engineering.m13i2_customer_journey import configured_settings
+from scripts.engineering.m13i2_customer_journey import configured_settings, isolated_startup_store_b
 from starlette.applications import Starlette
 from starlette.responses import JSONResponse, Response
 from starlette.routing import Route
@@ -99,7 +99,7 @@ async def attempt() -> dict:
                 "web_verification_delivery_url": f"{mailbox}/deliver",
                 "web_verification_delivery_token": delivery_secret,
             }
-            with configured_settings(changes):
+            with isolated_startup_store_b(), configured_settings(changes):
                 async with serve(dashboard.app) as origin:
                     config = {
                         "origin": origin,
