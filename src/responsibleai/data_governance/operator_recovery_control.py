@@ -13,6 +13,7 @@ import asyncio
 import fcntl
 import hashlib
 import json
+import math
 import os
 import secrets
 import sqlite3
@@ -23,10 +24,16 @@ from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import asdict, dataclass, field
+from datetime import date, datetime, timedelta, timezone
+from datetime import time as wall_time
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
+from uuid import UUID
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import select, text
+from sqlalchemy.sql.elements import quoted_name
 
 from responsibleai.data_governance.operator_recovery import (
     OperatorKey,
@@ -42,6 +49,8 @@ _TABLES = tuple(
     sorted(
         {
             "organizations",
+            "tenant_provisioning_records",
+            "tenant_provisioning_outbox",
             "tenant_tombstones",
             "governance_revocation_epochs",
             "governance_execution_authorizations",
@@ -78,6 +87,37 @@ class RecoveryInProgressError(RecoveryAuthorizationError):
     """A durable unfinished operation fences admission without a competing write."""
 
 
+EVIDENCE_FORMAT = "WHITEPACT-PG-RECOVERY-EVIDENCE-V2"
+_EVIDENCE_REQUEST_PREFIX = "pg-evidence-v2:"
+
+
+def _require_manifest_format(manifest: RecoveryManifest) -> None:
+    # Version is signature-bound without changing the fixed manifest schema.
+    # Historical controllers emitted only unprefixed hexadecimal request IDs.
+    suffix = manifest.request_id.removeprefix(_EVIDENCE_REQUEST_PREFIX)
+    if (
+        not manifest.request_id.startswith(_EVIDENCE_REQUEST_PREFIX)
+        or len(suffix) != 32
+        or any(character not in "0123456789abcdef" for character in suffix)
+    ):
+        raise RecoveryAuthorizationError("Historical signed evidence format requires review")
+
+
+def _require_completed_evidence(row: Mapping[str, Any], manifest: RecoveryManifest) -> None:
+    """Receipt metadata cannot relabel older signed evidence as V2."""
+    try:
+        approved = json.loads(row["approved_evidence"])
+        valid = (
+            type(approved) is dict
+            and approved.get("evidence_format") == EVIDENCE_FORMAT
+            and _digest(approved) == manifest.evidence_digest
+        )
+    except (KeyError, TypeError, ValueError):
+        valid = False
+    if not valid:
+        raise RecoveryAuthorizationError("Signed recovery evidence format or digest changed")
+
+
 def enforcement_required() -> bool:
     return not unisolated_execution_allowed()
 
@@ -88,6 +128,114 @@ def _digest(value: Any) -> str:
             value, sort_keys=True, separators=(",", ":"), ensure_ascii=True, allow_nan=False
         ).encode()
     ).hexdigest()
+
+
+def _timezone_value(value: datetime | wall_time) -> Any:
+    zone = value.tzinfo
+    if zone is None:
+        return ["naive"]
+    if type(zone) not in (timezone, ZoneInfo):
+        raise RecoveryAuthorizationError("Unsupported recovery-evidence timezone")
+    offset = value.utcoffset()
+    if offset is None:
+        raise RecoveryAuthorizationError("Ambiguous recovery-evidence timezone")
+    micros = ((offset.days * 86400 + offset.seconds) * 1000000) + offset.microseconds
+    if type(zone) is timezone:
+        return ["fixed", micros, value.tzname()]
+    if type(zone) is ZoneInfo:
+        return ["iana", zone.key, micros]
+    raise RecoveryAuthorizationError("Unsupported recovery-evidence timezone")
+
+
+def _evidence_value(value: Any) -> Any:
+    """V2 injective type tree; never stringify unknown authoritative values.
+
+    Naive timestamps remain explicitly naive, never interpreted as local/UTC.
+    Aware timestamps preserve their offset, zone identity and fold. Numeric
+    scale/sign and binary octets are retained. Every container is tagged so a
+    JSON value cannot impersonate a typed value or a version envelope.
+    """
+    kind = type(value)
+    if value is None:
+        return ["null"]
+    if kind is bool:
+        return ["bool", value]
+    if kind is int:
+        return ["int", value]
+    if kind is float:
+        if not math.isfinite(value):
+            raise RecoveryAuthorizationError("Nonfinite recovery-evidence float")
+        return ["float", value]
+    if kind is str:
+        return ["str", value]
+    if kind is bytes:
+        return ["bytes", value.hex()]
+    if isinstance(value, UUID):
+        if kind is not UUID:
+            # asyncpg returns its exact known UUID adapter for native PG UUIDs.
+            # Unknown subclasses are not allowed to supply custom encodings.
+            try:
+                from asyncpg.pgproto.pgproto import UUID as POSTGRES_UUID
+            except ImportError:
+                raise RecoveryAuthorizationError(
+                    "Unsupported recovery-evidence UUID adapter"
+                ) from None
+            if kind is not POSTGRES_UUID:
+                raise RecoveryAuthorizationError("Unsupported recovery-evidence UUID adapter")
+        return ["uuid", value.hex]
+    if kind is Decimal:
+        if not value.is_finite():
+            raise RecoveryAuthorizationError("Nonfinite recovery-evidence decimal")
+        parts = value.as_tuple()
+        return ["decimal", parts.sign, list(parts.digits), parts.exponent]
+    if kind is datetime:
+        zone = _timezone_value(value)
+        return [
+            "datetime",
+            value.isoformat(timespec="microseconds"),
+            value.fold,
+            zone,
+        ]
+    if kind is date:
+        return ["date", value.isoformat()]
+    if kind is wall_time:
+        zone = _timezone_value(value)
+        return [
+            "time",
+            value.isoformat(timespec="microseconds"),
+            value.fold,
+            zone,
+        ]
+    if kind is timedelta:
+        return ["timedelta", value.days, value.seconds, value.microseconds]
+    if kind is list:
+        return ["list", [_evidence_value(item) for item in value]]
+    if kind is tuple:
+        return ["tuple", [_evidence_value(item) for item in value]]
+    if kind is dict:
+        if any(type(key) not in (str, quoted_name) for key in value):
+            raise RecoveryAuthorizationError("Nonstring recovery-evidence field")
+        # SQLAlchemy's known metadata adapter carries quoting policy, not a
+        # different database field name. Preserve its exact string contents.
+        return ["map", [[str.__str__(key), _evidence_value(value[key])] for key in sorted(value)]]
+    raise RecoveryAuthorizationError("Unsupported recovery-evidence value type")
+
+
+def _evidence_bytes(value: Any) -> bytes:
+    return json.dumps(
+        _evidence_value(value),
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+        allow_nan=False,
+    ).encode("ascii")
+
+
+def _snapshot_digest(records: list[dict[str, Any]]) -> str:
+    # Sorting and digesting use exactly the same canonical row bytes.
+    rows = sorted(_evidence_bytes(record) for record in records)
+    envelope = b'{"format":' + json.dumps(EVIDENCE_FORMAT).encode("ascii") + b',"rows":['
+    return hashlib.sha256(envelope + b",".join(rows) + b"]}").hexdigest()
 
 
 def _private_json(path: Path) -> dict[str, Any]:
@@ -209,8 +357,20 @@ class OperatorProfile:
         )
 
 
-def _control_connection(profile: OperatorProfile):
-    return RecoveryReceiptLedger(profile.ledger_path)._connect()
+@contextmanager
+def _control_connection(profile: OperatorProfile) -> Iterator[sqlite3.Connection]:
+    with RecoveryReceiptLedger(profile.ledger_path)._connect() as connection:
+        columns = {row[1] for row in connection.execute("PRAGMA table_info(recovery_operations)")}
+        if (
+            not {"evidence_format", "approved_evidence"}.issubset(columns)
+            or connection.execute(
+                "SELECT 1 FROM recovery_operations WHERE evidence_format != ? "
+                "OR evidence_format IS NULL LIMIT 1",
+                (EVIDENCE_FORMAT,),
+            ).fetchone()
+        ):
+            raise RecoveryAuthorizationError("Historical recovery evidence format requires review")
+        yield connection
 
 
 def initialize_control_ledger(path: Path) -> None:
@@ -221,7 +381,7 @@ def initialize_control_ledger(path: Path) -> None:
             "CREATE TABLE recovery_operations (epoch INTEGER PRIMARY KEY AUTOINCREMENT, "
             "request_id TEXT NOT NULL UNIQUE, manifest TEXT NOT NULL, signatures TEXT NOT NULL, "
             "profile_digest TEXT NOT NULL, phase TEXT NOT NULL, store_b_epoch INTEGER, "
-            "final_digest TEXT)"
+            "final_digest TEXT, evidence_format TEXT NOT NULL, approved_evidence TEXT NOT NULL)"
         )
 
 
@@ -327,9 +487,10 @@ def authorized_ready_epoch(provider) -> int:
 
 def validate_ready_lifecycle(provider) -> None:
     session = _checked_session(phase="PG_VERIFIED", provider=provider)
+    snapshot = _store_b_snapshot(provider)
     if (
-        _digest(_store_b_snapshot(provider)["lifecycle"])
-        != session.approved_evidence["lifecycle_digest"]
+        _digest(snapshot["lifecycle"]) != session.approved_evidence["lifecycle_digest"]
+        or _digest(snapshot["provisioning"]) != session.approved_evidence["provisioning_digest"]
     ):
         raise RecoveryAuthorizationError("Store B lifecycle changed after operator approval")
 
@@ -340,7 +501,7 @@ async def _pg_snapshots(connection):
     versions = (
         (await connection.execute(text("SELECT version_num FROM alembic_version"))).scalars().all()
     )
-    if versions != ["0066"]:
+    if versions != ["0067"]:
         raise RecoveryAuthorizationError("Runtime schema changed during recovery")
     snapshots = {}
     org_ids = []
@@ -357,7 +518,7 @@ async def _pg_snapshots(connection):
             raise RecoveryAuthorizationError("Durable execution intent remains unresolved")
         if name == "organizations":
             org_ids = [row["id"] for row in records]
-        snapshots[name] = _digest(sorted(records, key=lambda row: json.dumps(row, sort_keys=True)))
+        snapshots[name] = _snapshot_digest(records)
     return snapshots, org_ids
 
 
@@ -442,12 +603,40 @@ def _store_b_snapshot(provider) -> dict[str, Any]:
         row = connection.execute(
             "SELECT state,epoch FROM durable_restore_readiness WHERE key='global'"
         ).fetchone()
+        provisioning: dict[str, str | None] = {}
+        for table in (
+            "tenant_provisioning_reservations",
+            "provisioning_controller_trust",
+            "provisioning_publication_consumptions",
+            "tenant_provisioning_completions",
+        ):
+            exists = connection.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)
+            ).fetchone()
+            if not exists:
+                provisioning[table] = None
+                continue
+            rows = connection.execute(f"SELECT * FROM {table} LIMIT 10001").fetchall()
+            if len(rows) > 10000:
+                raise RecoveryAuthorizationError(
+                    "Provisioning recovery evidence exceeds qualified bound"
+                )
+            provisioning[table] = _digest(
+                sorted(
+                    [
+                        [value.hex() if isinstance(value, bytes) else value for value in record]
+                        for record in rows
+                    ],
+                    key=lambda record: str(record[0]),
+                )
+            )
     if row is None:
         raise RecoveryAuthorizationError("Recovery requires existing durable quarantine evidence")
     return {
         "identity": _digest([str(path), info.st_dev, info.st_ino]),
         "state": row[0],
         "epoch": row[1],
+        "provisioning": provisioning,
         "lifecycle": sorted(
             (asdict(record) for record in provider.list_all()),
             key=lambda record: record["tenant_id"],
@@ -479,8 +668,8 @@ async def collect_recovery_evidence(engine, provider, profile: OperatorProfile) 
                 .scalars()
                 .all()
             )
-            if version != ["0066"]:
-                raise RecoveryAuthorizationError("Exact compatible schema 0066 required")
+            if version != ["0067"]:
+                raise RecoveryAuthorizationError("Exact compatible schema 0067 required")
             identity = (
                 await connection.execute(
                     text(
@@ -491,6 +680,37 @@ async def collect_recovery_evidence(engine, provider, profile: OperatorProfile) 
             ).one()
             if _digest(list(identity)) != profile.postgres_identity:
                 raise RecoveryAuthorizationError("PostgreSQL deployment identity mismatch")
+            # Read-only qualification is allowed while FAILED; it cannot admit
+            # traffic or replace operator authorization. Incomplete/stale active
+            # tenant evidence must not become READY through reconciliation.
+            from responsibleai.data_governance.tenant_admission import (
+                verify_tenant_completion_evidence,
+            )
+
+            tenants = (
+                (await connection.execute(text("SELECT id FROM organizations"))).scalars().all()
+            )
+            for tenant_id in tenants:
+                lifecycle = provider.get_state(tenant_id)
+                if lifecycle is None:
+                    raise RecoveryAuthorizationError(
+                        "Store A tenant is lacking authoritative Store B lifecycle"
+                    )
+                if lifecycle.state.value == "ACTIVE":
+                    epoch = await connection.scalar(
+                        text(
+                            "SELECT epoch FROM governance_revocation_epochs WHERE organization_id=:tenant AND scope='governance'"
+                        ),
+                        {"tenant": tenant_id},
+                    )
+                    try:
+                        await verify_tenant_completion_evidence(
+                            connection, tenant_id, int(epoch or 0), provider
+                        )
+                    except Exception as exc:
+                        raise RecoveryAuthorizationError(
+                            "Active tenant completion evidence is unverified"
+                        ) from exc
             snapshots, org_ids = await _pg_snapshots(connection)
     registry = InFlightExecutionRegistry.get_instance()
     if registry.get_unresolved_containments() or any(
@@ -538,8 +758,9 @@ async def collect_recovery_evidence(engine, provider, profile: OperatorProfile) 
     if floor is not None and store_b["epoch"] < floor:
         raise RecoveryAuthorizationError("Store B readiness epoch rolled back")
     return {
+        "evidence_format": EVIDENCE_FORMAT,
         "postgres_identity": profile.postgres_identity,
-        "schema_revision": "0066",
+        "schema_revision": "0067",
         "store_b_identity": store_b["identity"],
         "readiness_epoch": store_b["epoch"],
         "journal_digest": snapshots["runtime_containment_records"],
@@ -554,6 +775,7 @@ async def collect_recovery_evidence(engine, provider, profile: OperatorProfile) 
         "stores_digest": _digest([snapshots, store_b]),
         "pg_digest": _digest(snapshots),
         "lifecycle_digest": _digest(store_b["lifecycle"]),
+        "provisioning_digest": _digest(store_b["provisioning"]),
         "source_digest": _digest(
             {
                 key: value
@@ -587,7 +809,7 @@ async def prepare_offline_recovery(engine, provider, *, profile_path: Path) -> R
     now = int(time.time())
     manifest = RecoveryManifest(
         **values,
-        request_id=secrets.token_hex(16),
+        request_id=_EVIDENCE_REQUEST_PREFIX + secrets.token_hex(16),
         deployment_id=profile.deployment_id,
         environment=profile.environment,
         incident_id=profile.incident_id,
@@ -613,6 +835,8 @@ async def verify_engine_final_state(engine, provider) -> None:
         raise RecoveryAuthorizationError("Reconciled authority changed before finalization")
     if evidence["lifecycle_digest"] != session.approved_evidence["lifecycle_digest"]:
         raise RecoveryAuthorizationError("Approved Store B lifecycle changed")
+    if evidence["provisioning_digest"] != session.approved_evidence["provisioning_digest"]:
+        raise RecoveryAuthorizationError("Approved provisioning evidence changed")
     snapshot = _store_b_snapshot(provider)
     if (
         snapshot["state"] != "RECONCILING"
@@ -663,6 +887,8 @@ def assert_completed_binding(provider) -> bool:
     ):
         raise RecoveryAuthorizationError("Recovery is incomplete or evidence changed")
     manifest = RecoveryManifest(**json.loads(row["manifest"]))
+    _require_manifest_format(manifest)
+    _require_completed_evidence(row, manifest)
     verify_operator_approvals(
         manifest,
         profile.keys,
@@ -748,6 +974,7 @@ async def execute_offline_recovery(
     )
 
     profile = OperatorProfile.load(profile_path)
+    _require_manifest_format(manifest)
     if manifest.incident_id != profile.incident_id:
         raise RecoveryAuthorizationError("Recovery incident mismatch")
     if not enforcement_required():
@@ -769,13 +996,21 @@ async def execute_offline_recovery(
         )
         with _control_connection(profile) as connection:
             connection.execute(
-                "INSERT INTO recovery_operations(request_id,manifest,signatures,profile_digest,phase) "
-                "VALUES(?,?,?,?,'CONSUMED')",
+                "INSERT INTO recovery_operations(request_id,manifest,signatures,profile_digest,phase,evidence_format,approved_evidence) "
+                "VALUES(?,?,?,?,'CONSUMED',?,?)",
                 (
                     manifest.request_id,
                     json.dumps(asdict(manifest)),
                     json.dumps(dict(signatures)),
                     profile.digest,
+                    EVIDENCE_FORMAT,
+                    json.dumps(
+                        evidence,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                        ensure_ascii=True,
+                        allow_nan=False,
+                    ),
                 ),
             )
         session = _Session(profile, manifest, signatures, engine, provider, evidence)
@@ -814,6 +1049,8 @@ async def execute_offline_recovery(
                         or final["source_digest"] != session.state.get("reconciled_digest")
                         or final["lifecycle_digest"]
                         != session.approved_evidence["lifecycle_digest"]
+                        or final["provisioning_digest"]
+                        != session.approved_evidence["provisioning_digest"]
                     ):
                         raise RecoveryAuthorizationError(
                             "Recovery evidence changed during finalization"

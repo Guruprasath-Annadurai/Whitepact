@@ -8,10 +8,10 @@ from responsibleai.db.engine import DatabaseEngine
 
 # Review this alongside every security-bearing migration. Do not silently accept
 # newer schema semantics merely because existing ORM queries still work.
-# This runtime requires the durable pre-CREATE containment journal introduced
-# by 0066, in addition to 0065's mandatory passkey protections. Older and newer
+# This runtime requires 0067's protected tenant provisioning projection as well
+# as 0066's containment journal and 0065's mandatory passkeys. Older and newer
 # revisions are not implicitly compatible; partial/multiple heads also fail.
-SUPPORTED_POSTGRES_REVISIONS = frozenset({"0066"})
+SUPPORTED_POSTGRES_REVISIONS = frozenset({"0067"})
 
 
 async def assert_runtime_schema_compatible(engine: DatabaseEngine) -> None:

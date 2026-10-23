@@ -14,15 +14,20 @@ from responsibleai.data_governance.backup_defense import (
     LifecycleStateRecord,
     SqliteDurableLifecycleStateProvider,
 )
+from tests.test_stage3_publication_consumption import enrolled as enrolled
+from tests.test_stage3_publication_consumption import signature
 
 
 @pytest.fixture(params=["durable", "memory"])
-def established(tmp_path, request):
-    provider = (
-        SqliteDurableLifecycleStateProvider(tmp_path / "isolated-b.sqlite3")
-        if request.param == "durable"
-        else InMemoryLifecycleStateProvider()
-    )
+def established(request, enrolled):
+    if request.param == "durable":
+        provider, ledger, manifest, key = enrolled
+        manifest = replace(manifest, security_epoch=7, revocation_floor=6)
+        ledger.publish(manifest, signature(key, manifest))
+        # Updates ask the provider to compute a fresh MAC, rather than copying
+        # the existing row's MAC onto changed fields. Integrity checks stay on.
+        return provider, replace(provider.get_state(manifest.tenant_id), digest="")
+    provider = InMemoryLifecycleStateProvider()
     original = LifecycleStateRecord(
         tenant_id="disposable-tenant",
         generation_id="original-generation",
@@ -75,7 +80,7 @@ def test_legitimate_same_generation_monotonic_update_survives_restart(establishe
             effective_at="2026-10-23T00:00:01+00:00",
         )
     )
-    restarted = SqliteDurableLifecycleStateProvider(provider.path)
+    restarted = SqliteDurableLifecycleStateProvider(provider.path, secret_key=provider._secret_key)
     actual = restarted.get_state(original.tenant_id)
     assert (actual.generation_id, actual.security_epoch, actual.revocation_floor) == (
         original.generation_id,

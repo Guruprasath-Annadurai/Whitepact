@@ -148,43 +148,62 @@ class OrgRepository:
         monthly_budget_usd: float = 10_000.0,
         plan: Plan = Plan.FREE,
         provisioner_key_id: str | None = None,
+        *,
+        session_token: str = "",
+        csrf: str = "",
+        request_id: str | None = None,
     ) -> Organization:
-        org = Organization(
+        from responsibleai.data_governance.tenant_client import (
+            TenantCreationDeniedError,
+            TenantProvisioningUnavailableError,
+            provision_organization,
+        )
+
+        if plan != Plan.FREE:
+            raise TenantCreationDeniedError("Tenant creation cannot assign paid entitlement")
+        if provisioner_key_id is not None:
+            from responsibleai.db.web_identity_repository import WebIdentityRepository
+
+            principal = (
+                await WebIdentityRepository(self._engine).get_principal(session_token)
+                if session_token
+                else None
+            )
+            if principal is None:
+                raise TenantCreationDeniedError("A verified human creation session is required")
+            async with self._engine.raw.connect() as connection:
+                key_id = await connection.scalar(
+                    select(org_api_keys.c.id)
+                    .join(organizations, organizations.c.id == org_api_keys.c.org_id)
+                    .where(
+                        org_api_keys.c.id == provisioner_key_id,
+                        org_api_keys.c.revoked == 0,
+                        org_api_keys.c.role == Role.OWNER.value,
+                        organizations.c.owner_user_id == principal.user_id,
+                    )
+                )
+            if key_id is None:
+                raise TenantCreationDeniedError(
+                    "Creation origin key is not owned by this principal"
+                )
+        tenant_id = await provision_organization(
             name=name,
             slug=slug,
             monthly_budget_usd=monthly_budget_usd,
-            created_at=_now(),
-            plan=plan,
-            provisioner_key_id=provisioner_key_id,
+            session_token=session_token,
+            csrf=csrf,
+            request_id=request_id,
         )
-        async with self._engine.raw.begin() as conn:
-            # Check tombstone ledger
-            ts = (
-                await conn.execute(
-                    select(tenant_tombstones).where(
-                        (tenant_tombstones.c.org_id == org.id)
-                        | (tenant_tombstones.c.original_name == name)
-                    )
+        if provisioner_key_id is not None:
+            async with self._engine.raw.begin() as connection:
+                await connection.execute(
+                    update(organizations)
+                    .where(organizations.c.id == tenant_id)
+                    .values(provisioner_key_id=provisioner_key_id)
                 )
-            ).fetchone()
-            if ts:
-                from responsibleai.data_governance.deletion_orchestrator import TenantDeletionError
-
-                raise TenantDeletionError(
-                    f"Cannot create tenant: identifier '{org.id}' or name '{name}' is tombstoned ({ts.org_id})"
-                )
-
-            await conn.execute(
-                insert(organizations).values(
-                    id=org.id,
-                    name=org.name,
-                    slug=org.slug,
-                    monthly_budget_usd=org.monthly_budget_usd,
-                    created_at=org.created_at,
-                    plan=org.plan.value,
-                    provisioner_key_id=provisioner_key_id,
-                )
-            )
+        org = await self.get_org(tenant_id)
+        if org is None:
+            raise TenantProvisioningUnavailableError("Completed organization readback failed")
         return org
 
     async def set_plan_status(

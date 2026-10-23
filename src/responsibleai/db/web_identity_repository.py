@@ -431,45 +431,32 @@ class WebIdentityRepository:
             )
 
     async def attach_organization(
-        self, user_id: str, *, name: str, slug: str, role: Role = Role.OWNER
+        self,
+        user_id: str,
+        *,
+        name: str,
+        slug: str,
+        role: Role = Role.OWNER,
+        session_token: str = "",
+        csrf: str = "",
+        request_id: str | None = None,
     ) -> str:
-        now = _now()
-        org_id = str(uuid.uuid4())
-        async with self._engine.raw.begin() as conn:
-            await conn.execute(
-                insert(organizations).values(
-                    id=org_id,
-                    name=name,
-                    slug=slug,
-                    monthly_budget_usd=10_000.0,
-                    created_at=_iso(now),
-                    plan=Plan.FREE.value,
-                    sso_required=0,
-                    mfa_required=0,
-                    workspace_kind="ORGANIZATION",
-                    owner_user_id=user_id,
-                    settings_json="{}",
-                )
-            )
-            await conn.execute(
-                insert(web_memberships).values(
-                    id=str(uuid.uuid4()),
-                    user_id=user_id,
-                    org_id=org_id,
-                    role=role.value,
-                    status="ACTIVE",
-                    invited_by_user_id=None,
-                    accepted_at=_iso(now),
-                    created_at=_iso(now),
-                    updated_at=_iso(now),
-                )
-            )
-            await conn.execute(
-                update(web_sessions)
-                .where(web_sessions.c.user_id == user_id, web_sessions.c.revoked == 0)
-                .values(org_id=org_id)
-            )
-        return org_id
+        from responsibleai.data_governance.tenant_client import (
+            TenantCreationDeniedError,
+            provision_organization,
+        )
+
+        principal = await self.get_principal(session_token) if session_token else None
+        if principal is None or principal.user_id != user_id or role != Role.OWNER:
+            raise TenantCreationDeniedError("Authenticated creation principal mismatch")
+        return await provision_organization(
+            name=name,
+            slug=slug,
+            session_token=session_token,
+            csrf=csrf,
+            request_id=request_id,
+            attach_session=True,
+        )
 
     async def list_organizations(self, user_id: str) -> list[dict[str, str]]:
         async with self._engine.raw.connect() as conn:

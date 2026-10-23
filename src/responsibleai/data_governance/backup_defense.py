@@ -339,6 +339,10 @@ class SqliteDurableLifecycleStateProvider(CurrentLifecycleStateProvider):
                     (record.tenant_id,),
                 )
                 row = cursor.fetchone()
+                if row is None and record.state == LifecycleState.ACTIVE:
+                    raise LifecycleIntegrityError(
+                        "Initial ACTIVE publication requires protected provisioning authority"
+                    )
                 if row:
                     curr_state_str, curr_epoch, curr_eff, curr_gen, curr_floor = row
                     curr_rank = _STATE_RANK.get(LifecycleState(curr_state_str), 0)

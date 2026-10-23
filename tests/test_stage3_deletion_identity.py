@@ -3,12 +3,15 @@
 """Explicit fixture identity preservation, not onboarding/controller qualification."""
 
 import secrets
+from dataclasses import replace
+from datetime import UTC, datetime
 
 import pytest
+from sqlalchemy import text
 
 from responsibleai.data_governance.backup_defense import (
     LifecycleState,
-    LifecycleStateRecord,
+    RestoreReadinessGate,
     get_restore_readiness_gate,
     set_restore_readiness_gate,
 )
@@ -17,32 +20,31 @@ from responsibleai.data_governance.deletion_orchestrator import (
     TenantDeletionOrchestrator,
 )
 from responsibleai.db.org_repository import OrgRepository
-from tests.test_operator_recovery_postgres import real_recovery as real_recovery
+from tests.test_stage3_controller_postgres import controller as controller
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("real_recovery", ["normal"], indirect=True)
-async def test_restrictive_deletion_preserves_established_identity_and_floors(real_recovery):
-    engine, provider, gate, _, _ = real_recovery
+async def test_restrictive_deletion_preserves_established_identity_and_floors(controller):
+    service, _, _, token, csrf = controller
+    engine, provider = service.engine, service.provider
+    tenant = await service.create(
+        session_token=token,
+        csrf=csrf,
+        request_id="delete-established",
+        name="Deletion fixture",
+        slug=secrets.token_hex(8),
+    )
+    gate = RestoreReadinessGate(provider=provider, db_engine=engine)
     previous = get_restore_readiness_gate()
     set_restore_readiness_gate(gate)
     try:
-        org = await OrgRepository(engine).create_org("Deletion fixture", secrets.token_hex(8))
-        generation = secrets.token_hex(32)
-        provider.record_state(
-            LifecycleStateRecord(
-                tenant_id=org.id,
-                generation_id=generation,
-                state=LifecycleState.ACTIVE,
-                effective_at="2026-10-23T00:00:00+00:00",
-                security_epoch=7,
-                revocation_floor=6,
-            )
-        )
+        established = provider.get_state(tenant)
+        generation = established.generation_id
+        provider.record_state(replace(established, security_epoch=7, revocation_floor=6, digest=""))
         result = await TenantDeletionOrchestrator(engine, provider).delete_tenant(
-            org.id, deleted_by="explicit-test-fixture", reason="identity-preservation-regression"
+            tenant, deleted_by="explicit-test-fixture", reason="identity-preservation-regression"
         )
-        record = provider.get_state(org.id)
+        record = provider.get_state(tenant)
         assert result.generation_id == generation
         assert record.generation_id == generation
         assert record.state == LifecycleState.TOMBSTONED
@@ -53,18 +55,32 @@ async def test_restrictive_deletion_preserves_established_identity_and_floors(re
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("real_recovery", ["normal"], indirect=True)
-async def test_unestablished_tenant_deletion_does_not_fabricate_store_b_generation(real_recovery):
-    engine, provider, gate, _, _ = real_recovery
+async def test_unestablished_tenant_deletion_does_not_fabricate_store_b_generation(controller):
+    service, _, _, _, _ = controller
+    engine, provider = service.engine, service.provider
+    gate = RestoreReadinessGate(provider=provider, db_engine=engine)
     previous = get_restore_readiness_gate()
     set_restore_readiness_gate(gate)
     try:
-        org = await OrgRepository(engine).create_org("Unestablished fixture", secrets.token_hex(8))
+        tenant = secrets.token_hex(16)
+        # Disposable legacy Store A orphan: explicitly DISABLED, never ACTIVE.
+        async with engine.raw.begin() as connection:
+            await connection.execute(
+                text(
+                    "INSERT INTO organizations(id,name,slug,governance_status,created_at) "
+                    "VALUES(:id,'Unestablished fixture',:slug,'DISABLED',:created)"
+                ),
+                {
+                    "id": tenant,
+                    "slug": secrets.token_hex(8),
+                    "created": datetime.now(UTC).isoformat(),
+                },
+            )
         with pytest.raises(TenantDeletionError, match="unestablished"):
             await TenantDeletionOrchestrator(engine, provider).delete_tenant(
-                org.id, deleted_by="explicit-test-fixture", reason="no-generation-synthesis"
+                tenant, deleted_by="explicit-test-fixture", reason="no-generation-synthesis"
             )
-        assert provider.get_state(org.id) is None
-        assert await OrgRepository(engine).get_org(org.id) is not None
+        assert provider.get_state(tenant) is None
+        assert await OrgRepository(engine).get_org(tenant) is not None
     finally:
         set_restore_readiness_gate(previous)

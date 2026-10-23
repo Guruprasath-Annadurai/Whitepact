@@ -1,0 +1,105 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
+"""Real TCP SDK recovery with explicitly seeded nonproduction authority fixtures.
+
+This qualifies the recovery/SDK integration, not production customer identity,
+operator enrollment or physical Docker effect containment. The counter is the
+existing explicitly enabled host-side test tool; no production tool is enabled.
+"""
+
+import httpx
+import pytest
+from scripts.engineering.m13i1_customer_journey import serve
+from sdk.python.rai_client.governance import GovernanceRequestError, GovernanceRuntimeClient
+
+import responsibleai.dashboard.app as dashboard
+from responsibleai.data_governance.backup_defense import (
+    RestoreReadinessState,
+    get_restore_readiness_gate,
+    set_restore_readiness_gate,
+)
+from responsibleai.data_governance.operator_recovery_control import (
+    execute_offline_recovery,
+    prepare_offline_recovery,
+)
+from responsibleai.enterprise.runtime import get_enterprise_engine
+from responsibleai.governance.synthetic_counter import SYNTHETIC_COUNTER_TOOL
+from tests.test_customer_real_approval_journey import _counter, _execute, _resolve
+from tests.test_operator_recovery_postgres import real_recovery as real_recovery
+from tests.test_operator_recovery_postgres import sign
+from tests.test_v1_customer_journey import PURPOSE, _login
+from tests.test_v1_exactly_one_effect import ADMIN_EMAIL, _prepare_org
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("real_recovery", ["normal"], indirect=True)
+async def test_fresh_sdk_request_requires_real_approval_after_signed_recovery(
+    real_recovery, monkeypatch, seed_runtime_authority
+):
+    engine, provider, gate, profile_path, private = real_recovery
+    monkeypatch.setenv("WHITEPACT_STORE_B_PATH", str(provider.path))
+    monkeypatch.setenv("WHITEPACT_ALLOW_SYNTHETIC_HOST_TOOL", "1")
+    previous = get_restore_readiness_gate()
+    set_restore_readiness_gate(gate)
+    for name, value in {
+        "database_url": engine.raw.url.render_as_string(hide_password=False),
+        "auto_migrate": False,
+        "auth_enabled": True,
+        "api_keys": [],
+        "web_auth_dev_tokens": True,
+        "web_session_secure": False,
+        "web_verification_delivery_url": None,
+        "environment": "development",
+    }.items():
+        monkeypatch.setattr(dashboard.settings, name, value)
+    try:
+        async with serve(dashboard.app) as origin:
+            async with httpx.AsyncClient(base_url=origin, timeout=30) as browser:
+                _, key = await _prepare_org(
+                    browser,
+                    monkeypatch,
+                    seed_runtime_authority,
+                    engine.raw.url.render_as_string(hide_password=False),
+                )
+                sdk = GovernanceRuntimeClient(key, base_url=origin, timeout=30)
+                assert await _counter(browser, key) == 0
+                gate.set_state(RestoreReadinessState.FAILED)
+                with pytest.raises(GovernanceRequestError) as denied:
+                    await sdk.call_tool(SYNTHETIC_COUNTER_TOOL, purpose=PURPOSE)
+                assert denied.value.status_code == 503
+                live_engine = get_enterprise_engine()
+                manifest = await prepare_offline_recovery(
+                    live_engine, provider, profile_path=profile_path
+                )
+                await execute_offline_recovery(
+                    live_engine,
+                    provider,
+                    gate,
+                    profile_path=profile_path,
+                    manifest=manifest,
+                    signatures=sign(manifest, private),
+                )
+                assert await _counter(browser, key) == 0
+                fresh = await sdk.call_tool(SYNTHETIC_COUNTER_TOOL, purpose=PURPOSE)
+                assert fresh.requires_approval and not fresh.completed
+                assert fresh.approval_id
+                assert await _counter(browser, key) == 0
+                first = await _resolve(browser, fresh.approval_id, "APPROVED")
+                assert first.status_code == 200 and first.json()["status"] == "PENDING"
+                assert (await _execute(browser, fresh.approval_id)).status_code == 409
+                logout = await browser.post(
+                    "/api/v1/web/auth/logout",
+                    headers={"X-WP-CSRF": browser.cookies["wp_csrf"]},
+                )
+                assert logout.status_code == 200
+                await _login(browser, ADMIN_EMAIL)
+                second = await _resolve(browser, fresh.approval_id, "APPROVED")
+                assert second.status_code == 200 and second.json()["status"] == "APPROVED"
+                execution = await _execute(browser, fresh.approval_id)
+                assert execution.status_code == 200
+                assert execution.json()["execution_status"] == "SUCCEEDED"
+                assert await _counter(browser, key) == 1
+                assert (await _execute(browser, fresh.approval_id)).status_code == 409
+                assert await _counter(browser, key) == 1
+    finally:
+        set_restore_readiness_gate(previous)

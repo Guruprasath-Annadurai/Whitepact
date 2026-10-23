@@ -135,6 +135,10 @@ from responsibleai.dashboard.web_governance_contracts import (
 )
 from responsibleai.dashboard.websocket_manager import ConnectionManager
 from responsibleai.data_governance.legal_hold import LegalHoldActiveError
+from responsibleai.data_governance.tenant_client import (
+    TenantCreationDeniedError,
+    TenantProvisioningUnavailableError,
+)
 from responsibleai.db import (
     AlreadyVotedError,
     ApprovalActionMismatchError,
@@ -838,6 +842,20 @@ class AuditLogMiddleware(BaseHTTPMiddleware):
 app.add_exception_handler(Exception, global_exception_handler)
 app.add_exception_handler(HTTPException, http_exception_handler)  # type: ignore[arg-type]
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # type: ignore[arg-type]
+
+
+@app.exception_handler(TenantCreationDeniedError)
+async def tenant_creation_denied_handler(
+    request: Request, exc: TenantCreationDeniedError
+) -> JSONResponse:
+    return JSONResponse(status_code=403, content={"code": "TENANT_CREATION_NOT_AUTHORIZED"})
+
+
+@app.exception_handler(TenantProvisioningUnavailableError)
+async def tenant_creation_unconfirmed_handler(
+    request: Request, exc: TenantProvisioningUnavailableError
+) -> JSONResponse:
+    return JSONResponse(status_code=503, content={"code": "TENANT_COMPLETION_UNCONFIRMED"})
 
 
 @app.exception_handler(RequestValidationError)
@@ -2150,7 +2168,11 @@ async def web_onboarding(
     slug_base = re.sub(r"[^a-z0-9]+", "-", req.organization_name.casefold()).strip("-")
     slug = f"{slug_base[:70]}-{secrets.token_hex(3)}"
     await _ready(_web_identity_repo).attach_organization(
-        principal.user_id, name=req.organization_name.strip(), slug=slug
+        principal.user_id,
+        name=req.organization_name.strip(),
+        slug=slug,
+        session_token=request.cookies.get("wp_session", ""),
+        csrf=request.headers.get("X-WP-CSRF", ""),
     )
     # Paid entitlements are activated only by a signed Stripe webhook. The
     # onboarding request itself never trusts a browser-selected plan.
@@ -3536,7 +3558,12 @@ async def signup(request: Request, req: SignupRequest) -> dict[str, Any]:
     if existing:
         raise HTTPException(409, f"Workspace URL '{req.slug}' is already taken.")
 
-    org = await _ready(_org_repo).create_org(req.name, req.slug)
+    org = await _ready(_org_repo).create_org(
+        req.name,
+        req.slug,
+        session_token=request.cookies.get("wp_session", ""),
+        csrf=request.headers.get("X-WP-CSRF", ""),
+    )
     logger.info("self_serve_signup", org_id=org.id, slug=req.slug)
     return {
         "org": org.to_dict(),
@@ -3566,6 +3593,8 @@ async def create_org(
         req.slug,
         req.monthly_budget_usd,
         provisioner_key_id=_auth.key_id,
+        session_token=request.cookies.get("wp_session", ""),
+        csrf=request.headers.get("X-WP-CSRF", ""),
     )
     return org.to_dict()
 
