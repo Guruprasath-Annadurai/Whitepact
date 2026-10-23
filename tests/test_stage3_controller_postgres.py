@@ -6,6 +6,7 @@ import asyncio
 import secrets
 import sqlite3
 import uuid
+from contextlib import asynccontextmanager
 
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -35,9 +36,21 @@ from tests.pg_test_url import isolated_pg_url
 
 
 @pytest.fixture
-async def controller(tmp_path, monkeypatch):
+async def controller(tmp_path, monkeypatch, request):
+    prefix = getattr(request.module, "CONTROLLER_DATABASE_PREFIX", "wp_stage3_controller")
+    async with isolated_controller_context(tmp_path, monkeypatch, prefix) as value:
+        yield value
+
+
+@asynccontextmanager
+async def isolated_controller_context(tmp_path, monkeypatch, prefix="wp_stage3_controller"):
+    """Share genuine disposable provisioning setup with standalone reproducers.
+
+    This retains the existing component READY fixture. It is not a bootstrap
+    receipt or a strict-default customer acceptance environment.
+    """
     monkeypatch.setenv("WHITEPACT_ENV", "staging")
-    async for url in isolated_pg_url("wp_stage3_controller"):
+    async for url in isolated_pg_url(prefix):
         await _run_alembic(_find_alembic_ini(), _migration_env(url), "upgrade", "0067")
         engine = create_engine(url)
         try:

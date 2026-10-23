@@ -38,6 +38,7 @@ from tests.stage3_controller_helpers import controller_process
 from tests.webauthn_fakes import assertion_blob, registration_blob
 
 pytest_plugins = ["tests.test_stage3_controller_postgres"]
+CONTROLLER_DATABASE_PREFIX = "wp_sovereign_b1"
 
 
 @pytest.fixture
@@ -793,14 +794,18 @@ class TestDevelopmentB1:
         assert context.authentication_method == "agent_pop"
 
     @pytest.mark.asyncio
-    async def test_qualified_other_tenant_cannot_claim_agent(self, owner):
+    async def test_qualified_other_tenant_cannot_claim_agent(self, owner, controller, monkeypatch):
         auth, agent, key, _ = await delegated(owner)
-        other = await EnterpriseIAM(owner[0]).create_workspace(
-            actor_user_id=owner[2].user_id,
-            name="Other tenant",
-            slug=f"other-{uuid.uuid4().hex}",
-            kind="ORGANIZATION",
-        )
+        token, csrf = await WebIdentityRepository(owner[0]).create_session(owner[2].user_id)
+        async with controller_process(controller[0], monkeypatch):
+            other = await EnterpriseIAM(owner[0]).create_workspace(
+                actor_user_id=owner[2].user_id,
+                name="Other tenant",
+                slug=f"other-{uuid.uuid4().hex}",
+                kind="ORGANIZATION",
+                session_token=token,
+                csrf=csrf,
+            )
         org = other["id"] if isinstance(other, dict) else other.id
         challenge = await owner[1].begin_webauthn(
             user_id=None, session_id=None, ceremony="authenticate"

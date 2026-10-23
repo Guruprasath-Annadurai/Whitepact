@@ -103,10 +103,11 @@ async def test_rename_preserves_auth_csrf_and_role_requirements(inventory_client
 @pytest.mark.asyncio
 async def test_rename_compare_and_set_has_one_winner_on_real_database(directory):
     repository = OrgRepository(directory.db)
+    tenant = directory.fixture_tenant_ids["apex-org"]
     outcomes = await asyncio.gather(
-        repository.update_org_name("apex-org", "First", expected_name="APEX"),
-        repository.update_org_name("apex-org", "Second", expected_name="APEX"),
+        repository.update_org_name(tenant, "First", expected_name="APEX"),
+        repository.update_org_name(tenant, "Second", expected_name="APEX"),
     )
     assert sum(outcomes) == 1
-    stored = await repository.get_org("apex-org")
+    stored = await repository.get_org(tenant)
     assert stored is not None and stored.name in {"First", "Second"}
