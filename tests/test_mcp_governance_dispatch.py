@@ -69,7 +69,7 @@ async def governed_app(monkeypatch: pytest.MonkeyPatch, seed_runtime_authority):
 
 
 @pytest.fixture()
-async def governed_app_with_key(monkeypatch: pytest.MonkeyPatch, seed_runtime_authority):
+async def governed_app_with_key(monkeypatch: pytest.MonkeyPatch, seed_runtime_authority, tmp_path):
     """Same as `governed_app`, but also yields the API key's own
     `key_id` -- `apply_governance()` builds `AgentContext.agent_id` from
     `ctx.key_id`, which the Delegation Graph tests need in order to
@@ -82,27 +82,55 @@ async def governed_app_with_key(monkeypatch: pytest.MonkeyPatch, seed_runtime_au
     settings = get_settings()
     monkeypatch.setattr(settings, "mcp_governance_enabled", True)
 
-    engine = create_engine(":memory:")
-    await engine.init()
-    monkeypatch.setattr(db_module, "create_engine", lambda _url: engine)
+    from datetime import UTC, datetime
 
-    org_repo = OrgRepository(engine)
-    org = await org_repo.create_org("Governed Co", "governed-co", plan=Plan.ENTERPRISE)
-    key_rec, raw_key = await org_repo.create_key(org.id, "test-key", role=Role.ANALYST)
-    tool_names = tuple(definition.name for definition in TOOL_DEFS)
-    await seed_runtime_authority(
-        engine,
-        organization_id=org.id,
-        principal_id=key_rec.id,
-        action_types=tool_names,
-        targets=tool_names,
+    from responsibleai.data_governance.backup_defense import (
+        RestoreReadinessGate,
+        get_restore_readiness_gate,
+        set_restore_readiness_gate,
     )
+    from tests.test_stage3_controller_postgres import isolated_controller_context
 
-    app = _build_http_app()
-    async with LifespanManager(app) as manager:
-        yield manager.app, raw_key, org.id, engine, key_rec.id
-
-    await engine.close()
+    async with isolated_controller_context(tmp_path, monkeypatch, "wp_mcp_governance") as context:
+        controller, _, _, token, csrf = context
+        engine = controller.engine
+        tenant = await controller.create(
+            session_token=token,
+            csrf=csrf,
+            request_id="mcp-governed-fixture",
+            name="Governed Co",
+            slug="governed-co",
+        )
+        org_repo = OrgRepository(engine)
+        # Preserve the original enterprise component-fixture entitlement using
+        # the separate monotonic billing transition, never tenant creation.
+        # This is not live payment, customer enrollment or bootstrap evidence.
+        applied = await org_repo.set_plan_status(
+            tenant, Plan.ENTERPRISE, event_timestamp=datetime.now(UTC).isoformat()
+        )
+        assert applied.value == "applied"
+        assert (await org_repo.get_org(tenant)).plan == Plan.ENTERPRISE
+        key_rec, raw_key = await org_repo.create_key(tenant, "test-key", role=Role.ANALYST)
+        tool_names = tuple(definition.name for definition in TOOL_DEFS)
+        await seed_runtime_authority(
+            engine,
+            organization_id=tenant,
+            principal_id=key_rec.id,
+            action_types=tool_names,
+            targets=tool_names,
+        )
+        monkeypatch.setattr(db_module, "create_engine", lambda _url: engine)
+        previous = get_restore_readiness_gate()
+        set_restore_readiness_gate(
+            RestoreReadinessGate(provider=controller.provider, db_engine=engine)
+        )
+        monkeypatch.setenv("WHITEPACT_STORE_B_PATH", str(controller.provider.path))
+        monkeypatch.setenv("WHITEPACT_STORE_B_KEY", controller.provider._secret_key)
+        try:
+            async with LifespanManager(_build_http_app()) as manager:
+                yield manager.app, raw_key, tenant, engine, key_rec.id
+        finally:
+            set_restore_readiness_gate(previous)
 
 
 @pytest.fixture()

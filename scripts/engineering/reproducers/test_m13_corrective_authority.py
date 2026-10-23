@@ -236,7 +236,7 @@ async def test_revision_0064_must_not_serve_while_mandatory_requirements_are_ret
             ini = _find_alembic_ini()
             assert ini is not None
             env = _migration_env(database)
-            await _run_alembic(ini, env, "upgrade", "head")
+            await _run_alembic(ini, env, "upgrade", "0065")
             connection = await asyncpg.connect(database)
             try:
                 await connection.execute(

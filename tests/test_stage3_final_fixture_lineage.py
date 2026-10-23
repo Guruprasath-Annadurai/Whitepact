@@ -12,6 +12,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 ORIGINAL = "e156b59a39ad926344474233ef02dddd82e9ce0a"
 BLOBS = {
+    "test_mcp_governance_dispatch.py": "552aeca8ff32d4afbbdf14362b5c48ab05ddbb71",
     "test_db_migrate.py": "b02e95b831cf0361a505af4d0a5e83b82f55efaa",
     "test_m13_apex_directory.py": "41a618f5b953d1842187770801df056be17fe6a4",
     "test_m13_apex_organization.py": "96011b14f39b1f60ded429c46475c14f777b0ebc",
