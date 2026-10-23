@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: MIT
 """Immutable source receipts for the bounded hosted CI fixture dispositions."""
 
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -21,3 +22,15 @@ from scripts.engineering.m13_approved_formatting import blob_hash
 def test_hosted_ci_original_source_is_recoverable_and_exact(name, expected):
     source = Path(__file__).parent / "historical_evidence" / f"hosted_ci_{name}.txt"
     assert blob_hash(source.read_bytes()) == expected
+
+
+def test_original_distributed_revocation_blob_remains_recoverable():
+    original = "e809fdf6922177d4dc89a069e06d9d868772fd8f"
+    result = subprocess.run(
+        ["git", "cat-file", "blob", original],
+        cwd=Path(__file__).resolve().parents[1],
+        check=True,
+        capture_output=True,
+        timeout=20,
+    )
+    assert blob_hash(result.stdout) == original

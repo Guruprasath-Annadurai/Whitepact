@@ -23,7 +23,6 @@ from typing import Any
 
 import pytest
 
-from responsibleai.db.engine import create_engine
 from responsibleai.db.org_repository import OrgRepository
 from responsibleai.db.revocation_epoch_repository import RevocationEpochRepository
 from responsibleai.isolation.in_flight import InFlightExecutionRegistry
@@ -35,6 +34,7 @@ from responsibleai.isolation.models import (
     ResourceLimits,
 )
 from responsibleai.isolation.subprocess_backend import LocalSubprocessBackend
+from tests.test_stage3_controller_postgres import controller as controller
 
 
 @pytest.fixture(autouse=True)
@@ -206,7 +206,7 @@ async def test_duplicate_revocation_signals_are_idempotent() -> None:
 
 
 def _worker_process_entrypoint(
-    db_url: str, org_id: str, started_event: Any, result_queue: Any
+    db_url: str, org_id: str, started_event: Any, result_queue: Any, baseline_epoch: int
 ) -> None:
     """OS Worker Process 2: runs a long-running execution with database reconciliation watcher."""
     os.environ["RAI_MCP_ALLOW_TEST_TOOLS"] = "1"
@@ -235,7 +235,7 @@ def _worker_process_entrypoint(
             action_type="test.counter.increment",
             arguments={"sleep_seconds": 10.0},
             profile=IsolationProfile(resources=ResourceLimits(wall_timeout_seconds=10.0)),
-            admission_epoch=0,
+            admission_epoch=baseline_epoch,
         )
 
         t_start = time.monotonic()
@@ -246,12 +246,33 @@ def _worker_process_entrypoint(
                 break
             await asyncio.sleep(0.05)
 
-        # Notify main test process that Worker 2 is executing
+        # Read authority independently in this OS worker before acknowledging
+        # actual admission. An already-stale request cannot satisfy the test.
+        observed_before = (await RevocationEpochRepository(engine).current(org_id)).epoch
+        assert observed_before == baseline_epoch
+        assert reg.count_active(org_id) == 1 and not task.done()
+        entries = [entry for entry in reg._active.values() if entry.organization_id == org_id]
+        assert len(entries) == 1 and entries[0].admission_epoch == baseline_epoch
+        assert not reg.is_revoked(org_id, baseline_epoch)
+        result_queue.put(
+            {
+                "phase": "ACTIVE",
+                "worker_pid": os.getpid(),
+                "admission_epoch": baseline_epoch,
+                "observed_epoch": observed_before,
+                "registered_active": reg.count_active(org_id),
+            }
+        )
+        # Notify main test process only after Worker 2 is genuinely executing.
         started_event.set()
 
         outcome = await task
         watcher.cancel()
         elapsed = time.monotonic() - t_start
+        observed_after = (await RevocationEpochRepository(engine).current(org_id)).epoch
+        assert observed_after == baseline_epoch + 1
+        assert reg.is_revoked(org_id, baseline_epoch)
+        assert reg.count_active(org_id) == 0
 
         result_queue.put(
             {
@@ -259,6 +280,8 @@ def _worker_process_entrypoint(
                 "exit_code": outcome.exit_code,
                 "is_success": outcome.is_success,
                 "violation": outcome.violation,
+                "phase": "TERMINATED",
+                "observed_epoch": observed_after,
             }
         )
 
@@ -266,21 +289,29 @@ def _worker_process_entrypoint(
 
 
 @pytest.mark.asyncio
-async def test_distributed_multi_worker_revocation(tmp_path) -> None:
+async def test_distributed_multi_worker_revocation(tmp_path, controller, request) -> None:
     """Proves cross-worker revocation across separate OS processes via shared database epochs."""
-    db_path = str(tmp_path / "distributed_revocation.db")
-    db_url = f"sqlite+aiosqlite:///{db_path}"
-
-    engine = create_engine(db_url)
-    await engine.init()
+    provisioner, _, _, token, csrf = controller
+    engine = provisioner.engine
+    db_url = engine.raw.url.render_as_string(hide_password=False)
 
     org_repo = OrgRepository(engine)
     epoch_repo = RevocationEpochRepository(engine)
 
-    org = await org_repo.create_org(name="Distributed Tenant", slug="dist-tenant")
-    # Initial epoch is 0
+    tenant = await provisioner.create(
+        session_token=token,
+        csrf=csrf,
+        request_id="distributed-revocation-setup",
+        name="Distributed Tenant",
+        slug="dist-tenant",
+    )
+    org = await org_repo.get_org(tenant)
+    assert org is not None
+    # Protected provisioning explicitly establishes the PostgreSQL governance
+    # epoch at 1. This is independently read, not inferred from Store B floors.
     ep0 = await epoch_repo.current(org.id)
-    assert ep0.epoch == 0
+    baseline_epoch = ep0.epoch
+    assert baseline_epoch == 1
 
     started_event = multiprocessing.Event()
     result_queue = multiprocessing.Queue()
@@ -288,7 +319,7 @@ async def test_distributed_multi_worker_revocation(tmp_path) -> None:
     # Launch separate OS worker process
     p = multiprocessing.Process(
         target=_worker_process_entrypoint,
-        args=(db_url, org.id, started_event, result_queue),
+        args=(db_url, org.id, started_event, result_queue, baseline_epoch),
     )
     p.start()
 
@@ -296,14 +327,29 @@ async def test_distributed_multi_worker_revocation(tmp_path) -> None:
         # Wait until Worker 2 has started the 10s execution
         await asyncio.to_thread(started_event.wait, timeout=15.0)
         assert started_event.is_set(), "Worker 2 failed to start execution in time"
+        active = await asyncio.to_thread(result_queue.get, timeout=15.0)
+        assert active["phase"] == "ACTIVE" and active["registered_active"] == 1
+        assert active["worker_pid"] == p.pid and p.pid != os.getpid()
+        assert active["admission_epoch"] == active["observed_epoch"] == baseline_epoch
 
         # Main process: bump revocation epoch in the shared database
         await epoch_repo.bump(org.id)
         ep1 = await epoch_repo.current(org.id)
-        assert ep1.epoch == 1
+        assert ep1.epoch == baseline_epoch + 1
 
         # Worker 2 must detect the database bump, kill the running process, and report
         result = await asyncio.to_thread(result_queue.get, timeout=15.0)
+        assert result["phase"] == "TERMINATED"
+        assert result["observed_epoch"] == ep1.epoch
+        request.node.user_properties.extend(
+            [
+                ("baseline_epoch", baseline_epoch),
+                ("worker_admission_epoch", active["admission_epoch"]),
+                ("worker_observed_epoch", result["observed_epoch"]),
+                ("termination_seconds", result["elapsed"]),
+                ("worker_registered_before_bump", True),
+            ]
+        )
 
         # Must terminate in bounded latency (<2.0s) well before the 10-second timeout
         assert result["elapsed"] < 2.0, f"Worker 2 took {result['elapsed']:.2f}s; expected < 2.0s"
