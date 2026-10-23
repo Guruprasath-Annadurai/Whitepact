@@ -17,6 +17,9 @@ depends_on = None
 
 
 def upgrade() -> None:
+    connection = op.get_bind()
+    if connection.dialect.name != "postgresql":
+        raise RuntimeError("Cross-store provisioning requires PostgreSQL")
     op.create_table(
         "tenant_provisioning_records",
         sa.Column(
@@ -67,9 +70,6 @@ def upgrade() -> None:
         sa.Column("receipt_json", sa.Text, nullable=False),
         sa.Column("created_at", sa.String(32), nullable=False),
     )
-    connection = op.get_bind()
-    if connection.dialect.name != "postgresql":
-        raise RuntimeError("Cross-store provisioning requires PostgreSQL")
     connection.execute(
         sa.text("""
         DO $roles$ BEGIN

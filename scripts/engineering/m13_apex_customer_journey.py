@@ -13,6 +13,7 @@ import secrets
 from contextlib import aclosing
 from pathlib import Path
 
+from scripts.engineering.m13_stage3_customer_fixture import isolated_provisioning_controller
 from scripts.engineering.m13i1_customer_journey import serve
 from scripts.engineering.m13i2_customer_journey import configured_settings, isolated_startup_store_b
 from scripts.engineering.m13i3_browser_journey import git_identity
@@ -145,7 +146,10 @@ async def attempt(*, development_agent_prototype: bool = False) -> dict:
                         }
                     ),
                 ):
-                    async with serve(dashboard.app) as origin:
+                    async with (
+                        isolated_provisioning_controller(database) as provisioner,
+                        serve(dashboard.app) as origin,
+                    ):
                         config = {
                             "origin": origin,
                             "phases": PHASES,
@@ -179,6 +183,22 @@ async def attempt(*, development_agent_prototype: bool = False) -> dict:
                                 raise RuntimeError("Browser failed; private diagnostics withheld")
                             result = json.loads(stdout)
                             validate_evidence(result)
+                            state = provisioner.provider.get_readiness_state()
+                            result["provisioning_readiness_diagnostic"] = {
+                                "durable_store_b_state": state.value if state is not None else None,
+                                "read_only": True,
+                            }
+                            try:
+                                async with provisioner.transaction():
+                                    pass
+                            except Exception as diagnostic:
+                                result["provisioning_readiness_diagnostic"][
+                                    "controller_context_error"
+                                ] = type(diagnostic).__name__
+                            else:
+                                result["provisioning_readiness_diagnostic"][
+                                    "controller_context_verified"
+                                ] = True
                             result["implementation_git"] = git_identity(implementation)
                             result["harness_git"] = git_identity(root)
                             result["fresh_postgresql"] = True

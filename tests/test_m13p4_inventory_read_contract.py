@@ -10,26 +10,46 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy import event
 
 import responsibleai.dashboard.app as app_module
+from responsibleai.data_governance.backup_defense import (
+    RestoreReadinessGate,
+    get_restore_readiness_gate,
+    set_restore_readiness_gate,
+)
 from responsibleai.db.web_identity_repository import WebIdentityRepository
 from responsibleai.enterprise.runtime import get_enterprise_engine
 from responsibleai.enterprise.service import EnterpriseIAM
+from tests.stage3_controller_helpers import controller_process
+from tests.test_stage3_controller_postgres import controller as controller
 
 
 @pytest.fixture
-async def inventory_client(monkeypatch, tmp_path):
-    db_file = tmp_path / "inventory-read.db"
-    monkeypatch.setattr(app_module.settings, "database_url", f"sqlite+aiosqlite:///{db_file}")
-    monkeypatch.setattr(app_module.settings, "db_path", str(db_file))
+async def inventory_client(monkeypatch, controller):
+    service, _, _, _, _ = controller
+    monkeypatch.setattr(
+        app_module.settings,
+        "database_url",
+        service.engine.raw.url.render_as_string(hide_password=False),
+    )
     monkeypatch.setattr(app_module.settings, "auto_migrate", False)
     monkeypatch.setattr(app_module.settings, "auth_enabled", True)
     monkeypatch.setattr(app_module.settings, "api_keys", [])
     monkeypatch.setattr(app_module.settings, "web_session_secure", False)
     monkeypatch.setattr(app_module.limiter, "enabled", False)
-    async with LifespanManager(app_module.app) as manager:
-        async with AsyncClient(
-            transport=ASGITransport(app=manager.app), base_url="http://test"
-        ) as client:
-            yield client
+    previous = get_restore_readiness_gate()
+    set_restore_readiness_gate(
+        RestoreReadinessGate(provider=service.provider, db_engine=service.engine)
+    )
+    monkeypatch.setenv("WHITEPACT_STORE_B_PATH", str(service.provider.path))
+    monkeypatch.setenv("WHITEPACT_STORE_B_KEY", service.provider._secret_key)
+    try:
+        async with controller_process(service, monkeypatch):
+            async with LifespanManager(app_module.app) as manager:
+                async with AsyncClient(
+                    transport=ASGITransport(app=manager.app), base_url="http://test"
+                ) as client:
+                    yield client
+    finally:
+        set_restore_readiness_gate(previous)
 
 
 async def owner_session(email: str, slug: str) -> tuple[str, str]:
@@ -39,8 +59,14 @@ async def owner_session(email: str, slug: str) -> tuple[str, str]:
         "Inventory Owner", email, "StrongPassword123!@#"
     )
     await identities.verify_email(verification)
+    creation_token, creation_csrf = await identities.create_session(user_id)
     organization = await EnterpriseIAM(engine).create_workspace(
-        actor_user_id=user_id, name="Inventory Workspace", slug=slug, kind="ORGANIZATION"
+        actor_user_id=user_id,
+        name="Inventory Workspace",
+        slug=slug,
+        kind="ORGANIZATION",
+        session_token=creation_token,
+        csrf=creation_csrf,
     )
     org_id = organization["id"]
     token, _csrf = await identities.create_session(user_id, org_id=org_id)
