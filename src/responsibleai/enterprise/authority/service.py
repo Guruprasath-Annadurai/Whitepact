@@ -3508,6 +3508,75 @@ class CustomerAuthorityService:
             "request_status": "REJECTED" if decision == "REJECT" else "PENDING",
         }
 
+    async def _establish_recovery_subject_on_conn(
+        self, conn, *, org_id: str, subject_id: str, request_id: str, now_iso: str
+    ) -> None:
+        """Bind an eligible web identity before the recovered root's FK write.
+
+        This never creates membership or restores a revoked principal. The
+        quorum-authorized identity bridge shares the recovery transaction, so a
+        later failure rolls enrollment back with the root and epoch writes.
+        """
+        if not isinstance(subject_id, str) or not subject_id:
+            raise unauthorized_caller("Recovery requires an established target identity.")
+        user = (
+            await conn.execute(
+                select(web_users).where(web_users.c.id == subject_id).with_for_update()
+            )
+        ).first()
+        member = (
+            await conn.execute(
+                select(web_memberships)
+                .where(web_memberships.c.user_id == subject_id, web_memberships.c.org_id == org_id)
+                .with_for_update()
+            )
+        ).first()
+        if (
+            not user
+            or user.disabled
+            or not user.email_verified_at
+            # Match ratified A2 account control: verified email is distinct
+            # from the separately governed legal-identity verification status.
+            or user.verification_status in {"SUSPENDED", "REJECTED"}
+            or not member
+            or member.status != "ACTIVE"
+            or member.role not in {Role.OWNER.value, Role.ADMIN.value}
+        ):
+            raise unauthorized_caller(
+                "Recovery target must be a verified active tenant administrator."
+            )
+        principal = (
+            await conn.execute(
+                select(trust_fabric_principals)
+                .where(trust_fabric_principals.c.id == subject_id)
+                .with_for_update()
+            )
+        ).first()
+        if principal:
+            if (
+                principal.org_id != org_id
+                or principal.principal_type != PrincipalType.HUMAN.value
+                or principal.lifecycle_state != PrincipalState.ACTIVE.value
+            ):
+                raise unauthorized_caller(
+                    "Recovery target principal is not eligible in this tenant."
+                )
+            return
+        await conn.execute(
+            trust_fabric_principals.insert().values(
+                id=subject_id,
+                org_id=org_id,
+                principal_type=PrincipalType.HUMAN.value,
+                display_name=(user.full_name or user.email or subject_id).strip(),
+                lifecycle_state=PrincipalState.ACTIVE.value,
+                created_at=now_iso,
+                updated_at=now_iso,
+                metadata_json=json.dumps(
+                    {"origin": "quorum_recovery", "recovery_request_id": request_id}
+                ),
+            )
+        )
+
     async def execute_recovery_request(
         self,
         actor: Actor,
@@ -3597,14 +3666,20 @@ class CustomerAuthorityService:
 
                 mem = (
                     await conn.execute(
-                        select(web_memberships).where(
+                        select(web_memberships)
+                        .join(web_users, web_users.c.id == web_memberships.c.user_id)
+                        .where(
                             and_(
                                 web_memberships.c.user_id == voter_id,
                                 web_memberships.c.org_id == org_id,
                                 web_memberships.c.status == "ACTIVE",
                                 web_memberships.c.role.in_(["OWNER", "ADMIN", "owner", "admin"]),
+                                web_users.c.disabled == 0,
+                                web_users.c.email_verified_at.is_not(None),
+                                web_users.c.verification_status.not_in(["SUSPENDED", "REJECTED"]),
                             )
                         )
+                        .with_for_update()
                     )
                 ).first()
                 if mem:
@@ -3658,6 +3733,14 @@ class CustomerAuthorityService:
 
                 new_subject_id = params.get("new_owner_user_id", actor.user_id)
                 new_root_public_key = params.get("new_root_public_key", "")
+
+                await self._establish_recovery_subject_on_conn(
+                    conn,
+                    org_id=org_id,
+                    subject_id=new_subject_id,
+                    request_id=request_id,
+                    now_iso=now_iso,
+                )
 
                 canon_root_record = build_root_authority_record(
                     subject_id=new_subject_id,
