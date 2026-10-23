@@ -76,6 +76,55 @@ class FormattingEvidenceError(ValueError):
     """Original evidence or authorized formatting relationship cannot be verified."""
 
 
+STAGE3_ENGINE_BLOB = "22d2580db239dcca1fd60646b0cab7e9042fc130"
+ENGINE_PATH = "src/responsibleai/db/engine.py"
+
+
+def historical_blob(repo: Path, identity: str) -> bytes:
+    try:
+        result = subprocess.run(
+            ["git", "cat-file", "blob", identity],
+            cwd=repo,
+            check=True,
+            capture_output=True,
+            timeout=20,
+        ).stdout
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise FormattingEvidenceError("Missing immutable schema evidence") from exc
+    if blob_hash(result) != identity:
+        raise FormattingEvidenceError("Incorrect immutable schema evidence")
+    return result
+
+
+def verify_stage3_schema(repo: Path, before: bytes, candidate: bytes):
+    formatted = historical_blob(repo, APPROVED[ENGINE_PATH][1])
+    approved = historical_blob(repo, STAGE3_ENGINE_BLOB)
+    verify_pair(ENGINE_PATH, before, formatted, APPROVED[ENGINE_PATH])
+    if blob_hash(candidate) != STAGE3_ENGINE_BLOB or candidate != approved:
+        raise FormattingEvidenceError("Unknown Stage 3 schema content")
+    start = approved.index(b"tenant_provisioning_records = Table(\n")
+    end = approved.index(b"runtime_containment_records = Table(\n", start)
+    insertion = approved[start:end]
+    if approved[:start] + approved[end:] != formatted:
+        raise FormattingEvidenceError("Schema insertion changes existing source")
+    declarations = ast.parse(insertion, type_comments=True).body
+    names = [
+        node.targets[0].id
+        for node in declarations
+        if isinstance(node, ast.Assign)
+        and len(node.targets) == 1
+        and isinstance(node.targets[0], ast.Name)
+    ]
+    if len(declarations) != 2 or names != [
+        "tenant_provisioning_records",
+        "tenant_provisioning_outbox",
+    ]:
+        raise FormattingEvidenceError("Unexpected schema declarations")
+    reduced = ast.parse(approved[:start] + approved[end:], type_comments=True)
+    if ast.dump(reduced) != ast.dump(ast.parse(formatted, type_comments=True)):
+        raise FormattingEvidenceError("Existing schema AST changed")
+
+
 def blob_hash(data: bytes) -> str:
     # Reproduce Git's object identifier, not a signature or password digest.
     return hashlib.sha1(
@@ -120,8 +169,13 @@ def verify_repository(repo: Path):
             after = candidate.read_bytes()
         except (OSError, subprocess.SubprocessError) as exc:
             raise FormattingEvidenceError(f"Missing original/candidate evidence: {path}") from exc
-        verify_pair(path, before, after, expected)
+        if path == ENGINE_PATH:
+            verify_stage3_schema(repo, before, after)
+        else:
+            verify_pair(path, before, after, expected)
         verified[path] = {"original": expected[0], "revised": expected[1]}
+        if path == ENGINE_PATH:
+            verified[path]["stage3"] = STAGE3_ENGINE_BLOB
     return verified
 
 

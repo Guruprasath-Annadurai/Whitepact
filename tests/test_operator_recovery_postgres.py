@@ -7,6 +7,7 @@ import hashlib
 import json
 import os
 import re
+import secrets
 import sqlite3
 import subprocess
 import uuid
@@ -53,10 +54,17 @@ async def real_recovery(tmp_path, monkeypatch, request):
                         )
                     )
                 ).one()
-            provider = SqliteDurableLifecycleStateProvider(tmp_path / "store-b.sqlite3")
+            provider = SqliteDurableLifecycleStateProvider(
+                tmp_path / "store-b.sqlite3",
+                **(
+                    {"secret_key": secrets.token_hex(32)}
+                    if getattr(request, "param", None) == "freshness"
+                    else {}
+                ),
+            )
             provider.set_readiness_state(
                 RestoreReadinessState.READY
-                if getattr(request, "param", None) == "normal"
+                if getattr(request, "param", None) in ("normal", "freshness")
                 else RestoreReadinessState.FAILED
             )
             gate = RestoreReadinessGate(provider=provider, db_engine=engine)
@@ -357,21 +365,36 @@ async def test_actual_unknown_docker_workload_blocks_recovery_without_adoption(r
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("case", ["postgres", "store_b"])
+@pytest.mark.parametrize(
+    "case,real_recovery",
+    [("postgres", None), ("store_b", "freshness")],
+    indirect=["real_recovery"],
+    ids=["postgres", "store_b"],
+)
 async def test_authority_change_between_approval_and_mutation_is_rejected(
-    real_recovery, monkeypatch, case
+    real_recovery, monkeypatch, case, request
 ):
     from responsibleai.data_governance.backup_defense import (
-        LifecycleState,
-        LifecycleStateRecord,
         RestoreReconciliationEngine,
         RestoreReconciliationError,
     )
 
     engine, provider, gate, profile_path, private = real_recovery
+    established = None
+    if case == "store_b":
+        from tests.stage3_freshness_setup import provision_freshness_tenant
+
+        _, tenant, _, _ = await provision_freshness_tenant(engine, provider)
+        established = provider.get_state(tenant)
+        provider.set_readiness_state(RestoreReadinessState.FAILED)
     manifest = await prepare_offline_recovery(engine, provider, profile_path=profile_path)
     original = RestoreReconciliationEngine.reconcile_post_restore
     incident = uuid.uuid4().hex
+    if case == "store_b":
+        incident = tenant
+    signed_bytes = manifest.canonical_bytes()
+    signatures = sign(manifest, private)
+    original_signatures = dict(signatures)
 
     async def concurrent_change(self, *args, **kwargs):
         if case == "postgres":
@@ -386,14 +409,25 @@ async def test_authority_change_between_approval_and_mutation_is_rejected(
                 )
         else:
             provider.record_state(
-                LifecycleStateRecord(
-                    tenant_id=incident,
-                    generation_id="test-generation",
-                    state=LifecycleState.ACTIVE,
+                replace(
+                    established,
                     effective_at=datetime.now(UTC).isoformat(),
                     security_epoch=2,
                     revocation_floor=2,
+                    digest="",
                 )
+            )
+            changed = provider.get_state(incident)
+            assert changed.generation_id == established.generation_id
+            assert changed.security_epoch > established.security_epoch
+            assert changed.revocation_floor >= established.revocation_floor
+            assert changed.digest != established.digest
+            request.node.user_properties.extend(
+                [
+                    ("store_b_before_digest", established.digest),
+                    ("store_b_after_digest", changed.digest),
+                    ("immutable_generation", changed.generation_id),
+                ]
             )
         return await original(self, *args, **kwargs)
 
@@ -405,8 +439,10 @@ async def test_authority_change_between_approval_and_mutation_is_rejected(
             gate,
             profile_path=profile_path,
             manifest=manifest,
-            signatures=sign(manifest, private),
+            signatures=signatures,
         )
+    assert manifest.canonical_bytes() == signed_bytes
+    assert signatures == original_signatures
     assert gate.state == RestoreReadinessState.FAILED
     async with engine.raw.connect() as connection:
         assert (
