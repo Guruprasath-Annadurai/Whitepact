@@ -19,7 +19,7 @@ import hashlib
 import json
 import os
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 
 from sqlalchemy import delete, insert, select, update
@@ -28,9 +28,7 @@ from responsibleai.data_governance.backup_defense import (
     CurrentLifecycleStateProvider,
     DurableLifecycleStateProvider,
     LifecycleState,
-    LifecycleStateRecord,
     assert_current_restore_readiness_admitted,
-    compute_lifecycle_digest,
 )
 from responsibleai.data_governance.legal_hold import LegalHoldActiveError, LegalHoldManager
 from responsibleai.db.engine import (
@@ -140,7 +138,16 @@ class TenantDeletionOrchestrator:
                     pass
 
         now = _now()
-        generation_id = f"gen-{uuid.uuid4().hex[:12]}"
+        if self._lifecycle_provider is None:
+            raise TenantDeletionError("Cannot delete an unestablished tenant without Store B")
+        if not self._lifecycle_provider.verify_integrity():
+            raise TenantDeletionError("Store B lifecycle integrity is unverified")
+        established = self._lifecycle_provider.get_state(org_id)
+        if established is None or established.tenant_id != org_id:
+            raise TenantDeletionError("Cannot delete an unestablished tenant lifecycle")
+        if established.state == LifecycleState.TOMBSTONED:
+            raise TenantDeletionError("Tenant lifecycle is already tombstoned")
+        generation_id = established.generation_id
         purged_counts: dict[str, int] = {}
 
         async with self._engine.raw.connect() as conn:
@@ -153,19 +160,12 @@ class TenantDeletionOrchestrator:
 
         # Forward security state recorded in independent CurrentLifecycleStateProvider BEFORE destructive actions
         if self._lifecycle_provider:
-            init_digest = compute_lifecycle_digest(
-                tenant_id=org_id,
-                generation_id=generation_id,
-                state=LifecycleState.DELETION_IN_PROGRESS.value,
-                effective_at=now,
-            )
             self._lifecycle_provider.record_state(
-                LifecycleStateRecord(
-                    tenant_id=org_id,
-                    generation_id=generation_id,
+                replace(
+                    established,
                     state=LifecycleState.DELETION_IN_PROGRESS,
                     effective_at=now,
-                    digest=init_digest,
+                    digest="",
                 )
             )
 
@@ -282,19 +282,12 @@ class TenantDeletionOrchestrator:
 
         # Record TOMBSTONED in independent CurrentLifecycleStateProvider
         if self._lifecycle_provider:
-            final_digest = compute_lifecycle_digest(
-                tenant_id=org_id,
-                generation_id=generation_id,
-                state=LifecycleState.TOMBSTONED.value,
-                effective_at=now,
-            )
             self._lifecycle_provider.record_state(
-                LifecycleStateRecord(
-                    tenant_id=org_id,
-                    generation_id=generation_id,
+                replace(
+                    established,
                     state=LifecycleState.TOMBSTONED,
                     effective_at=now,
-                    digest=final_digest,
+                    digest="",
                 )
             )
 

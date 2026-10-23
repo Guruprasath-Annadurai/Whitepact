@@ -58,17 +58,17 @@ jobs:
           python scripts/engineering/m13_approved_formatting.py
           python scripts/check_pinned_actions.py
           python scripts/manage_license_headers.py --check
-          ruff check src/responsibleai/data_governance/operator_recovery.py src/responsibleai/data_governance/operator_recovery_control.py src/responsibleai/data_governance/backup_defense.py src/responsibleai/ops/operator_recovery.py tests/test_operator_recovery_*.py
-          ruff format --check src/responsibleai/data_governance/operator_recovery.py src/responsibleai/data_governance/operator_recovery_control.py src/responsibleai/data_governance/backup_defense.py src/responsibleai/ops/operator_recovery.py tests/test_operator_recovery_*.py
-          mypy src/responsibleai/data_governance/operator_recovery.py src/responsibleai/data_governance/operator_recovery_control.py src/responsibleai/ops/operator_recovery.py
+          ruff check src/responsibleai/data_governance/operator_recovery.py src/responsibleai/data_governance/operator_recovery_control.py src/responsibleai/data_governance/backup_defense.py src/responsibleai/data_governance/deletion_orchestrator.py src/responsibleai/data_governance/tenant_provisioning.py src/responsibleai/ops/operator_recovery.py tests/test_operator_recovery_*.py tests/test_stage3_lifecycle_integrity.py tests/test_stage3_pending_reservations.py tests/test_stage3_deletion_identity.py
+          ruff format --check src/responsibleai/data_governance/operator_recovery.py src/responsibleai/data_governance/operator_recovery_control.py src/responsibleai/data_governance/backup_defense.py src/responsibleai/data_governance/deletion_orchestrator.py src/responsibleai/data_governance/tenant_provisioning.py src/responsibleai/ops/operator_recovery.py tests/test_operator_recovery_*.py tests/test_stage3_lifecycle_integrity.py tests/test_stage3_pending_reservations.py tests/test_stage3_deletion_identity.py
+          mypy src/responsibleai/data_governance/operator_recovery.py src/responsibleai/data_governance/operator_recovery_control.py src/responsibleai/data_governance/tenant_provisioning.py src/responsibleai/ops/operator_recovery.py
       - name: Real stores, native Docker and process-crash matrix
         run: |
-          python -m pytest tests/test_operator_recovery_authorization.py tests/test_operator_recovery_ledger.py tests/test_operator_recovery_direct_calls.py tests/test_operator_recovery_postgres.py tests/test_operator_recovery_crash.py tests/test_operator_recovery_startup.py tests/test_operator_recovery_sdk.py -o addopts='' --junitxml=/tmp/r1-recovery.xml --tb=short -ra
+          python -m pytest tests/test_operator_recovery_authorization.py tests/test_operator_recovery_ledger.py tests/test_operator_recovery_direct_calls.py tests/test_operator_recovery_postgres.py tests/test_operator_recovery_crash.py tests/test_operator_recovery_startup.py tests/test_operator_recovery_sdk.py tests/test_stage3_lifecycle_integrity.py tests/test_stage3_pending_reservations.py tests/test_stage3_deletion_identity.py -o addopts='' --junitxml=/tmp/r1-recovery.xml --tb=short -ra
           python -c 'import xml.etree.ElementTree as E; r=E.parse("/tmp/r1-recovery.xml"); assert not list(r.iter("skipped")) and not list(r.iter("failure")) and not list(r.iter("error"))'
       - name: Unchanged restore and journal neighbors
         if: ${{ !cancelled() }}
         run: |
-          python -m pytest tests/test_restore_reconciliation.py tests/test_restore_admission_chokepoint.py tests/test_h4_backup_recovery_adversarial.py tests/test_m13_final_production_restore.py tests/test_m13_approved_reproducer_provenance.py tests/test_m13_absolute_durable_intent.py tests/test_m13_absolute_runtime_inventory.py -o addopts='' --junitxml=/tmp/r1-neighbors.xml --tb=short -ra
+          python -m pytest tests/test_restore_reconciliation.py tests/test_restore_admission_chokepoint.py tests/test_h4_backup_recovery_adversarial.py tests/test_m13_final_production_restore.py tests/test_m13_approved_reproducer_provenance.py tests/test_m13_absolute_durable_intent.py tests/test_m13_absolute_runtime_inventory.py tests/test_tenant_deletion.py tests/test_erasure.py -o addopts='' --junitxml=/tmp/r1-neighbors.xml --tb=short -ra
           python -c 'import xml.etree.ElementTree as E; r=E.parse("/tmp/r1-neighbors.xml"); assert not list(r.iter("skipped")) and not list(r.iter("failure")) and not list(r.iter("error"))'
       - name: Retain exact-source receipts
         if: always()

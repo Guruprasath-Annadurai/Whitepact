@@ -335,12 +335,12 @@ class SqliteDurableLifecycleStateProvider(CurrentLifecycleStateProvider):
             with conn:
                 conn.execute("BEGIN IMMEDIATE")
                 cursor = conn.execute(
-                    "SELECT state, security_epoch, effective_at, generation_id FROM durable_tenant_lifecycle_states WHERE tenant_id = ?",
+                    "SELECT state, security_epoch, effective_at, generation_id, revocation_floor FROM durable_tenant_lifecycle_states WHERE tenant_id = ?",
                     (record.tenant_id,),
                 )
                 row = cursor.fetchone()
                 if row:
-                    curr_state_str, curr_epoch, curr_eff, curr_gen = row
+                    curr_state_str, curr_epoch, curr_eff, curr_gen, curr_floor = row
                     curr_rank = _STATE_RANK.get(LifecycleState(curr_state_str), 0)
                     new_rank = _STATE_RANK.get(record.state, 0)
                     if new_rank < curr_rank:
@@ -351,11 +351,16 @@ class SqliteDurableLifecycleStateProvider(CurrentLifecycleStateProvider):
                         raise LifecycleRollbackError(
                             f"Security epoch rollback rejected: {record.security_epoch} < {curr_epoch}"
                         )
+                    if record.generation_id != curr_gen:
+                        raise LifecycleRollbackError("Tenant generation replacement rejected")
+                    if record.revocation_floor < curr_floor:
+                        raise LifecycleRollbackError("Revocation floor rollback rejected")
                     if (
                         new_rank == curr_rank
                         and record.security_epoch == curr_epoch
                         and record.effective_at <= curr_eff
                         and record.generation_id == curr_gen
+                        and record.revocation_floor == curr_floor
                     ):
                         return
 
@@ -679,11 +684,16 @@ class InMemoryLifecycleStateProvider(CurrentLifecycleStateProvider):
                 raise LifecycleRollbackError(
                     f"Security epoch rollback rejected: {record.security_epoch} < {existing.security_epoch}"
                 )
+            if record.generation_id != existing.generation_id:
+                raise LifecycleRollbackError("Tenant generation replacement rejected")
+            if record.revocation_floor < existing.revocation_floor:
+                raise LifecycleRollbackError("Revocation floor rollback rejected")
             if (
                 new_rank == curr_rank
                 and record.security_epoch == existing.security_epoch
                 and record.effective_at <= existing.effective_at
                 and record.generation_id == existing.generation_id
+                and record.revocation_floor == existing.revocation_floor
             ):
                 return
 
