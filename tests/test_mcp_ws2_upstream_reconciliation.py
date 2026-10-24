@@ -33,13 +33,11 @@ from responsibleai.rbac.models import OrgContext, Plan, Role
 
 
 @pytest.fixture
-async def engine():
-    from responsibleai.db.engine import create_engine
+async def engine(tmp_path, monkeypatch):
+    from tests.protected_component_tenant import component_controller
 
-    db = create_engine(":memory:")
-    await db.init()
-    yield db
-    await db.close()
+    async with component_controller(tmp_path, monkeypatch, "wp_mcp_up") as controller:
+        yield controller.engine
 
 
 @pytest.mark.asyncio
@@ -88,25 +86,26 @@ async def test_upstream_dispatch_records_unknown_on_executor_failure(
     from responsibleai.db import (
         ApprovalRepository,
         EvidenceRepository,
-        OrgRepository,
         OutcomeRepository,
         PolicyRepository,
     )
     from responsibleai.db.revocation_epoch_repository import RevocationEpochRepository
     from responsibleai.db.tool_trust_repository import ToolTrustRepository
     from responsibleai.governance.authority_resolver import AuthorityResolver
+    from tests.protected_component_tenant import provision_component_organization
 
-    repo = OrgRepository(engine)
-    org = await repo.create_org("Up", f"up-{uuid.uuid4().hex[:8]}")
+    org = await provision_component_organization(
+        engine, name="Up", slug=f"up-{uuid.uuid4().hex[:8]}"
+    )
     principal = "up-principal"
     resolved = MagicMock()
     resolved.authority = AuthorityContext(
         delegated_by="fixture",
         granted_action_types=frozenset({ACTION_TYPE}),
     )
-    resolved.authority_version = 1
+    resolved.authority_version = "1"
     resolved.consent_id = "consent"
-    resolved.consent_version = 1
+    resolved.consent_version = "1"
     resolver = MagicMock(spec=AuthorityResolver)
     resolver.resolve = AsyncMock(return_value=resolved)
     server = SimpleNamespace(

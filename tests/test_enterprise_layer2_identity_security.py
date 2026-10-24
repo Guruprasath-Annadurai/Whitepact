@@ -13,7 +13,7 @@ import pytest
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives.asymmetric.ec import SECP256R1, generate_private_key
 
-from responsibleai.db.engine import create_engine, web_users
+from responsibleai.db.engine import web_users
 from responsibleai.db.web_identity_repository import WebIdentityRepository
 from responsibleai.enterprise.errors import (
     ACCOUNT_LINK_CONFLICT,
@@ -33,15 +33,14 @@ from responsibleai.enterprise.security.policy import AuthMethod, SensitiveAction
 from responsibleai.enterprise.security.preflight import assert_layer2_provider_boot_safe
 from responsibleai.enterprise.security.service import IdentitySecurityService
 from responsibleai.runtime.gate import PRODUCTION_GATE_B_OPEN
+from tests.protected_component_tenant import authorized_workspace, component_controller
 from tests.webauthn_fakes import assertion_blob, registration_blob
 
 
 @pytest.fixture
-async def engine():
-    db = create_engine(":memory:")
-    await db.init()
-    yield db
-    await db.close()
+async def engine(tmp_path, monkeypatch):
+    async with component_controller(tmp_path, monkeypatch, "wp_ent_l2") as controller:
+        yield controller.engine
 
 
 async def _user(engine, email: str = "human@example.com") -> str:
@@ -281,12 +280,8 @@ async def test_recovery_codes_one_time_and_owner_email_only_blocked(engine) -> N
     with pytest.raises(EnterpriseError):
         await svc.consume_recovery_token(token)
 
-    from responsibleai.enterprise.service import EnterpriseIAM
-
-    iam = EnterpriseIAM(engine)
-    owner = user_id
-    await iam.create_workspace(
-        actor_user_id=owner, name="Co", slug=f"co-{uuid.uuid4().hex[:8]}", kind="ORGANIZATION"
+    await authorized_workspace(
+        engine, user_id, name="Co", slug=f"co-{uuid.uuid4().hex[:8]}", kind="ORGANIZATION"
     )
     await svc.request_recovery("human@example.com")
     token2 = svc.last_recovery_token_for_tests
@@ -387,11 +382,8 @@ async def test_google_forged_issuer_audience_nonce_hd(engine) -> None:
         expires_at=int(time.time()) + 60,
         raw={},
     )
-    from responsibleai.enterprise.service import EnterpriseIAM
-
-    iam = EnterpriseIAM(engine)
-    org = await iam.create_workspace(
-        actor_user_id=user_id, name="Acme", slug=f"acme-{uuid.uuid4().hex[:8]}", kind="ORGANIZATION"
+    org = await authorized_workspace(
+        engine, user_id, name="Acme", slug=f"acme-{uuid.uuid4().hex[:8]}", kind="ORGANIZATION"
     )
     svc.google_client_id = "google-client"
     with patch.object(
@@ -409,11 +401,8 @@ async def test_google_forged_issuer_audience_nonce_hd(engine) -> None:
 async def test_microsoft_wrong_tenant_and_personal_org_path(engine) -> None:
     user_id = await _user(engine)
     svc = await _svc(engine, microsoft_client_id="ms-client", allow_raw_id_token=True)
-    from responsibleai.enterprise.service import EnterpriseIAM
-
-    iam = EnterpriseIAM(engine)
-    org = await iam.create_workspace(
-        actor_user_id=user_id, name="Ent", slug=f"ent-{uuid.uuid4().hex[:8]}", kind="ORGANIZATION"
+    org = await authorized_workspace(
+        engine, user_id, name="Ent", slug=f"ent-{uuid.uuid4().hex[:8]}", kind="ORGANIZATION"
     )
     personal = VerifiedIDToken(
         issuer="https://login.microsoftonline.com/9188040d-6c67-4c5b-b112-36a304b66dad/v2.0",
@@ -547,11 +536,9 @@ async def test_session_revoke_and_suspension(engine) -> None:
 @pytest.mark.asyncio
 async def test_sso_required_blocks_password_and_downgrade(engine) -> None:
     user_id = await _user(engine)
-    from responsibleai.enterprise.service import EnterpriseIAM
-
-    iam = EnterpriseIAM(engine)
-    org = await iam.create_workspace(
-        actor_user_id=user_id,
+    org = await authorized_workspace(
+        engine,
+        user_id,
         name="SSO Co",
         slug=f"sso-{uuid.uuid4().hex[:8]}",
         kind="ORGANIZATION",

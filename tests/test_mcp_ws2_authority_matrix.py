@@ -19,7 +19,6 @@ from unittest.mock import AsyncMock
 import pytest
 
 from responsibleai.dashboard.config import Settings
-from responsibleai.db.engine import create_engine
 from responsibleai.governance import (
     ActionRequest,
     AgentContext,
@@ -154,11 +153,11 @@ def os_environ_safe() -> dict[str, str]:
 
 
 @pytest.fixture
-async def engine():
-    db = create_engine(":memory:")
-    await db.init()
-    yield db
-    await db.close()
+async def engine(tmp_path, monkeypatch):
+    from tests.protected_component_tenant import component_controller
+
+    async with component_controller(tmp_path, monkeypatch, "wp_mcp_ws2") as controller:
+        yield controller.engine
 
 
 class TestEnterpriseTrustDowngradePrevention:
@@ -351,8 +350,12 @@ class TestApplyGovernanceInfrastructureFailClosed:
         dispatch = AsyncMock()
         monkeypatch.setattr("responsibleai.mcp.tools.dispatch_tool", dispatch)
 
+        from tests.protected_component_tenant import provision_component_organization
+
+        org = await provision_component_organization(
+            engine, name="Fail", slug=f"fail-{uuid.uuid4().hex[:8]}"
+        )
         repo = OrgRepository(engine)
-        org = await repo.create_org("Fail", f"fail-{uuid.uuid4().hex[:8]}")
         resolver = MagicMock(spec=AuthorityResolver)
         resolver.resolve = AsyncMock(side_effect=AuthorityDenied("denied"))
         services = GovernanceServices(
@@ -393,8 +396,12 @@ class TestApplyGovernanceInfrastructureFailClosed:
         dispatch = AsyncMock()
         monkeypatch.setattr("responsibleai.mcp.tools.dispatch_tool", dispatch)
 
+        from tests.protected_component_tenant import provision_component_organization
+
+        org = await provision_component_organization(
+            engine, name="Ev", slug=f"ev-{uuid.uuid4().hex[:8]}"
+        )
         repo = OrgRepository(engine)
-        org = await repo.create_org("Ev", f"ev-{uuid.uuid4().hex[:8]}")
         principal = "k1"
         await seed_runtime_authority(
             engine,

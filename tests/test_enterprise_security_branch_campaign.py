@@ -14,7 +14,6 @@ from cryptography.hazmat.primitives.asymmetric.ec import SECP256R1, generate_pri
 from sqlalchemy import insert, update
 
 from responsibleai.db.engine import (
-    create_engine,
     org_security_policies,
     organization_sso_configs,
     organizations,
@@ -57,15 +56,14 @@ from responsibleai.enterprise.security.service import (
 from responsibleai.enterprise.security.webauthn import b64url_decode, b64url_encode
 from responsibleai.enterprise.service import Actor, EnterpriseIAM
 from responsibleai.rbac.models import GovernanceStatus, Role
+from tests.protected_component_tenant import authorized_workspace, component_controller
 from tests.webauthn_fakes import registration_blob
 
 
 @pytest.fixture
-async def engine():
-    db = create_engine(":memory:")
-    await db.init()
-    yield db
-    await db.close()
+async def engine(tmp_path, monkeypatch):
+    async with component_controller(tmp_path, monkeypatch, "wp_ent_branch") as controller:
+        yield controller.engine
 
 
 async def _user(engine, email: str = "human@example.com") -> str:
@@ -108,9 +106,9 @@ def _actor(
 
 
 async def _org(engine, owner_id: str) -> str:
-    iam = EnterpriseIAM(engine)
-    org = await iam.create_workspace(
-        actor_user_id=owner_id,
+    org = await authorized_workspace(
+        engine,
+        owner_id,
         name="Branch Org",
         slug=f"br-{uuid.uuid4().hex[:8]}",
         kind="ORGANIZATION",
@@ -441,11 +439,11 @@ async def test_authorize_cross_tenant_membership_and_missing_org(engine) -> None
     iam = EnterpriseIAM(engine)
     alice = await _user(engine, "alice@example.com")
     bob = await _user(engine, "bob@example.com")
-    org_a = await iam.create_workspace(
-        actor_user_id=alice, name="A", slug=f"a-{uuid.uuid4().hex[:8]}", kind="ORGANIZATION"
+    org_a = await authorized_workspace(
+        engine, alice, name="A", slug=f"a-{uuid.uuid4().hex[:8]}", kind="ORGANIZATION"
     )
-    org_b = await iam.create_workspace(
-        actor_user_id=bob, name="B", slug=f"b-{uuid.uuid4().hex[:8]}", kind="ORGANIZATION"
+    org_b = await authorized_workspace(
+        engine, bob, name="B", slug=f"b-{uuid.uuid4().hex[:8]}", kind="ORGANIZATION"
     )
     actor_a = _actor(alice, org_a["id"], Role.OWNER)
     with pytest.raises(EnterpriseError) as tenant:
@@ -467,8 +465,8 @@ async def test_authorize_cross_tenant_membership_and_missing_org(engine) -> None
 async def test_authorize_suspended_org_and_environment_scope_denials(engine) -> None:
     iam = EnterpriseIAM(engine)
     owner = await _user(engine, "own@example.com")
-    org = await iam.create_workspace(
-        actor_user_id=owner, name="Org", slug=f"s-{uuid.uuid4().hex[:8]}", kind="ORGANIZATION"
+    org = await authorized_workspace(
+        engine, owner, name="Org", slug=f"s-{uuid.uuid4().hex[:8]}", kind="ORGANIZATION"
     )
     actor = _actor(owner, org["id"], Role.OWNER)
     envs = {e["type"]: e for e in await iam.list_environments(actor, org["id"])}
@@ -558,8 +556,8 @@ async def test_workspace_create_and_settings_noop_branches(engine) -> None:
 
     async with engine.raw.begin() as conn:
         await conn.execute(update(web_users).where(web_users.c.id == owner).values(disabled=0))
-    org = await iam.create_workspace(
-        actor_user_id=owner, name="Good", slug=f"z-{uuid.uuid4().hex[:8]}", kind="INDIVIDUAL"
+    org = await authorized_workspace(
+        engine, owner, name="Good", slug=f"z-{uuid.uuid4().hex[:8]}", kind="INDIVIDUAL"
     )
     actor = _actor(owner, org["id"], Role.OWNER)
     unchanged = await iam.update_settings(actor, org["id"], display_name=None, settings=None)
@@ -572,8 +570,8 @@ async def test_transfer_invite_accept_and_role_revoke_denials(engine) -> None:
     owner = await _user(engine, "xfer@example.com")
     admin = await _user(engine, "admin@example.com")
     outsider = await _user(engine, "out@example.com")
-    org = await iam.create_workspace(
-        actor_user_id=owner, name="Xfer", slug=f"t-{uuid.uuid4().hex[:8]}", kind="ORGANIZATION"
+    org = await authorized_workspace(
+        engine, owner, name="Xfer", slug=f"t-{uuid.uuid4().hex[:8]}", kind="ORGANIZATION"
     )
     owner_actor = _actor(owner, org["id"], Role.OWNER)
     _, invite = await iam.invite_member(
@@ -612,8 +610,8 @@ async def test_transfer_invite_accept_and_role_revoke_denials(engine) -> None:
 async def test_environment_mutations_invalid_inputs(engine) -> None:
     iam = EnterpriseIAM(engine)
     owner = await _user(engine, "env@example.com")
-    org = await iam.create_workspace(
-        actor_user_id=owner, name="Env", slug=f"e-{uuid.uuid4().hex[:8]}", kind="ORGANIZATION"
+    org = await authorized_workspace(
+        engine, owner, name="Env", slug=f"e-{uuid.uuid4().hex[:8]}", kind="ORGANIZATION"
     )
     actor = _actor(owner, org["id"], Role.OWNER)
     await iam.ensure_default_environments(org["id"])
@@ -639,8 +637,8 @@ async def test_accept_invitation_active_membership_race_denied(engine) -> None:
     iam = EnterpriseIAM(engine)
     owner = await _user(engine, "race@example.com")
     member = await _user(engine, "race-member@example.com")
-    org = await iam.create_workspace(
-        actor_user_id=owner, name="Race", slug=f"r-{uuid.uuid4().hex[:8]}", kind="ORGANIZATION"
+    org = await authorized_workspace(
+        engine, owner, name="Race", slug=f"r-{uuid.uuid4().hex[:8]}", kind="ORGANIZATION"
     )
     actor = _actor(owner, org["id"], Role.OWNER)
     _, token = await iam.invite_member(

@@ -596,12 +596,23 @@ class McpOAuthAuthorizationServer:
         subject_id: str | None = None,
         client_id: str | None = None,
     ) -> None:
+        # Revision 0067 pins oauth_auth_events.outcome at VARCHAR(16). The OAuth
+        # protocol error stays insufficient_scope on the HTTP response; the audit
+        # row uses a distinct token that fits that column. Unknown longer values
+        # are refused rather than truncated.
+        stored_outcome = {"insufficient_scope": "scope_missing"}.get(outcome, outcome)
+        if len(stored_outcome) > 16:
+            raise OAuthProtocolError(
+                "server_error",
+                "OAuth audit outcome exceeds the durable column",
+                status_code=500,
+            )
         async with self.engine.raw.begin() as connection:
             await connection.execute(
                 insert(oauth_auth_events).values(
                     id=str(uuid.uuid4()),
                     event_type=event_type,
-                    outcome=outcome,
+                    outcome=stored_outcome,
                     org_id=org_id,
                     subject_id=subject_id,
                     client_id=client_id,

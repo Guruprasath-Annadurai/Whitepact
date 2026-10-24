@@ -19,13 +19,11 @@ pytest_plugins = ("tests.test_mcp_governance_dispatch",)
 
 
 @pytest.fixture
-async def engine():
-    from responsibleai.db.engine import create_engine
+async def engine(tmp_path, monkeypatch):
+    from tests.protected_component_tenant import component_controller
 
-    db = create_engine(":memory:")
-    await db.init()
-    yield db
-    await db.close()
+    async with component_controller(tmp_path, monkeypatch, "wp_mcp_fc") as controller:
+        yield controller.engine
 
 
 def _hosted_services(engine, seed_runtime_authority, **overrides) -> GovernanceServices:
@@ -55,10 +53,11 @@ def _hosted_services(engine, seed_runtime_authority, **overrides) -> GovernanceS
 
 
 async def _seed_org(engine, seed_runtime_authority) -> tuple[str, str]:
-    from responsibleai.db import OrgRepository
+    from tests.protected_component_tenant import provision_component_organization
 
-    repo = OrgRepository(engine)
-    org = await repo.create_org("FC", f"fc-{uuid.uuid4().hex[:8]}")
+    org = await provision_component_organization(
+        engine, name="FC", slug=f"fc-{uuid.uuid4().hex[:8]}"
+    )
     principal = "principal-fc"
     await seed_runtime_authority(
         engine,
