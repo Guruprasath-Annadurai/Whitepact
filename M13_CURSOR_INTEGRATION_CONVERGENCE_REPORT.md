@@ -142,7 +142,20 @@ The three Fortress conflicts stay outstanding obligations. The verified-session 
 
 ## 11. Complete mandatory hosted CI results
 
-Pending for the review tip. Starting-SHA results are in section 2. After push, this section is updated only with terminal checks. Path filters mean a pull request against `codex/whitepact-m13-r1-operator-recovery` schedules Sovereign (no path filter) and I1 (this branch edits `scripts/engineering/reproducers/test_m13_dual_titan_root.py`). Absolute Runtime, P4, and R1 do not list these paths. They are not forced by editing workflow files.
+Exact head `fc07c1790e48333671377f17e840d4e38dd4a53f`, pull request #228, checks started 24 Oct 2026, 14:21 IST (`2026-10-24T08:51:26Z`). Absolute Runtime, P4, and R1 did not schedule: this diff does not touch their path filters. Hosted R1 and P4 remain the starting-SHA passes in section 2. Fortress was not re-run.
+
+| Check | Run / job | Result |
+|---|---|---|
+| I1 `independent-security` Python 3.11 | `40079662155` / `120830372225` | PASS, 23m43s, finished 14:45 IST. Includes the MCP suite and the enterprise identity step. |
+| I1 `independent-security` Python 3.12 | `40079662155` / `120830372017` | CANCELLED at the 25-minute job limit, 14:46 IST. MCP transport, passkey rollback, and root-email steps had already succeeded. The WebAuthn/enterprise step was cancelled before it finished. Not an assertion failure. |
+| I1 `native-container-scope` | same run / `120830372294` | PASS, 1m52s. |
+| I1 `inherited-policy-gates` | same run / `120830372310` | PASS, 9s. |
+| I1 `introduced-dco` | same run / `120830372240` | FAIL, 6s. Same unsigned commit `39619c4b46dac5d6e69c9e00ce887c2ed9641cfc`. |
+| I1 `real-customer-journey` | same run / `120830372213` | FAIL, 1m47s. Journey pytest files passed (13 and 6). Browser onboarding returned HTTP 503 and stopped. APEX journey onboarding returned HTTP 403 from the provisioning controller. Both scripts exited 2. |
+| Sovereign `development-qualification` 3.11 | `40079662084` / `120830371714` | FAIL, 6m31s. Journey script exit 1 (stage counts are not 17/1/7) and prototype exit 2. |
+| Sovereign `development-qualification` 3.12 | `40079662084` / `120830371644` | FAIL, 5m55s. Log shows register 202, verify 200, login 200, onboarding 403, logout 200, session 401. Default-journey assertion exited 1. Prototype exited 2. |
+
+A follow-up on this branch starts the protected controller process only in the cross-tenant protocol test, so the governed-app suite no longer pays that process on every test. That is aimed at the Python 3.12 timeout. It does not change the onboarding or DCO results.
 
 Local Python 3.12 evidence already collected, `WHITEPACT_TEST_PG_ADMIN_URL=postgresql://wp:wp@127.0.0.1:5432/postgres`, PostgreSQL 16.15:
 
@@ -157,7 +170,7 @@ Python 3.11 is not installed on this machine. Hosted 3.11 is the 3.11 evidence. 
 
 ## 12. Remaining engineering failures
 
-None of the original 219 setup failures remain as open local failures on Python 3.12. They are not counted resolved on 3.11 until hosted 3.11 finishes.
+Hosted Python 3.11 `independent-security` passed, so the original 219 setup failures are cleared on that runner. Hosted Python 3.12 completed the same MCP, passkey, and root-email steps, then the job limit cancelled the enterprise step. That timeout is the remaining engineering item on this branch.
 
 Still red, and not claimed as fixed:
 
@@ -221,7 +234,7 @@ Tests and fixture:
 ## Concise summary
 
 - Original failing tests: 219 per Python version in I1 (157 paid entitlement, 43 creator mismatch, 19 missing session/CSRF), plus 3 Fortress tests per Python version, plus Sovereign/customer-journey onboarding BLOCKED, plus one unsigned historical commit.
-- Corrected on Python 3.12: the 219 setup failures. Follow-up suites that cover the production fixes passed (88 and the two previously failing tests). Denial, cross-tenant, and disabled-account checks stayed in place.
-- Remaining failures: Fortress verified-session requirement, READY publication / onboarding, historical DCO, and hosted 3.11 not yet recorded in this file.
-- Independent verification completed locally: PostgreSQL 16.15, Python 3.12.3, the suites in section 11. Hosted exact-head checks are recorded when they finish.
+- Corrected on hosted Python 3.11: the 219 setup failures (`independent-security` PASS at `fc07c179`). Local Python 3.12 suites passed. Hosted Python 3.12 passed those same MCP and root-email steps, then the 25-minute job cancelled the last enterprise step.
+- Remaining failures: Fortress verified-session requirement, READY publication / onboarding (HTTP 403 or 503), historical DCO, and the Python 3.12 job-limit cancellation.
+- Independent verification: hosted PostgreSQL 16 on Ubuntu 24.04 for the checks in section 11, plus local Python 3.12.3.
 - Required external approvals: Security Owner for any READY publication, Codex/CTO for the three Fortress conflicts, repository owner for historical DCO sign-off.

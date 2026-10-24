@@ -30,6 +30,12 @@ from responsibleai.mcp.tools import TOOL_DEFS, WHITEPACT_PURPOSE_ARGUMENT
 from responsibleai.rbac.models import Plan, Role
 
 TEST_GOVERNANCE_PURPOSE = "automated-test"
+_ENGINE_CONTROLLERS: dict[int, object] = {}
+
+
+def component_controller_for_engine(engine):
+    """Controller bound to this engine for one additional protected provision."""
+    return _ENGINE_CONTROLLERS[id(engine)]
 
 
 @pytest.fixture()
@@ -111,20 +117,22 @@ async def _protected_mcp_app(
         )
         monkeypatch.setenv("WHITEPACT_STORE_B_PATH", str(controller.provider.path))
         monkeypatch.setenv("WHITEPACT_STORE_B_KEY", controller.provider._secret_key)
-        from tests.stage3_controller_helpers import controller_process
-
-        async with controller_process(controller, monkeypatch):
-            try:
-                app = _build_http_app()
-                if start_lifespan:
-                    async with LifespanManager(app) as manager:
-                        yield manager.app, raw_key, tenant, engine, key_rec.id
-                else:
-                    # The webhook regression retains its original real lifespan
-                    # context and captures the manager before starting that context.
-                    yield app, raw_key, tenant, engine, key_rec.id
-            finally:
-                set_restore_readiness_gate(previous)
+        # The protected process is started only by the test that provisions
+        # another tenant. Starting it for every governed app pushed the
+        # Python 3.12 I1 job past its 25-minute limit.
+        _ENGINE_CONTROLLERS[id(engine)] = controller
+        try:
+            app = _build_http_app()
+            if start_lifespan:
+                async with LifespanManager(app) as manager:
+                    yield manager.app, raw_key, tenant, engine, key_rec.id
+            else:
+                # The webhook regression retains its original real lifespan
+                # context and captures the manager before starting that context.
+                yield app, raw_key, tenant, engine, key_rec.id
+        finally:
+            _ENGINE_CONTROLLERS.pop(id(engine), None)
+            set_restore_readiness_gate(previous)
 
 
 @pytest.fixture()
