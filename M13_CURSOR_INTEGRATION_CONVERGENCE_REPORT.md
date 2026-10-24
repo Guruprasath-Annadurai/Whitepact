@@ -191,7 +191,7 @@ Still red, and not claimed as fixed:
 - Sovereign default journey and development prototype.
 - I1 `real-customer-journey` (exit code 2 at onboarding).
 - I1 `introduced-dco` for historical commit `39619c4b46dac5d6e69c9e00ce887c2ed9641cfc`.
-- Full R1 Docker matrix and native container jobs were not re-run locally.
+- Hosted I1 `native-container-scope` passed. The full R1 Docker matrix was not re-run; Docker is not available in this environment.
 
 ## 13. Human-owned DCO / security decisions
 
