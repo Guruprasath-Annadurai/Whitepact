@@ -14,7 +14,11 @@ import re
 from pathlib import Path
 from typing import Any
 
-from scripts.engineering.m13_bootstrap_authorization import BootstrapRefusedError, _profile
+from scripts.engineering.m13_bootstrap_authorization import (
+    BootstrapManifest,
+    BootstrapRefusedError,
+    _profile,
+)
 from sqlalchemy import text
 
 from responsibleai.data_governance.backup_defense import SqliteDurableLifecycleStateProvider
@@ -22,6 +26,38 @@ from responsibleai.data_governance.tenant_controller import postgres_identity, s
 from responsibleai.db.engine import DatabaseEngine
 
 FORMAT = "WHITEPACT-M13-BOOTSTRAP-STORE-PREFLIGHT-V1"
+
+
+async def verify_bootstrap_target_binding(
+    engine: DatabaseEngine,
+    provider: SqliteDurableLifecycleStateProvider,
+    *,
+    profile_path: str | Path,
+    manifest: BootstrapManifest,
+) -> dict[str, Any]:
+    """Bind a proposed manifest to actual stores; NOT signature or admission proof.
+
+    This read-only check cannot consume approval or publish readiness. A future
+    publisher must independently verify signatures and repeat freshness checks
+    under exclusive operation/store locks before any mutation.
+    """
+    if type(manifest) is not BootstrapManifest:
+        raise BootstrapRefusedError("Exact bootstrap manifest required")
+    manifest.canonical_bytes()
+    profile = _profile(profile_path)
+    for field in (
+        "installation_id",
+        "deployment_id",
+        "environment",
+        "postgres_identity",
+        "store_b_identity",
+    ):
+        if getattr(manifest, field) != profile[field]:
+            raise BootstrapRefusedError("Bootstrap target binding mismatch")
+    evidence = await collect_bootstrap_store_evidence(engine, provider, profile_path=profile_path)
+    if manifest.evidence_digest != evidence_digest(evidence):
+        raise BootstrapRefusedError("Bootstrap evidence digest mismatch")
+    return evidence
 
 
 def evidence_digest(evidence: dict[str, Any]) -> str:
