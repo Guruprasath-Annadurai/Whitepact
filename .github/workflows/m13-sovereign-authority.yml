@@ -59,6 +59,10 @@ jobs:
         run: |
           python -m pytest tests/test_sovereign_authority.py tests/test_m13_convergence_a2.py tests/test_m13_convergence_restore_http.py -o addopts='' --junitxml=/tmp/sovereign.xml --tb=short -ra
           python -c 'import xml.etree.ElementTree as E; r=E.parse("/tmp/sovereign.xml"); assert not list(r.iter("skipped")) and not list(r.iter("failure")) and not list(r.iter("error"))'
+      - name: Real browser refuses onboarding without installation authority
+        if: ${{ !cancelled() && steps.environment.conclusion == 'success' }}
+        run: |
+          python -m pytest tests/test_m13i3_provisioning_context.py -o addopts='' --tb=short -ra
       - name: Genuine default-disabled customer journey
         if: ${{ !cancelled() && steps.environment.conclusion == 'success' }}
         run: |
