@@ -211,6 +211,7 @@ class Phase7AAuthorityKernel:
                 if org != GovernanceStatus.ACTIVE.value:
                     raise AuthorityKernelError("Organization is not ACTIVE")
                 epoch = await lock_epoch(conn, organization_id)
+                await self._assert_provisioned(conn, organization_id, epoch)
                 now = _now()
                 request_id = _new_id()
                 await conn.execute(
@@ -320,7 +321,8 @@ class Phase7AAuthorityKernel:
                 org = await self._lock_org(conn, organization_id)
                 if org != GovernanceStatus.ACTIVE.value:
                     raise AuthorityKernelError("Organization is not ACTIVE")
-                await lock_epoch(conn, organization_id)
+                epoch = await lock_epoch(conn, organization_id)
+                await self._assert_provisioned(conn, organization_id, epoch)
                 req = await self._lock_request(conn, request_id)
                 self._assert_tenant(req["organization_id"], organization_id)
                 att = await self._lock_attempt_by_request(conn, request_id)
@@ -403,6 +405,7 @@ class Phase7AAuthorityKernel:
                 if org != GovernanceStatus.ACTIVE.value:
                     raise AuthorityKernelError("Organization is not ACTIVE")
                 epoch = await lock_epoch(conn, organization_id)
+                await self._assert_provisioned(conn, organization_id, epoch)
                 req = await self._lock_request(conn, request_id)
                 self._assert_tenant(req["organization_id"], organization_id)
                 auth = await self._lock_auth_by_request(conn, request_id)
@@ -468,6 +471,7 @@ class Phase7AAuthorityKernel:
                 if org != GovernanceStatus.ACTIVE.value:
                     raise AuthorityKernelError("Organization is not ACTIVE")
                 epoch = await lock_epoch(conn, organization_id)
+                await self._assert_provisioned(conn, organization_id, epoch)
                 req = await self._lock_request(conn, request_id)
                 self._assert_tenant(req["organization_id"], organization_id)
                 auth = await self._lock_auth_by_request(conn, request_id)
@@ -832,6 +836,7 @@ class Phase7AAuthorityKernel:
                 now = _now()
                 org = await self._lock_org(conn, claim.organization_id)
                 epoch = await lock_epoch(conn, claim.organization_id)
+                await self._assert_provisioned(conn, claim.organization_id, epoch)
                 req = await self._lock_request(conn, claim.request_id)
                 auth = await self._lock_auth_by_request(conn, claim.request_id)
                 att = await self._lock_attempt(conn, claim.attempt_id)
@@ -973,6 +978,18 @@ class Phase7AAuthorityKernel:
         await conn.execute(
             update(attempts).where(attempts.c.attempt_id == att["attempt_id"]).values(**values)
         )
+
+    async def _assert_provisioned(
+        self, conn: AsyncConnection, organization_id: str, epoch: int
+    ) -> None:
+        from responsibleai.data_governance.tenant_admission import (
+            assert_tenant_provisioning_complete,
+        )
+
+        try:
+            await assert_tenant_provisioning_complete(conn, organization_id, epoch)
+        except Exception as exc:
+            raise AuthorityKernelError("Tenant provisioning authority is unverified") from exc
 
     async def _lock_org(self, conn: AsyncConnection, organization_id: str) -> str:
         stmt = select(organizations.c.governance_status).where(

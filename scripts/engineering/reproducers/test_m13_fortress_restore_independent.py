@@ -5,8 +5,8 @@
 from datetime import UTC, datetime
 
 import pytest
-from sqlalchemy import insert
-from tests.pg_test_url import isolated_pg_url
+from sqlalchemy import insert, text
+from tests.test_stage3_controller_postgres import isolated_controller_context
 
 from responsibleai.data_governance.backup_defense import (
     InMemoryLifecycleStateProvider,
@@ -16,12 +16,9 @@ from responsibleai.data_governance.backup_defense import (
     RestoreReconciliationError,
 )
 from responsibleai.db.engine import (
-    create_engine,
     governance_approvals,
-    organizations,
     runtime_execution_requests,
 )
-from responsibleai.db.migrate import _find_alembic_ini, _migration_env, _run_alembic
 from responsibleai.db.revocation_epoch_repository import RevocationEpochRepository
 from responsibleai.isolation import in_flight as tracking
 
@@ -34,37 +31,63 @@ async def restored(tmp_path, monkeypatch):
     monkeypatch.setattr(
         tracking.InFlightExecutionRegistry, "_instance", tracking.InFlightExecutionRegistry()
     )
-    databases = isolated_pg_url("wp_convergence_restore")
-    database = await anext(databases)
-    await _run_alembic(_find_alembic_ini(), _migration_env(database), "upgrade", "head")
-    engine = create_engine(database)
-    try:
-        async with engine.raw.begin() as conn:
-            await conn.execute(
-                insert(organizations).values(
-                    id="restored-tenant",
-                    name="Restore test",
-                    slug="restore-test",
-                    created_at=datetime.now(UTC).isoformat(),
-                    governance_status="ACTIVE",
+    # Genuine provisioning; the shared component READY baseline is not an
+    # offline bootstrap receipt. Structural in-memory attacks below remain
+    # distinct from durable Store B / signed R1 recovery qualification.
+    async with isolated_controller_context(tmp_path, monkeypatch, "wp_convergence_restore") as (
+        service,
+        identity,
+        user,
+        token,
+        csrf,
+    ):
+        tenant = await service.create(
+            session_token=token,
+            csrf=csrf,
+            request_id="fortress-restored-fixture",
+            name="Restore test",
+            slug="restore-test",
+            attach_session=True,
+        )
+        lifecycle = service.provider.get_state(tenant)
+        complete = service.ledger.completion(tenant)
+        assert lifecycle.state == LifecycleState.ACTIVE
+        assert complete.generation_id == lifecycle.generation_id
+        assert (await identity.get_principal(token)).org_id == tenant
+        async with service.engine.raw.connect() as conn:
+            row = (
+                (
+                    await conn.execute(
+                        text(
+                            "SELECT p.generation_id,p.state,p.completion_digest,o.owner_user_id "
+                            "FROM tenant_provisioning_records p JOIN organizations o "
+                            "ON o.id=p.tenant_id WHERE p.tenant_id=:tenant"
+                        ),
+                        {"tenant": tenant},
+                    )
                 )
+                .mappings()
+                .one()
             )
-        yield engine
-    finally:
-        await engine.close()
-        await databases.aclose()
+            assert row["generation_id"] == lifecycle.generation_id
+            assert row["completion_digest"] == complete.completion_digest
+            assert row["state"] == "COMPLETE"
+            assert row["owner_user_id"] == user
+        assert (await RevocationEpochRepository(service.engine).current(tenant)).epoch == 1
+        yield service.engine, tenant, lifecycle.generation_id
 
 
 @pytest.mark.asyncio
 async def test_store_b_floor_fences_canonical_governance_epoch(restored):
+    restored, tenant, generation = restored
     epochs = RevocationEpochRepository(restored)
-    await epochs.bump("restored-tenant")
-    await epochs.bump("restored-tenant")
+    await epochs.bump(tenant)
+    await epochs.bump(tenant)
     provider = InMemoryLifecycleStateProvider()
     provider.record_state(
         LifecycleStateRecord(
-            tenant_id="restored-tenant",
-            generation_id="generation",
+            tenant_id=tenant,
+            generation_id=generation,
             state=LifecycleState.ACTIVE,
             effective_at=datetime.now(UTC).isoformat(),
             security_epoch=7,
@@ -75,24 +98,25 @@ async def test_store_b_floor_fences_canonical_governance_epoch(restored):
         restored, lifecycle_provider=provider
     ).reconcile_post_restore("independent-development-test")
     assert report.status == "RECONCILED"
-    assert (await epochs.current("restored-tenant")).epoch >= 7
+    assert (await epochs.current(tenant)).epoch >= 7
 
 
 @pytest.mark.asyncio
 async def test_tombstone_reconciliation_retains_uncertain_execution(restored):
     """Isolating fixtures must never turn genuine uncertainty into success."""
+    restored, tenant, generation = restored
     registry = tracking.InFlightExecutionRegistry.get_instance()
     await registry.register(
         "uncertain-execution",
-        "restored-tenant",
+        tenant,
         "component-test",
         terminate_callback=lambda: False,
     )
     provider = InMemoryLifecycleStateProvider()
     provider.record_state(
         LifecycleStateRecord(
-            tenant_id="restored-tenant",
-            generation_id="generation",
+            tenant_id=tenant,
+            generation_id=generation,
             state=LifecycleState.TOMBSTONED,
             effective_at=datetime.now(UTC).isoformat(),
             security_epoch=7,
@@ -103,12 +127,13 @@ async def test_tombstone_reconciliation_retains_uncertain_execution(restored):
         await RestoreReconciliationEngine(
             restored, lifecycle_provider=provider
         ).reconcile_post_restore("independent-development-test")
-    assert registry.has_unresolved("restored-tenant")
+    assert registry.has_unresolved(tenant)
     assert list(tracking._DISTRIBUTED_REGISTRY_DIR.glob("*.json"))
 
 
 @pytest.mark.asyncio
 async def test_runtime_canonical_fence_ignores_other_scope(restored, tmp_path, monkeypatch):
+    restored, tenant, generation = restored
     from responsibleai.db.engine import governance_revocation_epochs
     from responsibleai.isolation import in_flight as tracking
 
@@ -116,18 +141,18 @@ async def test_runtime_canonical_fence_ignores_other_scope(restored, tmp_path, m
     registry = tracking.InFlightExecutionRegistry()
     await registry.register(
         "execution",
-        "restored-tenant",
+        tenant,
         "harmless-test",
         admission_epoch=5,
         terminate_callback=lambda: True,
     )
     epochs = RevocationEpochRepository(restored)
     for _ in range(7):
-        await epochs.bump("restored-tenant")
+        await epochs.bump(tenant)
     async with restored.raw.begin() as conn:
         await conn.execute(
             insert(governance_revocation_epochs).values(
-                organization_id="restored-tenant",
+                organization_id=tenant,
                 scope="tenant_global",
                 epoch=2,
                 updated_at=datetime.now(UTC).isoformat(),
@@ -138,12 +163,13 @@ async def test_runtime_canonical_fence_ignores_other_scope(restored, tmp_path, m
 
 @pytest.mark.asyncio
 async def test_tombstone_reconciliation_handles_real_approval_request_fk(restored):
+    restored, tenant, generation = restored
     now = datetime.now(UTC)
     async with restored.raw.begin() as conn:
         await conn.execute(
             insert(governance_approvals).values(
                 id="approval",
-                org_id="restored-tenant",
+                org_id=tenant,
                 action_id="action",
                 action_type="test",
                 target="harmless",
@@ -155,7 +181,7 @@ async def test_tombstone_reconciliation_handles_real_approval_request_fk(restore
         await conn.execute(
             insert(runtime_execution_requests).values(
                 request_id="request",
-                organization_id="restored-tenant",
+                organization_id=tenant,
                 principal_id="principal",
                 agent_id="agent",
                 identity_id="identity",
@@ -174,8 +200,8 @@ async def test_tombstone_reconciliation_handles_real_approval_request_fk(restore
     provider = InMemoryLifecycleStateProvider()
     provider.record_state(
         LifecycleStateRecord(
-            tenant_id="restored-tenant",
-            generation_id="generation",
+            tenant_id=tenant,
+            generation_id=generation,
             state=LifecycleState.TOMBSTONED,
             effective_at=now.isoformat(),
             security_epoch=7,

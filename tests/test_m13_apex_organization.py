@@ -22,17 +22,29 @@ async def account(client, role=Role.OWNER):
         "Rename account", f"apex.rename.{role.value.lower()}@example.com", "StrongPassword123!@#"
     )
     await identities.verify_email(verification)
-    org = (
-        await EnterpriseIAM(engine).create_workspace(
-            actor_user_id=user, name="Original", slug="rename-apex", kind="ORGANIZATION"
+    creator = user
+    if role != Role.OWNER:
+        creator, proof = await identities.register(
+            "Inviting owner", "apex.inviting.owner@example.com", "StrongPassword123!@#"
         )
-        if role == Role.OWNER
-        else {
-            "id": await identities.attach_organization(
-                user, name="Viewer fixture", slug="viewer-apex", role=role
-            )
-        }
+        assert await identities.verify_email(proof)
+    creation_token, creation_csrf = await identities.create_session(creator)
+    org = await EnterpriseIAM(engine).create_workspace(
+        actor_user_id=creator,
+        name="Original",
+        slug=f"rename-apex-{role.value.lower()}",
+        kind="ORGANIZATION",
+        session_token=creation_token,
+        csrf=creation_csrf,
     )
+    if role != Role.OWNER:
+        _, invitation = await identities.create_invitation(
+            org_id=org["id"],
+            email=f"apex.rename.{role.value.lower()}@example.com",
+            role=role,
+            invited_by_user_id=creator,
+        )
+        assert await identities.accept_invitation(invitation, user) == org["id"]
     token, csrf = await identities.create_session(user, org_id=org["id"])
     client.cookies.set("wp_session", token)
     client.cookies.set("wp_csrf", csrf)
@@ -91,10 +103,11 @@ async def test_rename_preserves_auth_csrf_and_role_requirements(inventory_client
 @pytest.mark.asyncio
 async def test_rename_compare_and_set_has_one_winner_on_real_database(directory):
     repository = OrgRepository(directory.db)
+    tenant = directory.fixture_tenant_ids["apex-org"]
     outcomes = await asyncio.gather(
-        repository.update_org_name("apex-org", "First", expected_name="APEX"),
-        repository.update_org_name("apex-org", "Second", expected_name="APEX"),
+        repository.update_org_name(tenant, "First", expected_name="APEX"),
+        repository.update_org_name(tenant, "Second", expected_name="APEX"),
     )
     assert sum(outcomes) == 1
-    stored = await repository.get_org("apex-org")
+    stored = await repository.get_org(tenant)
     assert stored is not None and stored.name in {"First", "Second"}

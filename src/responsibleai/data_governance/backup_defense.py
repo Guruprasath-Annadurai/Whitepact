@@ -20,6 +20,7 @@ import json
 import os
 import sqlite3
 import stat
+import threading
 import uuid
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -236,15 +237,42 @@ def resolve_store_b_path(db_path: str | Path | None = None) -> Path:
     return path
 
 
+_STORE_B_FILE_CREATION_LOCK = threading.RLock()
+
+
 def _secure_create_store_b_file(path: Path) -> None:
+    # A second constructor in this process must not open SQLite on a newly
+    # created inode until the creating descriptor has been closed.
+    with _STORE_B_FILE_CREATION_LOCK:
+        _secure_create_store_b_file_locked(path)
+
+
+def _secure_create_store_b_file_locked(path: Path) -> None:
     """Create the SQLite file without following symlinks; mode 0600."""
     if path.exists() and path.is_symlink():
         raise MissingLifecycleProviderError("Store B path must not be a symlink")
     parent = path.parent
     parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-    flags = os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW
+    # Never open/close an existing SQLite inode outside SQLite: on POSIX,
+    # closing even this unrelated descriptor drops this process's live database
+    # locks. Concurrent provider construction must not invalidate transaction
+    # exclusion. O_EXCL ensures the descriptor below belongs to a new file.
+    flags = os.O_RDWR | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
     try:
         fd = os.open(path, flags, 0o600)
+    except FileExistsError:
+        existing = path.lstat()
+        if stat.S_ISLNK(existing.st_mode):
+            raise MissingLifecycleProviderError("Store B path must not be a symlink") from None
+        if (
+            not stat.S_ISREG(existing.st_mode)
+            or stat.S_IMODE(existing.st_mode) != 0o600
+            or existing.st_uid != os.getuid()
+        ):
+            raise MissingLifecycleProviderError(
+                "Existing Store B must be an operator-owned regular file with mode 0600"
+            ) from None
+        return
     except OSError as exc:
         raise MissingLifecycleProviderError(f"Cannot open Store B path: {exc}") from exc
     try:
@@ -273,7 +301,9 @@ class SqliteDurableLifecycleStateProvider(CurrentLifecycleStateProvider):
     def _get_connection(self) -> sqlite3.Connection:
         if not self._available:
             raise StoreBUnavailableError("CurrentLifecycleStateProvider is unavailable")
-        conn = sqlite3.connect(str(self._path), timeout=10.0, isolation_level=None)
+        conn = sqlite3.connect(
+            self._path.as_uri() + "?mode=rw", uri=True, timeout=10.0, isolation_level=None
+        )
         conn.execute("PRAGMA journal_mode=WAL;")
         conn.execute("PRAGMA synchronous=FULL;")
         return conn
@@ -333,12 +363,16 @@ class SqliteDurableLifecycleStateProvider(CurrentLifecycleStateProvider):
             with conn:
                 conn.execute("BEGIN IMMEDIATE")
                 cursor = conn.execute(
-                    "SELECT state, security_epoch, effective_at, generation_id FROM durable_tenant_lifecycle_states WHERE tenant_id = ?",
+                    "SELECT state, security_epoch, effective_at, generation_id, revocation_floor FROM durable_tenant_lifecycle_states WHERE tenant_id = ?",
                     (record.tenant_id,),
                 )
                 row = cursor.fetchone()
+                if row is None and record.state == LifecycleState.ACTIVE:
+                    raise LifecycleIntegrityError(
+                        "Initial ACTIVE publication requires protected provisioning authority"
+                    )
                 if row:
-                    curr_state_str, curr_epoch, curr_eff, curr_gen = row
+                    curr_state_str, curr_epoch, curr_eff, curr_gen, curr_floor = row
                     curr_rank = _STATE_RANK.get(LifecycleState(curr_state_str), 0)
                     new_rank = _STATE_RANK.get(record.state, 0)
                     if new_rank < curr_rank:
@@ -349,11 +383,16 @@ class SqliteDurableLifecycleStateProvider(CurrentLifecycleStateProvider):
                         raise LifecycleRollbackError(
                             f"Security epoch rollback rejected: {record.security_epoch} < {curr_epoch}"
                         )
+                    if record.generation_id != curr_gen:
+                        raise LifecycleRollbackError("Tenant generation replacement rejected")
+                    if record.revocation_floor < curr_floor:
+                        raise LifecycleRollbackError("Revocation floor rollback rejected")
                     if (
                         new_rank == curr_rank
                         and record.security_epoch == curr_epoch
                         and record.effective_at <= curr_eff
                         and record.generation_id == curr_gen
+                        and record.revocation_floor == curr_floor
                     ):
                         return
 
@@ -511,6 +550,22 @@ class SqliteDurableLifecycleStateProvider(CurrentLifecycleStateProvider):
     def set_corrupted(self, corrupted: bool) -> None:
         self._corrupted = corrupted
 
+    def requires_operator_recovery(self) -> bool:
+        """A hosted failure cannot become a development recovery by changing flags."""
+        conn = self._get_connection()
+        try:
+            exists = conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='operator_recovery_policy'"
+            ).fetchone()
+            return bool(
+                exists
+                and conn.execute(
+                    "SELECT 1 FROM operator_recovery_policy WHERE id=1 AND required=1"
+                ).fetchone()
+            )
+        finally:
+            conn.close()
+
     def get_readiness_state(self) -> RestoreReadinessState | None:
         if not self._available:
             raise StoreBUnavailableError("CurrentLifecycleStateProvider is unavailable")
@@ -521,18 +576,90 @@ class SqliteDurableLifecycleStateProvider(CurrentLifecycleStateProvider):
             )
             row = cursor.fetchone()
             if not row:
+                from responsibleai.data_governance.operator_recovery_control import (
+                    assert_completed_binding,
+                )
+
+                if self.requires_operator_recovery():
+                    from responsibleai.data_governance.operator_recovery import (
+                        RecoveryAuthorizationError,
+                    )
+
+                    raise RecoveryAuthorizationError(
+                        "Durable recovery readiness evidence is missing"
+                    )
+                assert_completed_binding(self)
                 return None
-            return RestoreReadinessState(row[0])
+            state = RestoreReadinessState(row[0])
+            if state == RestoreReadinessState.READY:
+                from responsibleai.data_governance.operator_recovery_control import (
+                    assert_completed_binding,
+                )
+
+                verified = assert_completed_binding(self)
+                if self.requires_operator_recovery() and not verified:
+                    from responsibleai.data_governance.operator_recovery import (
+                        RecoveryAuthorizationError,
+                    )
+
+                    raise RecoveryAuthorizationError(
+                        "Hosted recovery READY requires a completed signed receipt"
+                    )
+            return state
         finally:
             conn.close()
 
     def set_readiness_state(self, state: RestoreReadinessState, updated_by: str = "") -> None:
         if not self._available:
             raise StoreBUnavailableError("CurrentLifecycleStateProvider is unavailable")
+        if state == RestoreReadinessState.READY:
+            from responsibleai.data_governance.operator_recovery_control import (
+                assert_ready_write_authorized,
+            )
+
+            # First establishment remains distinct from recovery of a durable
+            # non-READY state. Caller labels never confer operator authority.
+            if self.get_readiness_state() not in (None, RestoreReadinessState.READY):
+                assert_ready_write_authorized(self)
         now = datetime.now(UTC).isoformat()
         conn = self._get_connection()
         try:
             with conn:
+                from responsibleai.data_governance.operator_recovery_control import (
+                    enforcement_required,
+                )
+
+                conn.execute("BEGIN IMMEDIATE")
+                if state != RestoreReadinessState.READY and enforcement_required():
+                    conn.execute(
+                        "CREATE TABLE IF NOT EXISTS operator_recovery_policy "
+                        "(id INTEGER PRIMARY KEY CHECK(id=1),required INTEGER NOT NULL CHECK(required=1))"
+                    )
+                    conn.execute("INSERT OR IGNORE INTO operator_recovery_policy VALUES(1,1)")
+                if state == RestoreReadinessState.READY:
+                    from responsibleai.data_governance.operator_recovery_control import (
+                        authorized_ready_epoch,
+                    )
+
+                    if enforcement_required() or self.requires_operator_recovery():
+                        current = conn.execute(
+                            "SELECT state,epoch FROM durable_restore_readiness WHERE key='global'"
+                        ).fetchone()
+                        if current and current[0] != RestoreReadinessState.READY:
+                            expected_epoch = authorized_ready_epoch(self)
+                            if current != (RestoreReadinessState.RECONCILING, expected_epoch):
+                                from responsibleai.data_governance.operator_recovery import (
+                                    RecoveryAuthorizationError,
+                                )
+
+                                raise RecoveryAuthorizationError(
+                                    "Recovery readiness compare-and-swap failed"
+                                )
+                            from responsibleai.data_governance.operator_recovery_control import (
+                                validate_ready_lifecycle,
+                            )
+
+                            validate_ready_lifecycle(self)
                 conn.execute(
                     """
                     INSERT INTO durable_restore_readiness (key, state, epoch, updated_at, updated_by)
@@ -589,11 +716,16 @@ class InMemoryLifecycleStateProvider(CurrentLifecycleStateProvider):
                 raise LifecycleRollbackError(
                     f"Security epoch rollback rejected: {record.security_epoch} < {existing.security_epoch}"
                 )
+            if record.generation_id != existing.generation_id:
+                raise LifecycleRollbackError("Tenant generation replacement rejected")
+            if record.revocation_floor < existing.revocation_floor:
+                raise LifecycleRollbackError("Revocation floor rollback rejected")
             if (
                 new_rank == curr_rank
                 and record.security_epoch == existing.security_epoch
                 and record.effective_at <= existing.effective_at
                 and record.generation_id == existing.generation_id
+                and record.revocation_floor == existing.revocation_floor
             ):
                 return
 
@@ -670,6 +802,15 @@ class InMemoryLifecycleStateProvider(CurrentLifecycleStateProvider):
     def set_readiness_state(self, state: RestoreReadinessState, updated_by: str = "") -> None:
         if not self._available:
             raise StoreBUnavailableError("CurrentLifecycleStateProvider is unavailable")
+        if state == RestoreReadinessState.READY and self._readiness_state not in (
+            None,
+            RestoreReadinessState.READY,
+        ):
+            from responsibleai.data_governance.operator_recovery_control import (
+                assert_ready_write_authorized,
+            )
+
+            assert_ready_write_authorized(self)
         self._readiness_state = state
 
 
@@ -716,6 +857,10 @@ class RestoreReadinessGate:
             elif is_production_environment():
                 self._provider_error = "Production environment requires durable Store B provider"
         self._provider = provider
+        from responsibleai.data_governance.operator_recovery_control import enforcement_required
+
+        if enforcement_required() and type(provider) is not SqliteDurableLifecycleStateProvider:
+            self._provider_error = "Hosted readiness requires the durable Store B provider"
 
     @property
     def provider(self) -> CurrentLifecycleStateProvider | None:
@@ -725,6 +870,27 @@ class RestoreReadinessGate:
     def provider_error(self) -> str | None:
         return self._provider_error
 
+    def _retain_provider_failure(self) -> None:
+        self._local_state = RestoreReadinessState.FAILED
+        self._provider_error = "Store B recovery evidence could not be verified"
+        from responsibleai.data_governance.operator_recovery_control import (
+            record_restrictive_failure,
+        )
+
+        try:
+            record_restrictive_failure()
+        except Exception:
+            # Local quarantine remains effective even when the independent
+            # receipt store is unavailable; no permissive storage fallback.
+            pass
+        if self._provider is not None:
+            try:
+                self._provider.set_readiness_state(
+                    RestoreReadinessState.FAILED, updated_by="provider_failure"
+                )
+            except Exception:
+                pass
+
     @property
     def state(self) -> RestoreReadinessState:
         # If Store B was configured but could not be initialized (corrupt, unreadable, permission denied)
@@ -733,16 +899,24 @@ class RestoreReadinessGate:
 
         # If provider is present, consult durable state with integrity verification
         if self._provider is not None:
+            from responsibleai.data_governance.operator_recovery_control import (
+                RecoveryInProgressError,
+            )
+
             try:
                 if (
                     hasattr(self._provider, "verify_integrity")
                     and not self._provider.verify_integrity()
                 ):
+                    self._retain_provider_failure()
                     return RestoreReadinessState.FAILED
                 shared = self._provider.get_readiness_state()
                 if shared is not None:
                     return shared
+            except RecoveryInProgressError:
+                return RestoreReadinessState.RECONCILING
             except Exception:
+                self._retain_provider_failure()
                 return RestoreReadinessState.FAILED
 
         # If restore mode is active via environment, gate must be at least RESTORE_PENDING
@@ -756,6 +930,12 @@ class RestoreReadinessGate:
         return self._local_state
 
     def set_state(self, state: RestoreReadinessState, updated_by: str = "") -> None:
+        if state == RestoreReadinessState.READY and self.state != RestoreReadinessState.READY:
+            from responsibleai.data_governance.operator_recovery_control import (
+                assert_ready_write_authorized,
+            )
+
+            assert_ready_write_authorized(self._provider)
         self._local_state = state
         if self._provider_error is not None and state != RestoreReadinessState.FAILED:
             raise StoreBUnavailableError(
@@ -798,13 +978,42 @@ class RestoreReadinessGate:
         eng = engine or self._db_engine
         if eng is None:
             return self.state
+        from responsibleai.data_governance.operator_recovery_control import RecoveryInProgressError
+
         try:
             await assert_database_restore_consistent(eng)
             self._db_authority_status = "RECONCILED"
+            if (
+                self._provider_error is not None
+                and (
+                    self._provider_error.startswith("Database restore inconsistency:")
+                    or self._provider_error == "Store B recovery evidence could not be verified"
+                )
+                and self._provider is not None
+            ):
+                from responsibleai.data_governance.operator_recovery_control import (
+                    assert_completed_binding,
+                )
+
+                # A fresh cross-store database check above and a completed,
+                # signed, externally consumed recovery receipt are both required.
+                # Reconnection by itself never clears this sticky failure.
+                if assert_completed_binding(self._provider) and self._provider.verify_integrity():
+                    self._provider_error = None
+        except RecoveryInProgressError:
+            return RestoreReadinessState.RECONCILING
         except Exception as exc:
             self._local_state = RestoreReadinessState.FAILED
             self._db_authority_status = "FAILED"
             self._provider_error = f"Database restore inconsistency: {exc}"
+            from responsibleai.data_governance.operator_recovery_control import (
+                record_restrictive_failure,
+            )
+
+            try:
+                record_restrictive_failure()
+            except Exception:
+                pass
             if self._provider is not None:
                 try:
                     self._provider.set_readiness_state(
@@ -892,6 +1101,11 @@ async def assert_database_restore_consistent(engine: DatabaseEngine) -> None:
     from responsibleai.isolation.durable_intent import process_generation
 
     await ContainmentRepository(engine).assert_admitted(owner_generation=process_generation())
+    from responsibleai.data_governance.operator_recovery_control import (
+        assert_database_recovery_binding,
+    )
+
+    await assert_database_recovery_binding(engine)
     from responsibleai.isolation.mode import unisolated_execution_allowed
 
     if not unisolated_execution_allowed():
@@ -1211,6 +1425,9 @@ class RestoreReconciliationEngine:
            containment. On any error, gate transitions to FAILED and fails closed.
         """
         now = _now()
+        from responsibleai.data_governance.operator_recovery_control import assert_engine_authorized
+
+        assert_engine_authorized(self._engine, self._provider)
         rec_id = str(uuid.uuid4())
         quarantined_orgs: list[str] = []
         revoked_sessions = 0
@@ -1236,6 +1453,11 @@ class RestoreReconciliationEngine:
             tombstoned_ids = {t.tenant_id for t in tombstones_b}
 
             async with self._engine.raw.begin() as conn:
+                from responsibleai.data_governance.operator_recovery_control import (
+                    begin_locked_reconciliation_inputs,
+                )
+
+                await begin_locked_reconciliation_inputs(conn, self._provider)
                 # Also include any tombstones already in Store A
                 tombstones_a = (await conn.execute(select(tenant_tombstones))).fetchall()
                 for t in tombstones_a:
@@ -1744,6 +1966,17 @@ class RestoreReconciliationEngine:
                     )
                 )
 
+                from responsibleai.data_governance.operator_recovery_control import (
+                    capture_reconciled_authority,
+                )
+
+                await capture_reconciled_authority(conn, self._provider)
+
+            from responsibleai.data_governance.operator_recovery_control import (
+                release_reconciliation_store_lock,
+            )
+
+            release_reconciliation_store_lock()
             # Check if Store B completeness failure occurred:
             # Quarantine is committed in DB above; now transition gate to FAILED and raise.
             if has_missing_b_failure:
@@ -1879,6 +2112,11 @@ class RestoreReconciliationEngine:
                 )
 
             # All containment proven, confirmed, and verified -> advance gate to READY
+            from responsibleai.data_governance.operator_recovery_control import (
+                verify_engine_final_state,
+            )
+
+            await verify_engine_final_state(self._engine, self._provider)
             self._gate.set_state(RestoreReadinessState.READY, updated_by=reconciled_by)
 
             return RestoreReconciliationReport(
@@ -1893,6 +2131,11 @@ class RestoreReconciliationEngine:
 
         except Exception as exc:
             # On failure, transition gate to FAILED so traffic remains blocked
+            from responsibleai.data_governance.operator_recovery_control import (
+                release_reconciliation_store_lock,
+            )
+
+            release_reconciliation_store_lock()
             self._gate.set_state(RestoreReadinessState.FAILED, updated_by=reconciled_by)
             try:
                 async with self._engine.raw.begin() as conn:
@@ -1921,6 +2164,12 @@ class RestoreReconciliationEngine:
             if isinstance(exc, RestoreReconciliationError):
                 raise
             raise RestoreReconciliationError(f"Restore reconciliation aborted: {exc}") from exc
+        finally:
+            from responsibleai.data_governance.operator_recovery_control import (
+                release_reconciliation_store_lock,
+            )
+
+            release_reconciliation_store_lock()
 
 
 BackupResurrectionDefense = RestoreReconciliationEngine

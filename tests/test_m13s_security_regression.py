@@ -59,26 +59,105 @@ def _register_fake_passkey(user_id: str):
 
 
 async def _setup_postgres_workspace(url: str):
+    import os
+    import secrets
+    import tempfile
+    from pathlib import Path
+
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    from sqlalchemy import text
+
+    from responsibleai.data_governance.backup_defense import (
+        RestoreReadinessState,
+        SqliteDurableLifecycleStateProvider,
+    )
+    from responsibleai.data_governance.provisioning_manifest import ProvisionerTrust
+    from responsibleai.data_governance.tenant_controller import (
+        ProtectedTenantController,
+        postgres_identity,
+        store_b_identity,
+    )
+    from responsibleai.data_governance.tenant_provisioning import (
+        PendingTenantReservations,
+        PublicationAuthorizationLedger,
+    )
+    from responsibleai.environment import is_production
+    from tests.stage3_controller_helpers import controller_process
+
+    if is_production():
+        raise RuntimeError("Disposable workspace fixture cannot provision production")
     ini = _find_alembic_ini()
     assert ini is not None
     await _run_alembic(ini, _migration_env(url), "upgrade", "head")
 
     engine = create_engine(url)
     configure_enterprise(engine)
-    web_repo = WebIdentityRepository(engine)
-    iam = EnterpriseIAM(engine)
-
-    user_id, token = await web_repo.register(
-        "Postgres Owner", "pg_owner@whitepact.test", "ComplexPass123!@#"
-    )
-    await web_repo.verify_email(token)
-    org = await iam.create_workspace(
-        actor_user_id=user_id,
-        name="Postgres Test Org",
-        slug="pg-test-org",
-        kind="ORGANIZATION",
-    )
-    org_id = org["id"] if isinstance(org, dict) else org.id
+    directory = tempfile.TemporaryDirectory(prefix="wp-independent-provisioning-")
+    try:
+        provider = SqliteDurableLifecycleStateProvider(
+            Path(directory.name) / "store-b.sqlite3", secret_key=secrets.token_hex(32)
+        )
+        # Existing structural component fixture, not first-deployment/customer
+        # acceptance. No FAILED store is cleared or recovery authority invented.
+        assert provider.get_readiness_state() is None
+        provider.set_readiness_state(RestoreReadinessState.READY)
+        key = Ed25519PrivateKey.generate()
+        async with engine.raw.connect() as connection:
+            identity = await postgres_identity(connection)
+        environment = os.environ.get("WHITEPACT_ENV", "development")
+        if environment not in {"development", "staging"}:
+            raise RuntimeError("Fixture requires an explicit supported nonproduction context")
+        trust = ProvisionerTrust(
+            "independent-fixture-controller",
+            key.public_key().public_bytes_raw(),
+            "independent-fixture",
+            environment,
+            identity,
+            store_b_identity(provider),
+        )
+        PendingTenantReservations(provider).initialize()
+        PublicationAuthorizationLedger(provider).initialize(trust)
+        web_repo = WebIdentityRepository(engine)
+        user_id, token = await web_repo.register(
+            "Postgres Owner", "pg_owner@whitepact.test", "ComplexPass123!@#"
+        )
+        assert await web_repo.verify_email(token)
+        session, csrf = await web_repo.create_session(user_id)
+        with pytest.MonkeyPatch.context() as configuration:
+            configuration.setenv("WHITEPACT_ENV", environment)
+            controller = ProtectedTenantController(engine, provider, trust, key)
+            async with controller_process(controller, configuration):
+                org = await EnterpriseIAM(engine).create_workspace(
+                    actor_user_id=user_id,
+                    session_token=session,
+                    csrf=csrf,
+                    name="Postgres Test Org",
+                    slug="pg-test-org",
+                    kind="ORGANIZATION",
+                )
+            org_id = org["id"]
+        lifecycle = provider.get_state(org_id)
+        completion = PublicationAuthorizationLedger(provider).completion(org_id)
+        assert lifecycle.state.value == "ACTIVE"
+        assert completion.generation_id == lifecycle.generation_id
+        async with engine.raw.connect() as connection:
+            row = (
+                await connection.execute(
+                    text(
+                        "SELECT o.owner_user_id,p.generation_id,p.state FROM organizations o "
+                        "JOIN tenant_provisioning_records p ON p.tenant_id=o.id WHERE o.id=:tenant"
+                    ),
+                    {"tenant": org_id},
+                )
+            ).one()
+        assert row.owner_user_id == user_id
+        assert row.generation_id == lifecycle.generation_id and row.state == "COMPLETE"
+        # Keep independent evidence alive for the returned engine's lifetime.
+        engine._m13_fixture_evidence = (directory, provider)
+    except BaseException:
+        await engine.close()
+        directory.cleanup()
+        raise
     actor = Actor(
         actor_type="USER",
         actor_id=user_id,

@@ -76,11 +76,145 @@ class FormattingEvidenceError(ValueError):
     """Original evidence or authorized formatting relationship cannot be verified."""
 
 
+STAGE3_ENGINE_BLOB = "22d2580db239dcca1fd60646b0cab7e9042fc130"
+ENGINE_PATH = "src/responsibleai/db/engine.py"
+STAGE3_SECURITY_FIXTURE_PATH = "tests/test_m13s_security_regression.py"
+STAGE3_SECURITY_FIXTURE_BLOB = "41ca7e4ea8ec0f415b92443970d45abd34b901ea"
+STAGE3_ROOT_FIXTURE_PATH = "tests/test_m12fs_root_hardening.py"
+STAGE3_ROOT_FIXTURE_BLOB = "aff5b71087a2ff11c08df6c4825178afcdd0d8fc"
+
+
+def historical_blob(repo: Path, identity: str) -> bytes:
+    try:
+        result = subprocess.run(
+            ["git", "cat-file", "blob", identity],
+            cwd=repo,
+            check=True,
+            capture_output=True,
+            timeout=20,
+        ).stdout
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise FormattingEvidenceError("Missing immutable schema evidence") from exc
+    if blob_hash(result) != identity:
+        raise FormattingEvidenceError("Incorrect immutable schema evidence")
+    return result
+
+
+def verify_stage3_schema(repo: Path, before: bytes, candidate: bytes):
+    formatted = historical_blob(repo, APPROVED[ENGINE_PATH][1])
+    approved = historical_blob(repo, STAGE3_ENGINE_BLOB)
+    verify_pair(ENGINE_PATH, before, formatted, APPROVED[ENGINE_PATH])
+    if blob_hash(candidate) != STAGE3_ENGINE_BLOB or candidate != approved:
+        raise FormattingEvidenceError("Unknown Stage 3 schema content")
+    start = approved.index(b"tenant_provisioning_records = Table(\n")
+    end = approved.index(b"runtime_containment_records = Table(\n", start)
+    insertion = approved[start:end]
+    if approved[:start] + approved[end:] != formatted:
+        raise FormattingEvidenceError("Schema insertion changes existing source")
+    declarations = ast.parse(insertion, type_comments=True).body
+    names = [
+        node.targets[0].id
+        for node in declarations
+        if isinstance(node, ast.Assign)
+        and len(node.targets) == 1
+        and isinstance(node.targets[0], ast.Name)
+    ]
+    if len(declarations) != 2 or names != [
+        "tenant_provisioning_records",
+        "tenant_provisioning_outbox",
+    ]:
+        raise FormattingEvidenceError("Unexpected schema declarations")
+    reduced = ast.parse(approved[:start] + approved[end:], type_comments=True)
+    if ast.dump(reduced) != ast.dump(ast.parse(formatted, type_comments=True)):
+        raise FormattingEvidenceError("Existing schema AST changed")
+
+
 def blob_hash(data: bytes) -> str:
     # Reproduce Git's object identifier, not a signature or password digest.
     return hashlib.sha1(
         b"blob " + str(len(data)).encode() + bytes([0]) + data, usedforsecurity=False
     ).hexdigest()
+
+
+def verify_stage3_security_fixture(repo: Path, before: bytes, candidate: bytes):
+    """Separate CTO-approved helper chain; never a formatting-only exception."""
+    path = STAGE3_SECURITY_FIXTURE_PATH
+    formatted = historical_blob(repo, APPROVED[path][1])
+    approved = historical_blob(repo, STAGE3_SECURITY_FIXTURE_BLOB)
+    verify_pair(path, before, formatted, APPROVED[path])
+    if blob_hash(candidate) != STAGE3_SECURITY_FIXTURE_BLOB or candidate != approved:
+        raise FormattingEvidenceError("Unknown Stage 3 security fixture content")
+
+    def span(source):
+        module = ast.parse(source, type_comments=True)
+        helpers = [
+            node
+            for node in module.body
+            if isinstance(node, ast.AsyncFunctionDef) and node.name == "_setup_postgres_workspace"
+        ]
+        if len(helpers) != 1:
+            raise FormattingEvidenceError("Unique approved provisioning helper required")
+        node = helpers[0]
+        if node.decorator_list:
+            raise FormattingEvidenceError("Unapproved fixture decorator")
+        lines = source.splitlines(keepends=True)
+        return lines, node.lineno - 1, node.end_lineno
+
+    old_lines, old_start, old_end = span(formatted)
+    new_lines, new_start, new_end = span(approved)
+    restored = b"".join(new_lines[:new_start] + old_lines[old_start:old_end] + new_lines[new_end:])
+    if restored != formatted:
+        raise FormattingEvidenceError("Security fixture changes source outside the approved helper")
+    # Exact source equality above includes every historical test, assertion,
+    # timeout, comment, import and directive outside the one authorized helper.
+    if ast.dump(ast.parse(restored, type_comments=True)) != ast.dump(
+        ast.parse(formatted, type_comments=True)
+    ):
+        raise FormattingEvidenceError("Historical security AST changed")
+
+
+def verify_stage3_root_fixtures(repo: Path, before: bytes, candidate: bytes):
+    """Exact two-fixture authorization, separate from immutable formatting approval."""
+    path = STAGE3_ROOT_FIXTURE_PATH
+    formatted = historical_blob(repo, APPROVED[path][1])
+    approved = historical_blob(repo, STAGE3_ROOT_FIXTURE_BLOB)
+    verify_pair(path, before, formatted, APPROVED[path])
+    if blob_hash(candidate) != STAGE3_ROOT_FIXTURE_BLOB or candidate != approved:
+        raise FormattingEvidenceError("Unknown Stage 3 root fixture content")
+
+    def spans(source):
+        result = {}
+        for node in ast.parse(source, type_comments=True).body:
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in {
+                "_configure_test_env",
+                "_create_test_owner",
+            }:
+                if node.name in result:
+                    raise FormattingEvidenceError("Duplicate root fixture")
+                result[node.name] = node
+        if len(result) != 2:
+            raise FormattingEvidenceError("Both approved root fixtures required")
+        return result
+
+    original_nodes, revised_nodes = spans(formatted), spans(approved)
+    original_lines = formatted.splitlines(keepends=True)
+    restored_lines = approved.splitlines(keepends=True)
+    for name, node in sorted(revised_nodes.items(), key=lambda pair: pair[1].lineno, reverse=True):
+        old = original_nodes[name]
+        if [ast.dump(item) for item in old.decorator_list] != [
+            ast.dump(item) for item in node.decorator_list
+        ]:
+            raise FormattingEvidenceError("Root fixture decorators changed")
+        restored_lines[node.lineno - 1 : node.end_lineno] = original_lines[
+            old.lineno - 1 : old.end_lineno
+        ]
+    restored = b"".join(restored_lines)
+    if restored != formatted:
+        raise FormattingEvidenceError("Changes outside approved root fixtures")
+    if ast.dump(ast.parse(restored, type_comments=True)) != ast.dump(
+        ast.parse(formatted, type_comments=True)
+    ):
+        raise FormattingEvidenceError("Historical root security AST changed")
 
 
 def verify_pair(path, before, after, expected):
@@ -120,8 +254,21 @@ def verify_repository(repo: Path):
             after = candidate.read_bytes()
         except (OSError, subprocess.SubprocessError) as exc:
             raise FormattingEvidenceError(f"Missing original/candidate evidence: {path}") from exc
-        verify_pair(path, before, after, expected)
+        if path == ENGINE_PATH:
+            verify_stage3_schema(repo, before, after)
+        elif path == STAGE3_SECURITY_FIXTURE_PATH:
+            verify_stage3_security_fixture(repo, before, after)
+        elif path == STAGE3_ROOT_FIXTURE_PATH:
+            verify_stage3_root_fixtures(repo, before, after)
+        else:
+            verify_pair(path, before, after, expected)
         verified[path] = {"original": expected[0], "revised": expected[1]}
+        if path == ENGINE_PATH:
+            verified[path]["stage3"] = STAGE3_ENGINE_BLOB
+        elif path == STAGE3_SECURITY_FIXTURE_PATH:
+            verified[path]["stage3_fixture"] = STAGE3_SECURITY_FIXTURE_BLOB
+        elif path == STAGE3_ROOT_FIXTURE_PATH:
+            verified[path]["stage3_fixture"] = STAGE3_ROOT_FIXTURE_BLOB
     return verified
 
 

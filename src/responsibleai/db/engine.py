@@ -120,6 +120,56 @@ organizations = Table(
     Index("idx_org_paddle_subscription", "paddle_subscription_id", unique=True),
 )
 
+tenant_provisioning_records = Table(
+    "tenant_provisioning_records",
+    metadata,
+    Column(
+        "tenant_id",
+        String(36),
+        primary_key=True,
+    ),
+    Column("deployment_id", String(256), nullable=False),
+    Column("request_id", String(128), nullable=False, unique=True),
+    Column("generation_id", String(64), nullable=False, unique=True),
+    Column("principal_id", String(36), nullable=False),
+    Column("operation_digest", String(64), nullable=False),
+    Column("pending_receipt_digest", String(64), nullable=False),
+    Column("publication_manifest", Text),
+    Column("publication_signature", Text),
+    Column("publication_digest", String(64)),
+    Column("completion_digest", String(64)),
+    Column("security_epoch", BigInteger, nullable=False),
+    Column("revocation_floor", BigInteger, nullable=False),
+    Column("state", String(16), nullable=False),
+    CheckConstraint(
+        "state IN ('PENDING','PUBLISHED','COMPLETE')", name="ck_tenant_provisioning_state"
+    ),
+    CheckConstraint("length(generation_id)=64", name="ck_tenant_generation_length"),
+    CheckConstraint("security_epoch>=1 AND revocation_floor>=1", name="ck_tenant_initial_floors"),
+    CheckConstraint(
+        "state='PENDING' OR publication_digest IS NOT NULL", name="ck_tenant_publication_receipt"
+    ),
+    CheckConstraint(
+        "state!='COMPLETE' OR completion_digest IS NOT NULL", name="ck_tenant_completion_receipt"
+    ),
+)
+
+tenant_provisioning_outbox = Table(
+    "tenant_provisioning_outbox",
+    metadata,
+    Column("receipt_id", String(64), primary_key=True),
+    Column(
+        "tenant_id",
+        String(36),
+        nullable=False,
+        unique=True,
+    ),
+    Column("generation_id", String(64), nullable=False),
+    Column("receipt_digest", String(64), nullable=False),
+    Column("receipt_json", Text, nullable=False),
+    Column("created_at", String(32), nullable=False),
+)
+
 runtime_containment_records = Table(
     "runtime_containment_records",
     metadata,

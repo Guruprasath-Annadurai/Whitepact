@@ -190,67 +190,33 @@ class EnterpriseIAM:
         slug: str,
         kind: str,
         request_id: str | None = None,
+        session_token: str = "",
+        csrf: str = "",
     ) -> dict[str, Any]:
         kind = kind.upper()
         if kind not in {"ORGANIZATION", "INDIVIDUAL"}:
             raise forbidden(FORBIDDEN, "Workspace kind must be ORGANIZATION or INDIVIDUAL.")
-        now = _iso()
-        org_id = str(uuid.uuid4())
-        async with self._engine.raw.begin() as conn:
-            user = (
-                await conn.execute(
-                    select(web_users).where(
-                        web_users.c.id == actor_user_id, web_users.c.disabled == 0
-                    )
-                )
-            ).fetchone()
-            if user is None:
-                raise forbidden(FORBIDDEN, "Account is not eligible to create a workspace.")
-            await conn.execute(
-                insert(organizations).values(
-                    id=org_id,
-                    name=name.strip(),
-                    slug=slug.strip(),
-                    monthly_budget_usd=10_000.0,
-                    created_at=now,
-                    plan="FREE",
-                    sso_required=0,
-                    mfa_required=0,
-                    governance_status=GovernanceStatus.ACTIVE.value,
-                    workspace_kind=kind,
-                    owner_user_id=actor_user_id,
-                    settings_json="{}",
-                )
-            )
-            await conn.execute(
-                insert(web_memberships).values(
-                    id=str(uuid.uuid4()),
-                    user_id=actor_user_id,
-                    org_id=org_id,
-                    role=Role.OWNER.value,
-                    status="ACTIVE",
-                    invited_by_user_id=None,
-                    accepted_at=now,
-                    created_at=now,
-                    updated_at=now,
-                )
-            )
-            for env_type, env_name in (
-                ("DEVELOPMENT", "Development"),
-                ("STAGING", "Staging"),
-                ("PRODUCTION", "Production"),
-            ):
-                await conn.execute(
-                    insert(enterprise_environments).values(
-                        id=str(uuid.uuid4()),
-                        org_id=org_id,
-                        type=env_type,
-                        name=env_name,
-                        status="ACTIVE",
-                        created_at=now,
-                        metadata_json=json.dumps({"stricter_defaults": env_type == "PRODUCTION"}),
-                    )
-                )
+        from responsibleai.data_governance.tenant_client import (
+            TenantCreationDeniedError,
+            provision_organization,
+        )
+        from responsibleai.db.web_identity_repository import WebIdentityRepository
+
+        principal = (
+            await WebIdentityRepository(self._engine).get_principal(session_token)
+            if session_token
+            else None
+        )
+        if principal is None or principal.user_id != actor_user_id:
+            raise TenantCreationDeniedError("Authenticated workspace creator mismatch")
+        org_id = await provision_organization(
+            name=name.strip(),
+            slug=slug.strip(),
+            kind=kind,
+            request_id=request_id,
+            session_token=session_token,
+            csrf=csrf,
+        )
         await self.audit.record(
             org_id=org_id,
             actor_type="human",

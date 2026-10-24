@@ -13,8 +13,12 @@ from cryptography.hazmat.primitives.asymmetric.ec import SECP256R1, generate_pri
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from sqlalchemy import select, update
 
+from responsibleai.data_governance.backup_defense import (
+    RestoreReadinessGate,
+    get_restore_readiness_gate,
+    set_restore_readiness_gate,
+)
 from responsibleai.db.engine import create_engine, organizations, web_memberships, web_sessions
-from responsibleai.db.migrate import _find_alembic_ini, _migration_env, _run_alembic
 from responsibleai.db.web_identity_repository import WebIdentityRepository
 from responsibleai.enterprise.agent_auth import (
     AUDIENCE,
@@ -30,76 +34,85 @@ from responsibleai.enterprise.security.service import IdentitySecurityService
 from responsibleai.enterprise.security.webauthn import b64url_decode
 from responsibleai.enterprise.service import Actor, EnterpriseIAM
 from responsibleai.rbac.models import Role
-from tests.pg_test_url import isolated_pg_url
+from tests.stage3_controller_helpers import controller_process
 from tests.webauthn_fakes import assertion_blob, registration_blob
+
+pytest_plugins = ["tests.test_stage3_controller_postgres"]
+CONTROLLER_DATABASE_PREFIX = "wp_sovereign_b1"
 
 
 @pytest.fixture
-async def owner(request):
-    databases = None
-    database = ":memory:"
-    if getattr(request, "param", None) == "postgres":
-        databases = isolated_pg_url("wp_sovereign_b1")
-        database = await anext(databases)
-        await _run_alembic(_find_alembic_ini(), _migration_env(database), "upgrade", "head")
-    engine = create_engine(database)
-    if database == ":memory:":
-        await engine.init()
-    web = WebIdentityRepository(engine)
-    user, verification = await web.register(
-        "Owner", f"a2-{uuid.uuid4().hex}@example.com", "Valid-Password42!"
+async def owner(request, controller, monkeypatch):
+    # Governance tenants require protected PostgreSQL provisioning, including
+    # formerly SQLite-backed default cases. No assertion or ceremony is waived.
+    provisioner = controller[0]
+    engine = provisioner.engine
+    previous_gate = get_restore_readiness_gate()
+    set_restore_readiness_gate(
+        RestoreReadinessGate(provider=provisioner.provider, db_engine=engine)
     )
-    assert await web.verify_email(verification)
-    org = await EnterpriseIAM(engine).create_workspace(
-        actor_user_id=user, name="A2", slug=f"a2-{uuid.uuid4().hex}", kind="ORGANIZATION"
-    )
-    org_id = org["id"] if isinstance(org, dict) else org.id
-    identity = IdentitySecurityService(engine, origin="http://localhost", rp_id="localhost")
-    token, _ = await web.create_session(user, org_id=org_id)
-    _, _, password = await identity.load_session(token)
-    actor = Actor("human", user, user, org_id, Role.OWNER, "ACTIVE")
-    key = generate_private_key(SECP256R1())
-    challenge = await identity.begin_webauthn(
-        user_id=user, session_id=password.session_id, ceremony="register", org_id=org_id
-    )
-    client, auth, credential, _ = registration_blob(
-        rp_id="localhost",
-        origin="http://localhost",
-        challenge=b64url_decode(challenge["challenge"]),
-        private_key=key,
-    )
-    grant = await identity.issue_step_up(password, SensitiveAction.ADD_PASSKEY, org_id=org_id)
-    await identity.finish_passkey_registration(
-        user_id=user,
-        session=password,
-        client_data_b64=client,
-        authenticator_data_b64=auth,
-        grant=grant,
-    )
-    assertion = await identity.begin_webauthn(
-        user_id=None, session_id=None, ceremony="authenticate"
-    )
-    c, a, signature = assertion_blob(
-        rp_id="localhost",
-        origin="http://localhost",
-        challenge=b64url_decode(assertion["challenge"]),
-        private_key=key,
-    )
-    uv_token, uv_csrf, session = await identity.authenticate_passkey(
-        client_data_b64=c,
-        authenticator_data_b64=a,
-        signature_b64=signature,
-        credential_id=credential,
-        org_id=org_id,
-    )
-    if "session_id" in Actor.__dataclass_fields__:
-        actor = replace(actor, session_id=session.session_id)
+    monkeypatch.setenv("WHITEPACT_STORE_B_PATH", str(provisioner.provider.path))
+    monkeypatch.setenv("WHITEPACT_STORE_B_KEY", provisioner.provider._secret_key)
     try:
+        web = WebIdentityRepository(engine)
+        user, verification = await web.register(
+            "Owner", f"a2-{uuid.uuid4().hex}@example.com", "Valid-Password42!"
+        )
+        assert await web.verify_email(verification)
+        creator_token, creator_csrf = await web.create_session(user)
+        async with controller_process(provisioner, monkeypatch):
+            org = await EnterpriseIAM(engine).create_workspace(
+                actor_user_id=user,
+                name="A2",
+                slug=f"a2-{uuid.uuid4().hex}",
+                kind="ORGANIZATION",
+                session_token=creator_token,
+                csrf=creator_csrf,
+            )
+        org_id = org["id"] if isinstance(org, dict) else org.id
+        identity = IdentitySecurityService(engine, origin="http://localhost", rp_id="localhost")
+        token, _ = await web.create_session(user, org_id=org_id)
+        _, _, password = await identity.load_session(token)
+        actor = Actor("human", user, user, org_id, Role.OWNER, "ACTIVE")
+        key = generate_private_key(SECP256R1())
+        challenge = await identity.begin_webauthn(
+            user_id=user, session_id=password.session_id, ceremony="register", org_id=org_id
+        )
+        client, auth, credential, _ = registration_blob(
+            rp_id="localhost",
+            origin="http://localhost",
+            challenge=b64url_decode(challenge["challenge"]),
+            private_key=key,
+        )
+        grant = await identity.issue_step_up(password, SensitiveAction.ADD_PASSKEY, org_id=org_id)
+        await identity.finish_passkey_registration(
+            user_id=user,
+            session=password,
+            client_data_b64=client,
+            authenticator_data_b64=auth,
+            grant=grant,
+        )
+        assertion = await identity.begin_webauthn(
+            user_id=None, session_id=None, ceremony="authenticate"
+        )
+        c, a, signature = assertion_blob(
+            rp_id="localhost",
+            origin="http://localhost",
+            challenge=b64url_decode(assertion["challenge"]),
+            private_key=key,
+        )
+        uv_token, uv_csrf, session = await identity.authenticate_passkey(
+            client_data_b64=c,
+            authenticator_data_b64=a,
+            signature_b64=signature,
+            credential_id=credential,
+            org_id=org_id,
+        )
+        if "session_id" in Actor.__dataclass_fields__:
+            actor = replace(actor, session_id=session.session_id)
         yield engine, identity, actor, password, session, key, credential, uv_token, uv_csrf
     finally:
-        await engine.close()
-        if databases:
-            await databases.aclose()
+        set_restore_readiness_gate(previous_gate)
 
 
 @pytest.mark.asyncio
@@ -781,14 +794,18 @@ class TestDevelopmentB1:
         assert context.authentication_method == "agent_pop"
 
     @pytest.mark.asyncio
-    async def test_qualified_other_tenant_cannot_claim_agent(self, owner):
+    async def test_qualified_other_tenant_cannot_claim_agent(self, owner, controller, monkeypatch):
         auth, agent, key, _ = await delegated(owner)
-        other = await EnterpriseIAM(owner[0]).create_workspace(
-            actor_user_id=owner[2].user_id,
-            name="Other tenant",
-            slug=f"other-{uuid.uuid4().hex}",
-            kind="ORGANIZATION",
-        )
+        token, csrf = await WebIdentityRepository(owner[0]).create_session(owner[2].user_id)
+        async with controller_process(controller[0], monkeypatch):
+            other = await EnterpriseIAM(owner[0]).create_workspace(
+                actor_user_id=owner[2].user_id,
+                name="Other tenant",
+                slug=f"other-{uuid.uuid4().hex}",
+                kind="ORGANIZATION",
+                session_token=token,
+                csrf=csrf,
+            )
         org = other["id"] if isinstance(other, dict) else other.id
         challenge = await owner[1].begin_webauthn(
             user_id=None, session_id=None, ceremony="authenticate"

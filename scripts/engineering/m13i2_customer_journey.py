@@ -12,9 +12,12 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import secrets
 from contextlib import contextmanager
 from dataclasses import dataclass, field
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from urllib.parse import parse_qs, urlparse
 
 import httpx
@@ -95,6 +98,40 @@ class JourneyEvidence:
 
 
 @contextmanager
+def isolated_startup_store_b():
+    """Provision only a fresh disposable journey's Store B, never recover an old store.
+
+    The server must stop before exit. Preserve the prior gate and its evidence
+    untouched; this fixture is paired only with its own fresh PostgreSQL database.
+    No READY write or recovery authorization is supplied.
+    """
+    from responsibleai.data_governance.backup_defense import (
+        get_restore_readiness_gate,
+        set_restore_readiness_gate,
+    )
+    from responsibleai.environment import is_production
+
+    if is_production():
+        raise RuntimeError("Disposable onboarding requires an explicit nonproduction environment")
+    original = get_restore_readiness_gate()
+    keys = ("WHITEPACT_STORE_B_PATH", "WHITEPACT_STORE_B_KEY")
+    previous = {key: os.environ.get(key) for key in keys}
+    with TemporaryDirectory(prefix="whitepact-customer-store-b-") as directory:
+        try:
+            os.environ["WHITEPACT_STORE_B_PATH"] = str(Path(directory) / "lifecycle.sqlite3")
+            os.environ["WHITEPACT_STORE_B_KEY"] = secrets.token_urlsafe(32)
+            set_restore_readiness_gate(None)
+            yield
+        finally:
+            set_restore_readiness_gate(original)
+            for key, value in previous.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
+
+
+@contextmanager
 def configured_settings(changes):
     previous = {key: getattr(dashboard.settings, key) for key in changes}
     try:
@@ -138,7 +175,7 @@ async def run_journey() -> dict:
                     "web_verification_delivery_url": f"{mailbox}/deliver",
                     "web_verification_delivery_token": delivery_secret,
                 }
-                with configured_settings(changes):
+                with isolated_startup_store_b(), configured_settings(changes):
                     async with serve(dashboard.app) as origin:
                         async with httpx.AsyncClient(base_url=origin, timeout=30) as client:
                             await account_and_organization(client, mail, evidence)

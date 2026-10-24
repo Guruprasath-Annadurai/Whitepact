@@ -52,6 +52,12 @@ class ExecutionNonceRepository:
                         "Organization is not ACTIVE for governed execution"
                     )
                 current = await lock_epoch(conn, organization_id)
+                if conn.dialect.name == "postgresql":
+                    from responsibleai.data_governance.tenant_admission import (
+                        assert_tenant_provisioning_complete,
+                    )
+
+                    await assert_tenant_provisioning_complete(conn, organization_id, current)
                 if current != expected_epoch:
                     raise StaleRevocationEpochError("Permit revocation epoch is stale")
                 await conn.execute(

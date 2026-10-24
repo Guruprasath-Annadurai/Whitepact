@@ -51,6 +51,10 @@ from responsibleai.db.engine import (
     web_sessions,
     web_users,
 )
+from tests.stage3_historical_setup import (
+    protected_failure_matrix_setup as _protected_failure_matrix_setup,
+)
+from tests.test_stage3_controller_postgres import controller as controller
 
 
 def _now() -> str:
@@ -105,32 +109,18 @@ async def test_durable_store_b_process_restart_preserves_tombstone(tmp_path: Pat
 
 
 @pytest.mark.asyncio
-async def test_durable_store_b_failure_matrix(tmp_path: Path):
+async def test_durable_store_b_failure_matrix(tmp_path: Path, controller):
     """Test Store-B failure matrix: rollback, corruption, outages, stale epoch."""
-    store_b_path = tmp_path / "lifecycle_matrix.db"
-    provider = SqliteDurableLifecycleStateProvider(store_b_path)
-    tenant_id = f"org-{uuid.uuid4().hex[:8]}"
-    generation_id = f"gen-{uuid.uuid4().hex[:8]}"
-    now = _now()
-
-    # 1. Record ACTIVE
-    digest_active = compute_lifecycle_digest(
-        tenant_id=tenant_id,
-        generation_id=generation_id,
-        state=LifecycleState.ACTIVE.value,
-        effective_at=now,
-        security_epoch=1,
-    )
-    provider.record_state(
-        LifecycleStateRecord(
-            tenant_id=tenant_id,
-            generation_id=generation_id,
-            state=LifecycleState.ACTIVE,
-            effective_at=now,
-            security_epoch=1,
-            digest=digest_active,
-        )
-    )
+    # 1. Establish ACTIVE through the authenticated protected controller, with
+    # real PostgreSQL binding and signed durable completion before any attack.
+    (
+        provider,
+        tenant_id,
+        generation_id,
+        now,
+        compute_lifecycle_digest,
+    ) = await _protected_failure_matrix_setup(controller)
+    store_b_path = provider.path
 
     # 2. Advance to TOMBSTONED
     digest_tombstone = compute_lifecycle_digest(

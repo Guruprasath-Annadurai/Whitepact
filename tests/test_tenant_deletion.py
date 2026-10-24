@@ -9,6 +9,12 @@ import uuid
 import pytest
 from sqlalchemy import insert, select
 
+from responsibleai.data_governance.backup_defense import (
+    LifecycleState,
+    RestoreReadinessGate,
+    get_restore_readiness_gate,
+    set_restore_readiness_gate,
+)
 from responsibleai.data_governance.deletion_orchestrator import (
     TenantDeletionOrchestrator,
 )
@@ -23,6 +29,7 @@ from responsibleai.db.engine import (
     web_sessions,
     web_users,
 )
+from tests.test_stage3_controller_postgres import controller as controller
 
 
 @pytest.fixture
@@ -49,8 +56,11 @@ async def sample_org(sqlite_engine: DatabaseEngine):
 
 
 @pytest.mark.asyncio
-async def test_end_to_end_tenant_deletion(sqlite_engine: DatabaseEngine, sample_org: str):
-    orchestrator = TenantDeletionOrchestrator(sqlite_engine)
+@pytest.mark.parametrize("protected_tenant", ["postgresql16"], indirect=True)
+async def test_end_to_end_tenant_deletion(protected_tenant):
+    service, sample_org, generation = protected_tenant
+    sqlite_engine = service.engine  # Historical variable, now a real PostgreSQL transport.
+    orchestrator = TenantDeletionOrchestrator(sqlite_engine, lifecycle_provider=service.provider)
 
     # Populate active tenant resources
     async with sqlite_engine.raw.begin() as conn:
@@ -111,7 +121,10 @@ async def test_end_to_end_tenant_deletion(sqlite_engine: DatabaseEngine, sample_
     )
 
     assert result.verification_passed is True
-    assert result.generation_id.startswith("gen-")
+    assert result.generation_id == generation
+    final = service.provider.get_state(sample_org)
+    assert final.state == LifecycleState.TOMBSTONED
+    assert final.generation_id == generation
 
     # Verify sessions and API keys are completely deleted
     async with sqlite_engine.raw.connect() as conn:
@@ -133,7 +146,51 @@ async def test_end_to_end_tenant_deletion(sqlite_engine: DatabaseEngine, sample_
         ).fetchone()
         assert tombstone is not None
         assert tombstone.generation_id == result.generation_id
+        assert tombstone.generation_id == generation
         assert tombstone.tombstoned_by == "root-admin"
+
+
+@pytest.fixture
+async def protected_tenant(controller):
+    service, _, _, token, csrf = controller
+    previous = get_restore_readiness_gate()
+    set_restore_readiness_gate(
+        RestoreReadinessGate(provider=service.provider, db_engine=service.engine)
+    )
+    try:
+        tenant = await service.create(
+            session_token=token,
+            csrf=csrf,
+            request_id="historical-deletion-provisioning",
+            name="Test Org Deletion",
+            slug="historical-deletion-provisioned",
+        )
+        established = service.provider.get_state(tenant)
+        assert established.state == LifecycleState.ACTIVE
+        completion = service.ledger.completion(tenant)
+        assert completion.generation_id == established.generation_id
+        async with service.engine.raw.connect() as connection:
+            from sqlalchemy import text
+
+            row = (
+                (
+                    await connection.execute(
+                        text(
+                            "SELECT generation_id,state,completion_digest FROM tenant_provisioning_records "
+                            "WHERE tenant_id=:tenant"
+                        ),
+                        {"tenant": tenant},
+                    )
+                )
+                .mappings()
+                .one()
+            )
+            assert row["generation_id"] == established.generation_id
+            assert row["state"] == "COMPLETE"
+            assert row["completion_digest"] == completion.completion_digest
+        yield service, tenant, established.generation_id
+    finally:
+        set_restore_readiness_gate(previous)
 
 
 @pytest.mark.asyncio

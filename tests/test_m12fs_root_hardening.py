@@ -68,24 +68,41 @@ _OWNER_SIGNERS = {}
 
 @pytest.fixture(autouse=True)
 async def _configure_test_env(monkeypatch: pytest.MonkeyPatch, tmp_path):
-    from responsibleai.db.engine import create_engine
+    from responsibleai.data_governance.backup_defense import (
+        RestoreReadinessGate,
+        get_restore_readiness_gate,
+        set_restore_readiness_gate,
+    )
+    from tests.stage3_controller_helpers import controller_process
+    from tests.test_stage3_controller_postgres import isolated_controller_context
 
     monkeypatch.setitem(globals(), "_OWNER_SIGNERS", {})
 
-    db_file = tmp_path / "m12fs_test.db"
-    db_url = f"sqlite+aiosqlite:///{db_file}"
-    monkeypatch.setattr(settings, "auth_enabled", True)
-    monkeypatch.setattr(settings, "api_keys", ["m12fs-admin-key"])
-    monkeypatch.setattr(settings, "db_path", str(db_file))
-    monkeypatch.setattr(settings, "database_url", db_url)
-    monkeypatch.setattr(settings, "auto_migrate", False)
-    limiter.reset()
-
-    engine = create_engine(db_url)
-    await engine.init(auto_create_tables=True)
-    configure_enterprise(engine)
-    yield engine
-    await engine.raw.dispose()
+    # Existing component qualification, not bootstrap/customer acceptance.
+    # Only the test transport/setup changes; all security assertions stay exact.
+    async with isolated_controller_context(tmp_path, monkeypatch, "wp_m12fs_fixture") as context:
+        controller = context[0]
+        engine = controller.engine
+        monkeypatch.setattr(settings, "auth_enabled", True)
+        monkeypatch.setattr(settings, "api_keys", ["m12fs-admin-key"])
+        monkeypatch.setattr(settings, "db_path", str(tmp_path / "m12fs_test.db"))
+        monkeypatch.setattr(
+            settings, "database_url", engine.raw.url.render_as_string(hide_password=False)
+        )
+        monkeypatch.setattr(settings, "auto_migrate", False)
+        monkeypatch.setenv("WHITEPACT_STORE_B_PATH", str(controller.provider.path))
+        monkeypatch.setenv("WHITEPACT_STORE_B_KEY", controller.provider._secret_key)
+        limiter.reset()
+        configure_enterprise(engine)
+        previous = get_restore_readiness_gate()
+        set_restore_readiness_gate(
+            RestoreReadinessGate(provider=controller.provider, db_engine=engine)
+        )
+        try:
+            async with controller_process(controller, monkeypatch):
+                yield engine
+        finally:
+            set_restore_readiness_gate(previous)
 
 
 @pytest.fixture
@@ -108,11 +125,14 @@ async def _create_test_owner(email: str = "founder@m12fs.com", org_slug: str = "
 
     user_id, token = await web_repo.register("Founder M12FS", email, "FounderPassword123!@#")
     await web_repo.verify_email(token)
+    creation_token, creation_csrf = await web_repo.create_session(user_id)
     org = await iam.create_workspace(
         actor_user_id=user_id,
         name="M12FS Test Org",
         slug=org_slug,
         kind="ORGANIZATION",
+        session_token=creation_token,
+        csrf=creation_csrf,
     )
     org_id = org["id"] if isinstance(org, dict) else org.id
     session_token, csrf_token = await web_repo.create_session(user_id, org_id=org_id)
