@@ -22,46 +22,45 @@ from asgi_lifespan import LifespanManager
 from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 
-from responsibleai.db import OrgRepository, create_engine
+from responsibleai.db import OrgRepository
 from responsibleai.mcp.tools import TOOL_DEFS
 from responsibleai.rbac.models import Plan, Role
+from tests.protected_component_tenant import component_controller, provision_component_organization
 
 
 @pytest.fixture()
-async def hosted_app(monkeypatch: pytest.MonkeyPatch, seed_runtime_authority):
+async def hosted_app(monkeypatch: pytest.MonkeyPatch, seed_runtime_authority, tmp_path):
     import responsibleai.db as db_module
     from responsibleai.dashboard.config import get_settings
     from responsibleai.mcp.server import _build_http_app
 
     monkeypatch.setattr(get_settings(), "mcp_governance_enabled", True)
 
-    engine = create_engine(":memory:")
-    await engine.init()
-    monkeypatch.setattr(db_module, "create_engine", lambda _url: engine)
+    async with component_controller(tmp_path, monkeypatch, "wp_mcp_orgstatus") as controller:
+        engine = controller.engine
+        monkeypatch.setattr(db_module, "create_engine", lambda _url: engine)
 
-    org_repo = OrgRepository(engine)
-    # rai_org_status is an ENTERPRISE_TOOLS-tier tool (mcp/licensing.py)
-    # -- a lower plan is rejected with "upgrade_required" before ever
-    # reaching the handler, which would make every test here fail for
-    # a reason unrelated to what's being tested.
-    org = await org_repo.create_org(
-        "Org Status Test Co", "org-status-test-co", plan=Plan.ENTERPRISE
-    )
-    key_rec, raw_key = await org_repo.create_key(org.id, "test-key", role=Role.ANALYST)
-    tool_names = tuple(definition.name for definition in TOOL_DEFS)
-    await seed_runtime_authority(
-        engine,
-        organization_id=org.id,
-        principal_id=key_rec.id,
-        action_types=tool_names,
-        targets=tool_names,
-    )
+        org_repo = OrgRepository(engine)
+        # rai_org_status is an ENTERPRISE_TOOLS-tier tool (mcp/licensing.py)
+        # -- a lower plan is rejected with "upgrade_required" before ever
+        # reaching the handler, which would make every test here fail for
+        # a reason unrelated to what's being tested.
+        org = await provision_component_organization(
+            engine, name="Org Status Test Co", slug="org-status-test-co", plan=Plan.ENTERPRISE
+        )
+        key_rec, raw_key = await org_repo.create_key(org.id, "test-key", role=Role.ANALYST)
+        tool_names = tuple(definition.name for definition in TOOL_DEFS)
+        await seed_runtime_authority(
+            engine,
+            organization_id=org.id,
+            principal_id=key_rec.id,
+            action_types=tool_names,
+            targets=tool_names,
+        )
 
-    app = _build_http_app()
-    async with LifespanManager(app) as manager:
-        yield manager.app, raw_key, org.id, engine
-
-    await engine.close()
+        app = _build_http_app()
+        async with LifespanManager(app) as manager:
+            yield manager.app, raw_key, org.id, engine
 
 
 def _client(app, raw_key: str) -> httpx.AsyncClient:

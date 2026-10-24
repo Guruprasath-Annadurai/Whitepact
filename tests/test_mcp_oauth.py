@@ -22,8 +22,9 @@ from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 
 from responsibleai.dashboard.config import Settings
-from responsibleai.db import OrgRepository, create_engine
+from responsibleai.db import OrgRepository
 from responsibleai.rbac.models import Plan, Role
+from tests.protected_component_tenant import component_controller, provision_component_organization
 
 
 def _make_jwt(payload: dict) -> str:
@@ -33,7 +34,7 @@ def _make_jwt(payload: dict) -> str:
 
 
 @pytest.fixture()
-async def mcp_app(monkeypatch: pytest.MonkeyPatch):
+async def mcp_app(monkeypatch: pytest.MonkeyPatch, tmp_path):
     """Yields (build, org_id, raw_api_key). `await build(oidc_issuer=...)`
     constructs a fresh hosted-MCP app with that OIDC config — settings are
     injected directly (bypassing env vars and the `get_settings()` cache)
@@ -43,44 +44,45 @@ async def mcp_app(monkeypatch: pytest.MonkeyPatch):
     import responsibleai.db as db_module
     from responsibleai.mcp.server import _build_http_app
 
-    engine = create_engine(":memory:")
-    await engine.init()
-    monkeypatch.setattr(db_module, "create_engine", lambda _url: engine)
+    async with component_controller(tmp_path, monkeypatch, "wp_mcp_oauth") as controller:
+        engine = controller.engine
+        monkeypatch.setattr(db_module, "create_engine", lambda _url: engine)
 
-    org_repo = OrgRepository(engine)
-    org = await org_repo.create_org("Acme", "acme", plan=Plan.ENTERPRISE)
-    _key_rec, raw_key = await org_repo.create_key(org.id, "test-key", role=Role.ANALYST)
-
-    built = []
-
-    async def _build(*, oidc_issuer: str | None = None, oidc_client_id: str = "mcp-client"):
-        settings = Settings(
-            oidc_issuer=oidc_issuer,
-            oidc_client_id=oidc_client_id,
-            oidc_skip_verification=True,
+        org_repo = OrgRepository(engine)
+        org = await provision_component_organization(
+            engine, name="Acme", slug="acme", plan=Plan.ENTERPRISE
         )
-        monkeypatch.setattr(config_module, "get_settings", lambda: settings)
-        if oidc_issuer:
-            from responsibleai.db import WebIdentityRepository
+        _key_rec, raw_key = await org_repo.create_key(org.id, "test-key", role=Role.ANALYST)
 
-            await WebIdentityRepository(engine).bind_sso_principal(
-                org_id=org.id,
-                issuer=oidc_issuer,
-                subject="user-1",
-                role=Role.ANALYST,
-                email=f"user-1-{org.id[:8]}@example.com",
+        built = []
+
+        async def _build(*, oidc_issuer: str | None = None, oidc_client_id: str = "mcp-client"):
+            settings = Settings(
+                oidc_issuer=oidc_issuer,
+                oidc_client_id=oidc_client_id,
+                oidc_skip_verification=True,
             )
-        app = _build_http_app()
-        manager = LifespanManager(app)
-        await manager.__aenter__()
-        built.append(manager)
-        return manager.app
+            monkeypatch.setattr(config_module, "get_settings", lambda: settings)
+            if oidc_issuer:
+                from responsibleai.db import WebIdentityRepository
 
-    yield _build, org.id, raw_key
+                await WebIdentityRepository(engine).bind_sso_principal(
+                    org_id=org.id,
+                    issuer=oidc_issuer,
+                    subject="user-1",
+                    role=Role.ANALYST,
+                    email=f"user-1-{org.id[:8]}@example.com",
+                )
+            app = _build_http_app()
+            manager = LifespanManager(app)
+            await manager.__aenter__()
+            built.append(manager)
+            return manager.app
 
-    for manager in built:
-        await manager.__aexit__(None, None, None)
-    await engine.close()
+        yield _build, org.id, raw_key
+
+        for manager in built:
+            await manager.__aexit__(None, None, None)
 
 
 async def _raw_client(app) -> httpx.AsyncClient:

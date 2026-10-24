@@ -22,12 +22,13 @@ from asgi_lifespan import LifespanManager
 from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 
-from responsibleai.db import OrgRepository, create_engine
+from responsibleai.db import OrgRepository
 from responsibleai.rbac.models import Plan, Role
+from tests.protected_component_tenant import component_controller, provision_component_organization
 
 
 @pytest.fixture()
-async def seeded_app(monkeypatch: pytest.MonkeyPatch):
+async def seeded_app(monkeypatch: pytest.MonkeyPatch, tmp_path):
     """Build the real hosted-MCP Starlette app, with its internal DB engine
     swapped for one the test can also seed an org/API key into. Patching
     `responsibleai.db.create_engine` works because `_build_http_app` does a
@@ -36,19 +37,19 @@ async def seeded_app(monkeypatch: pytest.MonkeyPatch):
     import responsibleai.db as db_module
     from responsibleai.mcp.server import _build_http_app
 
-    engine = create_engine(":memory:")
-    await engine.init()
-    monkeypatch.setattr(db_module, "create_engine", lambda _url: engine)
+    async with component_controller(tmp_path, monkeypatch, "wp_mcp_http") as controller:
+        engine = controller.engine
+        monkeypatch.setattr(db_module, "create_engine", lambda _url: engine)
 
-    org_repo = OrgRepository(engine)
-    org = await org_repo.create_org("Acme", "acme", plan=Plan.ENTERPRISE)
-    _key_rec, raw_key = await org_repo.create_key(org.id, "test-key", role=Role.ANALYST)
+        org_repo = OrgRepository(engine)
+        org = await provision_component_organization(
+            engine, name="Acme", slug="acme", plan=Plan.ENTERPRISE
+        )
+        _key_rec, raw_key = await org_repo.create_key(org.id, "test-key", role=Role.ANALYST)
 
-    app = _build_http_app()
-    async with LifespanManager(app) as manager:
-        yield manager.app, raw_key
-
-    await engine.close()
+        app = _build_http_app()
+        async with LifespanManager(app) as manager:
+            yield manager.app, raw_key
 
 
 def _asgi_http_client(app, raw_key: str) -> httpx.AsyncClient:
