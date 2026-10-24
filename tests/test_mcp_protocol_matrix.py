@@ -210,7 +210,7 @@ async def test_every_request_is_authenticated_not_just_the_first(governed_app_wi
 
 
 async def test_a_session_id_does_not_carry_one_tenants_identity_to_another_key(
-    governed_app_with_key,
+    governed_app_with_key, monkeypatch
 ) -> None:
     """A second tenant's key sends the first tenant's session id: the work is done as the second tenant
     (or refused), never as the first."""
@@ -218,7 +218,14 @@ async def test_a_session_id_does_not_carry_one_tenants_identity_to_another_key(
     from responsibleai.rbac.models import Plan, Role
 
     app, raw_a, org_a, engine, _key = governed_app_with_key
-    org_b = await OrgRepository(engine).create_org("Other Co", "other-co", plan=Plan.ENTERPRISE)
+    from tests.protected_component_tenant import provision_component_organization
+    from tests.stage3_controller_helpers import controller_process
+    from tests.test_mcp_governance_dispatch import component_controller_for_engine
+
+    async with controller_process(component_controller_for_engine(engine), monkeypatch):
+        org_b = await provision_component_organization(
+            engine, name="Other Co", slug="other-co", plan=Plan.ENTERPRISE
+        )
     _rec, raw_b = await OrgRepository(engine).create_key(org_b.id, "b", role=Role.ANALYST)
     first = await _post(app, raw_a, _initialize("2025-11-25"))
     session = first.headers.get("mcp-session-id") or "session-of-tenant-a"

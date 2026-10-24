@@ -19,6 +19,11 @@ async def seed_org_with_key(
 
     if _org_repo is None:
         raise RuntimeError("dashboard lifespan has not initialized OrgRepository")
-    org = await _org_repo.create_org(name, slug)
+    if _org_repo._engine.raw.dialect.name == "postgresql":
+        from tests.protected_component_tenant import provision_component_organization
+
+        org = await provision_component_organization(_org_repo._engine, name=name, slug=slug)
+    else:
+        org = await _org_repo.create_org(name, slug)
     rec, raw = await _org_repo.create_key(org.id, key_name, role, internal_unverified_fixture=True)
     return org.id, rec.id, raw

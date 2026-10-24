@@ -202,6 +202,14 @@ class EnterpriseIAM:
         )
         from responsibleai.db.web_identity_repository import WebIdentityRepository
 
+        async with self._engine.raw.connect() as connection:
+            account = (
+                await connection.execute(
+                    select(web_users.c.disabled).where(web_users.c.id == actor_user_id)
+                )
+            ).fetchone()
+        if account is None or account.disabled:
+            raise forbidden(FORBIDDEN, "Workspace creator is not an active account.")
         principal = (
             await WebIdentityRepository(self._engine).get_principal(session_token)
             if session_token
