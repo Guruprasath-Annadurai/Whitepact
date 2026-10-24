@@ -316,6 +316,7 @@ class TenantDeletionOrchestrator:
     async def _erase_operational_rows(self, org_id: str, purged_counts: dict[str, int]) -> None:
         """Delete eligible rows. Unreferenced approvals go only after their votes."""
         async with self._engine.raw.begin() as conn:
+            await self._lock_unheld_tenant(conn, org_id)
             owned = await self._owned_approval_ids(conn, org_id)
             referenced = await self._referenced_approval_ids(conn, owned)
             unreferenced = owned - referenced
@@ -346,6 +347,14 @@ class TenantDeletionOrchestrator:
                 .values(org_id=None)
             )
 
+    async def _lock_unheld_tenant(self, conn, org_id: str) -> None:
+        """Hold insertion and each destructive transaction share this row lock."""
+        await conn.execute(
+            select(organizations.c.id).where(organizations.c.id == org_id).with_for_update()
+        )
+        if await self._legal_hold.is_held(org_id, conn=conn):
+            raise LegalHoldActiveError(f"Cannot delete tenant {org_id}: active legal hold exists")
+
     async def _register_tombstone(
         self,
         org_id: str,
@@ -365,6 +374,10 @@ class TenantDeletionOrchestrator:
             )
             if owner is None:
                 raise TenantDeletionError("Cannot publish tombstone without tenant identity")
+            if await self._legal_hold.is_held(org_id, conn=conn):
+                raise LegalHoldActiveError(
+                    f"Cannot delete tenant {org_id}: active legal hold exists"
+                )
             existing = (
                 await conn.execute(
                     select(tenant_tombstones).where(tenant_tombstones.c.org_id == org_id)
@@ -498,6 +511,7 @@ class TenantDeletionOrchestrator:
 
         # Immediate Revocation of credentials and sessions
         async with self._engine.raw.begin() as conn:
+            await self._lock_unheld_tenant(conn, org_id)
             r_sess = await conn.execute(delete(web_sessions).where(web_sessions.c.org_id == org_id))
             purged_counts["web_sessions"] = r_sess.rowcount or 0
 

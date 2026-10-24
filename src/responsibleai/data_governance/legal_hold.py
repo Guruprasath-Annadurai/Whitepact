@@ -17,7 +17,7 @@ from typing import Any
 
 from sqlalchemy import insert, select, update
 
-from responsibleai.db.engine import DatabaseEngine, data_holds
+from responsibleai.db.engine import DatabaseEngine, data_holds, organizations
 
 
 def _now() -> str:
@@ -66,6 +66,11 @@ class LegalHoldManager:
         hold_id = str(uuid.uuid4())
         now = _now()
         async with self._engine.raw.begin() as conn:
+            # Serialize preservation mandates with the deletion/erasure checks.
+            # Locking only existing hold rows cannot fence a newly inserted hold.
+            await conn.execute(
+                select(organizations.c.id).where(organizations.c.id == org_id).with_for_update()
+            )
             await conn.execute(
                 insert(data_holds).values(
                     id=hold_id,

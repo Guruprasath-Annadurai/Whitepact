@@ -28,6 +28,7 @@ from responsibleai.db.engine import (
     incidents,
     mcp_tool_calls,
     org_api_keys,
+    organizations,
     token_usage,
     tool_trust_scores,
     web_sessions,
@@ -136,20 +137,17 @@ class DataErasureManager:
         org_id = row.org_id
         details = json.loads(row.details_json) if row.details_json else {}
 
-        # 2. Check legal holds
-        if await self._legal_hold.is_held(org_id):
-            now = _now()
-            details["hold_blocked_at"] = now
-            async with self._engine.raw.begin() as conn:
-                await conn.execute(
-                    update(data_lifecycle_requests)
-                    .where(data_lifecycle_requests.c.id == request_id)
-                    .values(
-                        status=ErasureStatus.BLOCKED_BY_HOLD.value,
-                        details_json=json.dumps(details),
-                        verification_status="BLOCKED_BY_HOLD",
-                    )
+        async def blocked_by_hold(conn):
+            details["hold_blocked_at"] = _now()
+            await conn.execute(
+                update(data_lifecycle_requests)
+                .where(data_lifecycle_requests.c.id == request_id)
+                .values(
+                    status=ErasureStatus.BLOCKED_BY_HOLD.value,
+                    details_json=json.dumps(details),
+                    verification_status="BLOCKED_BY_HOLD",
                 )
+            )
             return LifecycleRequest(
                 id=request_id,
                 org_id=org_id,
@@ -162,10 +160,20 @@ class DataErasureManager:
                 verification_status="BLOCKED_BY_HOLD",
             )
 
+        # The optimistic check avoids destructive work for existing holds;
+        # correctness also requires a locked recheck immediately before erasure.
+        if await self._legal_hold.is_held(org_id):
+            async with self._engine.raw.begin() as conn:
+                return await blocked_by_hold(conn)
+
         # 3. Transition to IN_PROGRESS and purge data
-        now = _now()
         deleted_counts: dict[str, int] = {}
         async with self._engine.raw.begin() as conn:
+            await conn.execute(
+                select(organizations.c.id).where(organizations.c.id == org_id).with_for_update()
+            )
+            if await self._legal_hold.is_held(org_id, conn=conn):
+                return await blocked_by_hold(conn)
             await conn.execute(
                 update(data_lifecycle_requests)
                 .where(data_lifecycle_requests.c.id == request_id)
