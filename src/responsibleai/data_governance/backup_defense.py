@@ -20,6 +20,7 @@ import json
 import os
 import sqlite3
 import stat
+import threading
 import uuid
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -236,15 +237,42 @@ def resolve_store_b_path(db_path: str | Path | None = None) -> Path:
     return path
 
 
+_STORE_B_FILE_CREATION_LOCK = threading.RLock()
+
+
 def _secure_create_store_b_file(path: Path) -> None:
+    # A second constructor in this process must not open SQLite on a newly
+    # created inode until the creating descriptor has been closed.
+    with _STORE_B_FILE_CREATION_LOCK:
+        _secure_create_store_b_file_locked(path)
+
+
+def _secure_create_store_b_file_locked(path: Path) -> None:
     """Create the SQLite file without following symlinks; mode 0600."""
     if path.exists() and path.is_symlink():
         raise MissingLifecycleProviderError("Store B path must not be a symlink")
     parent = path.parent
     parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-    flags = os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW
+    # Never open/close an existing SQLite inode outside SQLite: on POSIX,
+    # closing even this unrelated descriptor drops this process's live database
+    # locks. Concurrent provider construction must not invalidate transaction
+    # exclusion. O_EXCL ensures the descriptor below belongs to a new file.
+    flags = os.O_RDWR | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
     try:
         fd = os.open(path, flags, 0o600)
+    except FileExistsError:
+        existing = path.lstat()
+        if stat.S_ISLNK(existing.st_mode):
+            raise MissingLifecycleProviderError("Store B path must not be a symlink") from None
+        if (
+            not stat.S_ISREG(existing.st_mode)
+            or stat.S_IMODE(existing.st_mode) != 0o600
+            or existing.st_uid != os.getuid()
+        ):
+            raise MissingLifecycleProviderError(
+                "Existing Store B must be an operator-owned regular file with mode 0600"
+            ) from None
+        return
     except OSError as exc:
         raise MissingLifecycleProviderError(f"Cannot open Store B path: {exc}") from exc
     try:
