@@ -358,6 +358,13 @@ class TenantDeletionOrchestrator:
         auth_hash = hashlib.sha256(f"{org_id}:{generation_id}:auth".encode()).hexdigest()
         ev_digest = hashlib.sha256(f"{org_id}:{generation_id}:evidence".encode()).hexdigest()
         async with self._engine.raw.begin() as conn:
+            # Lock the stable parent, not an absent tombstone row. Concurrent
+            # retries must observe and reuse the first committed tombstone.
+            owner = await conn.scalar(
+                select(organizations.c.id).where(organizations.c.id == org_id).with_for_update()
+            )
+            if owner is None:
+                raise TenantDeletionError("Cannot publish tombstone without tenant identity")
             existing = (
                 await conn.execute(
                     select(tenant_tombstones).where(tenant_tombstones.c.org_id == org_id)
