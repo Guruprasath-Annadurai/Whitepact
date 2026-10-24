@@ -37,12 +37,20 @@ def _auth_and_db(monkeypatch: pytest.MonkeyPatch):
 
 
 @pytest.fixture()
-async def governance_client():
-    async with LifespanManager(app) as manager:
-        async with AsyncClient(
-            transport=ASGITransport(app=manager.app), base_url="http://test"
-        ) as client:
-            yield client
+async def governance_client(tmp_path, monkeypatch: pytest.MonkeyPatch):
+    from tests.protected_component_tenant import component_controller
+
+    async with component_controller(tmp_path, monkeypatch, "wp_live_http") as controller:
+        url = controller.engine.raw.url.render_as_string(hide_password=False)
+        monkeypatch.setattr(settings, "database_url", url)
+        monkeypatch.setattr(settings, "auto_migrate", False)
+        monkeypatch.setenv("WHITEPACT_STORE_B_PATH", str(controller.provider.path))
+        monkeypatch.setenv("WHITEPACT_STORE_B_KEY", controller.provider._secret_key)
+        async with LifespanManager(app) as manager:
+            async with AsyncClient(
+                transport=ASGITransport(app=manager.app), base_url="http://test"
+            ) as client:
+                yield client
 
 
 def _dispatch_spy(monkeypatch: pytest.MonkeyPatch) -> AsyncMock:
@@ -353,42 +361,47 @@ class TestLiveMcpBindingSubstitution:
         self,
         monkeypatch: pytest.MonkeyPatch,
         seed_runtime_authority,
+        tmp_path,
     ) -> None:
         import responsibleai.db as db_module
         from responsibleai.dashboard.config import get_settings
-        from responsibleai.db import OrgRepository, create_engine
+        from responsibleai.db import OrgRepository
         from responsibleai.mcp.server import _build_http_app
         from responsibleai.rbac.models import Plan
 
         settings_ = get_settings()
         monkeypatch.setattr(settings_, "mcp_governance_enabled", True)
-        engine = create_engine(":memory:")
-        await engine.init()
-        monkeypatch.setattr(db_module, "create_engine", lambda _url: engine)
-        org_repo = OrgRepository(engine)
-        org_a = await org_repo.create_org(
-            "Org A", f"org-a-{uuid.uuid4().hex[:6]}", plan=Plan.ENTERPRISE
+        from tests.protected_component_tenant import (
+            component_controller,
+            provision_component_organization,
         )
-        org_b = await org_repo.create_org(
-            "Org B", f"org-b-{uuid.uuid4().hex[:6]}", plan=Plan.ENTERPRISE
-        )
-        _ka, key_a = await org_repo.create_key(org_a.id, "key-a")
-        _kb, key_b = await org_repo.create_key(org_b.id, "key-b")
-        await seed_runtime_authority(
-            engine,
-            organization_id=org_a.id,
-            principal_id=_ka.id,
-            action_types=("rai_health",),
-            targets=("rai_health",),
-        )
-        app_http = _build_http_app()
-        dispatch = _dispatch_spy(monkeypatch)
-        async with LifespanManager(app_http) as manager:
-            result = await _call(manager.app, key_b, "rai_health", {})
-        payload = json.loads(result.content[0].text)
-        assert payload.get("error") == "governance_denied"
-        dispatch.assert_not_awaited()
-        await engine.close()
+
+        async with component_controller(tmp_path, monkeypatch, "wp_mcp_bind") as controller:
+            engine = controller.engine
+            monkeypatch.setattr(db_module, "create_engine", lambda _url: engine)
+            org_repo = OrgRepository(engine)
+            org_a = await provision_component_organization(
+                engine, name="Org A", slug=f"org-a-{uuid.uuid4().hex[:6]}", plan=Plan.ENTERPRISE
+            )
+            org_b = await provision_component_organization(
+                engine, name="Org B", slug=f"org-b-{uuid.uuid4().hex[:6]}", plan=Plan.ENTERPRISE
+            )
+            _ka, key_a = await org_repo.create_key(org_a.id, "key-a")
+            _kb, key_b = await org_repo.create_key(org_b.id, "key-b")
+            await seed_runtime_authority(
+                engine,
+                organization_id=org_a.id,
+                principal_id=_ka.id,
+                action_types=("rai_health",),
+                targets=("rai_health",),
+            )
+            app_http = _build_http_app()
+            dispatch = _dispatch_spy(monkeypatch)
+            async with LifespanManager(app_http) as manager:
+                result = await _call(manager.app, key_b, "rai_health", {})
+            payload = json.loads(result.content[0].text)
+            assert payload.get("error") == "governance_denied"
+            dispatch.assert_not_awaited()
 
     async def test_argument_substitution_on_scan_denied(
         self, governed_app, monkeypatch: pytest.MonkeyPatch

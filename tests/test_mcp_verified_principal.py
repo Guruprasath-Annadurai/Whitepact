@@ -20,13 +20,9 @@ from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 
 from responsibleai.dashboard.config import Settings
-from responsibleai.db import (
-    OrgRepository,
-    PrincipalRepository,
-    WebIdentityRepository,
-    create_engine,
-)
+from responsibleai.db import OrgRepository, PrincipalRepository, WebIdentityRepository
 from responsibleai.rbac.models import Plan, Role
+from tests.protected_component_tenant import component_controller, provision_component_organization
 
 
 async def _bind_vc(
@@ -69,38 +65,39 @@ def _vc_payload(
 
 
 @pytest.fixture()
-async def mcp_app(monkeypatch: pytest.MonkeyPatch):
+async def mcp_app(monkeypatch: pytest.MonkeyPatch, tmp_path):
     import responsibleai.dashboard.config as config_module
     import responsibleai.db as db_module
     from responsibleai.mcp.server import _build_http_app
 
-    engine = create_engine(":memory:")
-    await engine.init()
-    monkeypatch.setattr(db_module, "create_engine", lambda _url: engine)
+    async with component_controller(tmp_path, monkeypatch, "wp_mcp_vc") as controller:
+        engine = controller.engine
+        monkeypatch.setattr(db_module, "create_engine", lambda _url: engine)
 
-    org_repo = OrgRepository(engine)
-    org = await org_repo.create_org("Acme", "acme", plan=Plan.ENTERPRISE)
-    _key_rec, raw_key = await org_repo.create_key(org.id, "test-key", role=Role.ANALYST)
-
-    built = []
-
-    async def _build(*, vc_trusted_issuers: list[str] | None = None):
-        settings = Settings(
-            vc_trusted_issuers=vc_trusted_issuers or [],
-            vc_skip_verification=True,
+        org_repo = OrgRepository(engine)
+        org = await provision_component_organization(
+            engine, name="Acme", slug="acme", plan=Plan.ENTERPRISE
         )
-        monkeypatch.setattr(config_module, "get_settings", lambda: settings)
-        app = _build_http_app()
-        manager = LifespanManager(app)
-        await manager.__aenter__()
-        built.append(manager)
-        return manager.app
+        _key_rec, raw_key = await org_repo.create_key(org.id, "test-key", role=Role.ANALYST)
 
-    yield _build, org.id, raw_key, engine
+        built = []
 
-    for manager in built:
-        await manager.__aexit__(None, None, None)
-    await engine.close()
+        async def _build(*, vc_trusted_issuers: list[str] | None = None):
+            settings = Settings(
+                vc_trusted_issuers=vc_trusted_issuers or [],
+                vc_skip_verification=True,
+            )
+            monkeypatch.setattr(config_module, "get_settings", lambda: settings)
+            app = _build_http_app()
+            manager = LifespanManager(app)
+            await manager.__aenter__()
+            built.append(manager)
+            return manager.app
+
+        yield _build, org.id, raw_key, engine
+
+        for manager in built:
+            await manager.__aexit__(None, None, None)
 
 
 async def _raw_client(app) -> httpx.AsyncClient:

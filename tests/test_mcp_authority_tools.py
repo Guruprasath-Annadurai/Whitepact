@@ -50,26 +50,33 @@ from responsibleai.mcp.authority_tools import (
     AuthorityReadService,
 )
 from responsibleai.rbac.models import OrgContext, Plan, Role
+from tests.protected_component_tenant import (
+    attach_component_controller,
+    component_controller,
+    provision_component_organization,
+)
 
 _ALL_ROLES = list(Role)
 
 
 @pytest.fixture()
-async def world(monkeypatch: pytest.MonkeyPatch) -> Any:
-    engine = create_engine(":memory:")
-    await engine.init()
-    orgs = OrgRepository(engine)
-    a = await orgs.create_org("Org A", "org-a", plan=Plan.ENTERPRISE)
-    b = await orgs.create_org("Org B", "org-b", plan=Plan.ENTERPRISE)
+async def world(tmp_path, monkeypatch: pytest.MonkeyPatch) -> Any:
+    async with component_controller(tmp_path, monkeypatch, "wp_mcp_auth") as controller:
+        engine = controller.engine
+        a = await provision_component_organization(
+            engine, name="Org A", slug="org-a", plan=Plan.ENTERPRISE
+        )
+        b = await provision_component_organization(
+            engine, name="Org B", slug="org-b", plan=Plan.ENTERPRISE
+        )
 
-    class _Services:
-        policy_repo = PolicyRepository(engine)
-        approval_repo = ApprovalRepository(engine)
-        evidence_repo = EvidenceRepository(engine)
+        class _Services:
+            policy_repo = PolicyRepository(engine)
+            approval_repo = ApprovalRepository(engine)
+            evidence_repo = EvidenceRepository(engine)
 
-    service = AuthorityReadService(_Services(), DurableIdentityRateLimiter(engine))  # type: ignore[arg-type]
-    yield engine, service, a.id, b.id
-    await engine.close()
+        service = AuthorityReadService(_Services(), DurableIdentityRateLimiter(engine))  # type: ignore[arg-type]
+        yield engine, service, a.id, b.id
 
 
 def _ctx(org_id: str | None, role: Role, *, legacy: bool = False) -> OrgContext:
@@ -513,42 +520,44 @@ def test_module_references_no_state_changing_repository_method() -> None:
 
 
 @pytest.fixture()
-async def governed_app(monkeypatch: pytest.MonkeyPatch) -> Any:
+async def governed_app(monkeypatch: pytest.MonkeyPatch, tmp_path) -> Any:
     import responsibleai.db as db_module
     from responsibleai.dashboard.config import get_settings
     from responsibleai.mcp.server import _build_http_app
 
     monkeypatch.setattr(get_settings(), "mcp_governance_enabled", True)
-    engine = create_engine(":memory:")
-    await engine.init()
-    monkeypatch.setattr(db_module, "create_engine", lambda _url: engine)
-    orgs = OrgRepository(engine)
-    org = await orgs.create_org("Gov Co", "gov-co", plan=Plan.ENTERPRISE)
-    _k, owner_key = await orgs.create_key(org.id, "owner", role=Role.OWNER)
-    _k, viewer_key = await orgs.create_key(org.id, "viewer", role=Role.VIEWER)
-    app = _build_http_app()
-    async with LifespanManager(app) as manager:
-        yield manager.app, owner_key, viewer_key, org.id, engine
-    await engine.close()
+    async with component_controller(tmp_path, monkeypatch, "wp_mcp_govapp") as controller:
+        engine = controller.engine
+        monkeypatch.setattr(db_module, "create_engine", lambda _url: engine)
+        orgs = OrgRepository(engine)
+        org = await provision_component_organization(
+            engine, name="Gov Co", slug="gov-co", plan=Plan.ENTERPRISE
+        )
+        _k, owner_key = await orgs.create_key(org.id, "owner", role=Role.OWNER)
+        _k, viewer_key = await orgs.create_key(org.id, "viewer", role=Role.VIEWER)
+        app = _build_http_app()
+        async with LifespanManager(app) as manager:
+            yield manager.app, owner_key, viewer_key, org.id, engine
 
 
 @pytest.fixture()
-async def ungoverned_app(monkeypatch: pytest.MonkeyPatch) -> Any:
+async def ungoverned_app(monkeypatch: pytest.MonkeyPatch, tmp_path) -> Any:
     import responsibleai.db as db_module
     from responsibleai.dashboard.config import get_settings
     from responsibleai.mcp.server import _build_http_app
 
     monkeypatch.setattr(get_settings(), "mcp_governance_enabled", False)
-    engine = create_engine(":memory:")
-    await engine.init()
-    monkeypatch.setattr(db_module, "create_engine", lambda _url: engine)
-    orgs = OrgRepository(engine)
-    org = await orgs.create_org("Plain Co", "plain-co", plan=Plan.ENTERPRISE)
-    _k, key = await orgs.create_key(org.id, "owner", role=Role.OWNER)
-    app = _build_http_app()
-    async with LifespanManager(app) as manager:
-        yield manager.app, key
-    await engine.close()
+    async with component_controller(tmp_path, monkeypatch, "wp_mcp_plain") as controller:
+        engine = controller.engine
+        monkeypatch.setattr(db_module, "create_engine", lambda _url: engine)
+        orgs = OrgRepository(engine)
+        org = await provision_component_organization(
+            engine, name="Plain Co", slug="plain-co", plan=Plan.ENTERPRISE
+        )
+        _k, key = await orgs.create_key(org.id, "owner", role=Role.OWNER)
+        app = _build_http_app()
+        async with LifespanManager(app) as manager:
+            yield manager.app, key
 
 
 def _client(app: Any, key: str) -> httpx.AsyncClient:
@@ -632,7 +641,9 @@ async def pg() -> Any:
         yield url
 
 
-async def test_tools_run_as_a_role_that_can_only_select_authority_tables(pg: str) -> None:
+async def test_tools_run_as_a_role_that_can_only_select_authority_tables(
+    pg: str, tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """The read path's database contract: SELECT on the authority tables, and nothing else that
     matters. Proven by connecting as such a role -- a write would raise ``permission denied``."""
     from sqlalchemy import text
@@ -652,7 +663,12 @@ async def test_tools_run_as_a_role_that_can_only_select_authority_tables(pg: str
         "governance_evidence_chain_heads",
     )
     try:
-        org = (await OrgRepository(admin).create_org("RO Co", "ro-co", plan=Plan.ENTERPRISE)).id
+        async with attach_component_controller(admin, tmp_path, monkeypatch):
+            org = (
+                await provision_component_organization(
+                    admin, name="RO Co", slug="ro-co", plan=Plan.ENTERPRISE
+                )
+            ).id
         await PolicyRepository(admin).add_rule(
             org, PolicyRule("r", "R", GovernanceDecision.DENY, action_types=frozenset({"pay"}))
         )
