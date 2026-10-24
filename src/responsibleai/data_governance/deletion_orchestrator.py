@@ -69,6 +69,7 @@ from responsibleai.db.engine import (
     org_authority_ceilings,
     org_autonomy_budgets,
     organizations,
+    runtime_containment_records,
     runtime_execution_attempts,
     runtime_execution_dispatch_outbox,
     runtime_execution_requests,
@@ -84,6 +85,7 @@ from responsibleai.db.engine import (
     web_memberships,
     web_sessions,
 )
+from responsibleai.db.revocation_epoch_repository import bump_epoch_on_connection
 
 
 def _now() -> str:
@@ -165,6 +167,55 @@ class TenantDeletionOrchestrator:
         self._engine = engine
         self._legal_hold = LegalHoldManager(engine)
         self._lifecycle_provider = lifecycle_provider
+
+    async def _contain_inflight(self, org_id: str, revoked_epoch: int) -> None:
+        """An erasure receipt requires actual containment, not a revoked DB lease.
+
+        The organization is already durably DISABLED. Existing registry logic
+        retains uncertain local/remote work and rejects stale late registration.
+        Never manufacture a CONTAINED journal entry or infer absence from a PID.
+        """
+        from responsibleai.isolation.in_flight import InFlightExecutionRegistry
+
+        try:
+            registry = InFlightExecutionRegistry.get_instance()
+            registry.record_revoked_epoch(org_id, revoked_epoch)
+            await registry.retry_unresolved(org_id)
+            await registry.terminate_in_flight(organization_id=org_id)
+            if registry.count_active(org_id) or registry.count_unresolved(org_id):
+                raise TenantDeletionError("Containment unconfirmed for deleting tenant")
+            async with self._engine.raw.connect() as connection:
+                unresolved = await connection.scalar(
+                    select(runtime_containment_records.c.execution_id)
+                    .where(
+                        runtime_containment_records.c.organization_id == org_id,
+                        runtime_containment_records.c.state != "CONTAINED",
+                    )
+                    .limit(1)
+                )
+                uncertain_effect = await connection.scalar(
+                    select(runtime_execution_attempts.c.attempt_id)
+                    .where(
+                        runtime_execution_attempts.c.organization_id == org_id,
+                        (
+                            runtime_execution_attempts.c.state.in_(
+                                ("ADMITTED", "BACKEND_STARTING", "RUNNING", "UNCERTAIN")
+                            )
+                            | runtime_execution_attempts.c.effect_state.in_(
+                                ("EFFECT_STARTING", "EFFECT_TRANSMITTING", "EFFECT_UNCERTAIN")
+                            )
+                        ),
+                    )
+                    .limit(1)
+                )
+            if unresolved is not None:
+                raise TenantDeletionError("Containment unconfirmed in durable execution journal")
+            if uncertain_effect is not None:
+                raise TenantDeletionError("Containment unconfirmed: execution outcome is uncertain")
+        except TenantDeletionError:
+            raise
+        except Exception as exc:
+            raise TenantDeletionError("Containment unconfirmed during tenant deletion") from exc
 
     async def _owned_approval_ids(self, conn, org_id: str) -> set[str]:
         rows = await conn.execute(
@@ -428,10 +479,15 @@ class TenantDeletionOrchestrator:
                 .where(organizations.c.id == org_id)
                 .values(name=quarantined_name, governance_status="DISABLED")
             )
+            # Same org->epoch lock order as grant issuance/final effect CAS.
+            # New authority either predates this quarantine and is revoked below,
+            # or observes DISABLED; it cannot race in after the status commit.
+            revoked_epoch = await bump_epoch_on_connection(conn, org_id)
 
         purged_counts["governance_approvals_revoked"] = await self._revoke_referenced_authority(
             org_id, deleted_by, now
         )
+        await self._contain_inflight(org_id, revoked_epoch)
 
         # Immediate Revocation of credentials and sessions
         async with self._engine.raw.begin() as conn:
@@ -483,6 +539,9 @@ class TenantDeletionOrchestrator:
             raise TenantResidualDataError(
                 f"Post-deletion verification failed for {org_id}: residual rows {residual_found}"
             )
+
+        # Recheck after erasure: late uncertainty must not become a success receipt.
+        await self._contain_inflight(org_id, revoked_epoch)
 
         details = {
             "deleted_by": deleted_by,

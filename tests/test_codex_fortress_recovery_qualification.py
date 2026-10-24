@@ -184,12 +184,19 @@ async def test_late_unconfirmed_containment_never_restores_admission(
     async def discover():
         # Environmental late-discovery injection, not a new authorized execution
         # or a claim of physical Docker termination. Do not mint a grant.
-        await registry.register(
-            "late-discovered-fixture",
-            tenant,
-            "structural-test-only",
-            terminate_callback=unconfirmed,
-        )
+        try:
+            await registry.register(
+                "late-discovered-fixture",
+                tenant,
+                "structural-test-only",
+                terminate_callback=unconfirmed,
+            )
+        except PermissionError:
+            # Integrated deletion now fences stale late registration itself.
+            # Its real callback must still have failed and tracking must remain;
+            # continue to challenge the unchanged signed recovery boundary.
+            assert callbacks == ["termination-unconfirmed"]
+            assert registry.has_unresolved(tenant)
 
     if point == "after_approval":
         await discover()
