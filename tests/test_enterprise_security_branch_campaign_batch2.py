@@ -18,7 +18,6 @@ from sqlalchemy import insert, select, update
 
 from responsibleai.db.engine import (
     account_recovery_requests,
-    create_engine,
     identity_security_notifications,
     org_security_policies,
     organization_idp_bindings,
@@ -55,18 +54,16 @@ from responsibleai.enterprise.security.service import (
     _now,
     _unverified_iss,
 )
-from responsibleai.enterprise.service import EnterpriseIAM
+from tests.protected_component_tenant import authorized_workspace, component_controller
 from tests.test_saml import _signed_response
 
 pytest_plugins = ("tests.test_saml",)
 
 
 @pytest.fixture
-async def engine():
-    db = create_engine(":memory:")
-    await db.init()
-    yield db
-    await db.close()
+async def engine(tmp_path, monkeypatch):
+    async with component_controller(tmp_path, monkeypatch, "wp_ent_b2") as controller:
+        yield controller.engine
 
 
 async def _user(engine, email: str = "human@example.com") -> str:
@@ -81,9 +78,9 @@ async def _svc(engine, **kwargs) -> IdentitySecurityService:
 
 
 async def _org(engine, owner_id: str) -> str:
-    iam = EnterpriseIAM(engine)
-    org = await iam.create_workspace(
-        actor_user_id=owner_id,
+    org = await authorized_workspace(
+        engine,
+        owner_id,
         name="Batch2 Org",
         slug=f"b2-{uuid.uuid4().hex[:8]}",
         kind="ORGANIZATION",

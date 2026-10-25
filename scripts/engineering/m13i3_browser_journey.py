@@ -13,6 +13,7 @@ import secrets
 import subprocess
 from pathlib import Path
 
+from scripts.engineering.m13_stage3_customer_fixture import isolated_provisioning_controller
 from scripts.engineering.m13i1_customer_journey import serve
 from scripts.engineering.m13i2_customer_journey import configured_settings, isolated_startup_store_b
 from starlette.applications import Starlette
@@ -62,7 +63,7 @@ def validate_report(result: dict) -> None:
         raise ValueError("Unexecuted privileged stages must remain explicit")
 
 
-async def attempt() -> dict:
+async def attempt(*, authorized_bootstrap: bool = False) -> dict:
     mail = []
     delivery_secret = secrets.token_urlsafe(32)
     receipt_secret = secrets.token_urlsafe(32)
@@ -100,7 +101,12 @@ async def attempt() -> dict:
                 "web_verification_delivery_token": delivery_secret,
             }
             with isolated_startup_store_b(), configured_settings(changes):
-                async with serve(dashboard.app) as origin:
+                async with (
+                    isolated_provisioning_controller(
+                        database, authorized_bootstrap=authorized_bootstrap
+                    ),
+                    serve(dashboard.app) as origin,
+                ):
                     config = {
                         "origin": origin,
                         "receiptUrl": f"{mailbox}/receipt",
@@ -149,9 +155,10 @@ async def attempt() -> dict:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--report", type=Path, help="Write redacted structured runtime evidence")
+    parser.add_argument("--authorized-disposable-bootstrap", action="store_true")
     args = parser.parse_args()
     try:
-        result = asyncio.run(attempt())
+        result = asyncio.run(attempt(authorized_bootstrap=args.authorized_disposable_bootstrap))
     except Exception as error:
         result = {
             "acceptance": "BLOCKED",

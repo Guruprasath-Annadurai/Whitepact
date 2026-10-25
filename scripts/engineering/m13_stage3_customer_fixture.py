@@ -6,7 +6,7 @@ No tenant, identity, session or READY state is seeded. Not production enrollment
 """
 
 import os
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -29,7 +29,7 @@ from responsibleai.environment import is_production
 
 
 @asynccontextmanager
-async def isolated_provisioning_controller(database):
+async def isolated_provisioning_controller(database, *, authorized_bootstrap=False):
     if is_production():
         raise RuntimeError("Disposable controller cannot run in production")
     engine = create_engine(database)
@@ -54,12 +54,23 @@ async def isolated_provisioning_controller(database):
             identity,
             store_b_identity(provider),
         )
-        PendingTenantReservations(provider).initialize()
-        PublicationAuthorizationLedger(provider).initialize(trust)
-        service = ProtectedTenantController(engine, provider, trust, key)
-        with pytest.MonkeyPatch.context() as environment:
-            environment.setenv("WHITEPACT_ENV", "development")
-            async with controller_process(service, environment):
-                yield service
+        async with AsyncExitStack() as installation:
+            if authorized_bootstrap:
+                from scripts.engineering.m13_bootstrap_customer_fixture import (
+                    authorized_disposable_installation,
+                )
+
+                await installation.enter_async_context(
+                    authorized_disposable_installation(
+                        engine, provider, deployment_id=trust.deployment_id
+                    )
+                )
+            PendingTenantReservations(provider).initialize()
+            PublicationAuthorizationLedger(provider).initialize(trust)
+            service = ProtectedTenantController(engine, provider, trust, key)
+            with pytest.MonkeyPatch.context() as environment:
+                environment.setenv("WHITEPACT_ENV", "development")
+                async with controller_process(service, environment):
+                    yield service
     finally:
         await engine.close()

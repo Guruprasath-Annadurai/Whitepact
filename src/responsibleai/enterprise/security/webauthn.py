@@ -183,6 +183,8 @@ def verify_registration(
         raise ValueError("WebAuthn RP ID hash mismatch")
     if not (flags & FLAG_AT) or cred_id is None or cose is None:
         raise ValueError("Attested credential data required")
+    if not (flags & FLAG_UP):
+        raise ValueError("WebAuthn user-present flag required")
     if require_uv and not (flags & FLAG_UV):
         raise ValueError("WebAuthn user verification required")
     public_key = cose_ec2_uncompressed(cose)

@@ -4,6 +4,7 @@
 
 import json
 import secrets
+import time
 
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -11,6 +12,7 @@ from scripts.engineering.m13_bootstrap_authorization import BootstrapRefusedErro
 from scripts.engineering.m13_bootstrap_preflight import (
     collect_bootstrap_store_evidence,
     evidence_digest,
+    verify_bootstrap_target_binding,
 )
 from sqlalchemy import text
 
@@ -75,6 +77,58 @@ async def test_real_fresh_stores_have_stable_evidence_but_no_bootstrap_authority
     assert first["ready"] is False and provider.get_readiness_state() is None
     assert not any(first["postgres_table_counts"].values())
     assert not any(first["store_b_table_counts"].values())
+    from pathlib import Path
+
+    assert not Path(config["registry"]).exists()
+
+
+@pytest.mark.asyncio
+async def test_proposed_manifest_must_match_actual_target_evidence(fresh_target):
+    """Read-only target binding is necessary, not signature or admission proof."""
+    from dataclasses import replace
+
+    from scripts.engineering.m13_bootstrap_authorization import BootstrapManifest
+
+    engine, provider, profile, config = fresh_target
+    evidence = await collect_bootstrap_store_evidence(engine, provider, profile_path=profile)
+    now = int(time.time())
+    manifest = BootstrapManifest(
+        installation_id=config["installation_id"],
+        deployment_id=config["deployment_id"],
+        environment=config["environment"],
+        postgres_identity=config["postgres_identity"],
+        store_b_identity=config["store_b_identity"],
+        evidence_digest=evidence_digest(evidence),
+        nonce=secrets.token_hex(32),
+        created_at=now,
+        expires_at=now + 120,
+    )
+    actual = await verify_bootstrap_target_binding(
+        engine, provider, profile_path=profile, manifest=manifest
+    )
+    assert actual == evidence
+    with pytest.raises(BootstrapRefusedError, match="evidence digest"):
+        await verify_bootstrap_target_binding(
+            engine,
+            provider,
+            profile_path=profile,
+            manifest=replace(manifest, evidence_digest="0" * 64),
+        )
+    with pytest.raises(BootstrapRefusedError, match="target binding"):
+        await verify_bootstrap_target_binding(
+            engine,
+            provider,
+            profile_path=profile,
+            manifest=replace(manifest, deployment_id="another-deployment"),
+        )
+    await WebIdentityRepository(engine).register(
+        "Changed target", "changed@example.test", "Test-Only-Password-42!"
+    )
+    with pytest.raises(BootstrapRefusedError, match="Existing Store A history"):
+        await verify_bootstrap_target_binding(
+            engine, provider, profile_path=profile, manifest=manifest
+        )
+    assert provider.get_readiness_state() is None
     from pathlib import Path
 
     assert not Path(config["registry"]).exists()

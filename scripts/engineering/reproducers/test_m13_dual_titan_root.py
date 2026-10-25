@@ -15,13 +15,14 @@ from scripts.engineering.reproducers.test_m13_corrective_authority import (
 )
 from tests.m13_owner_qualification import qualify_owner, root_completion_assertion
 from tests.pg_test_url import isolated_pg_url
+from tests.protected_component_tenant import attach_component_controller, authorized_workspace
 
 from responsibleai.db.engine import create_engine
 from responsibleai.db.migrate import _find_alembic_ini, _migration_env, _run_alembic
 from responsibleai.db.web_identity_repository import WebIdentityRepository
 from responsibleai.enterprise.authority.service import CustomerAuthorityService
 from responsibleai.enterprise.errors import EnterpriseError
-from responsibleai.enterprise.service import Actor, EnterpriseIAM
+from responsibleai.enterprise.service import Actor
 from responsibleai.rbac.models import Role
 
 
@@ -43,7 +44,9 @@ async def test_unverified_owner_denied_with_explicit_assurance_flag(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("revoked_boundary", ["email", "membership", "organization"])
-async def test_completion_rechecks_persisted_owner_qualification(revoked_boundary: str) -> None:
+async def test_completion_rechecks_persisted_owner_qualification(
+    revoked_boundary: str, tmp_path, monkeypatch
+) -> None:
     """Real PostgreSQL lifecycle regression; SQL revocation is not a customer receipt."""
     async with aclosing(isolated_pg_url("wp_dual_root_recheck")) as databases:
         async for database in databases:
@@ -56,12 +59,14 @@ async def test_completion_rechecks_persisted_owner_qualification(revoked_boundar
                 "Verified customer", f"dual-{uuid.uuid4().hex}@example.com", "Local-Strong-42!"
             )
             await identities.verify_email(token)
-            org = await EnterpriseIAM(engine).create_workspace(
-                actor_user_id=user_id,
-                name="Qualification",
-                slug=f"dual-{uuid.uuid4().hex}",
-                kind="ORGANIZATION",
-            )
+            async with attach_component_controller(engine, tmp_path, monkeypatch):
+                org = await authorized_workspace(
+                    engine,
+                    user_id,
+                    name="Qualification",
+                    slug=f"dual-{uuid.uuid4().hex}",
+                    kind="ORGANIZATION",
+                )
             org_id = org["id"] if isinstance(org, dict) else org.id
             actor = Actor(
                 actor_type="USER",

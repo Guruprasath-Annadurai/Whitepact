@@ -98,7 +98,9 @@ def validate_evidence(result: dict) -> None:
             raise ValueError("Privileged success after an unqualified boundary")
 
 
-async def attempt(*, development_agent_prototype: bool = False) -> dict:
+async def attempt(
+    *, development_agent_prototype: bool = False, authorized_bootstrap: bool = False
+) -> dict:
     mail = []
     delivery_secret, receipt_secret = secrets.token_urlsafe(32), secrets.token_urlsafe(32)
 
@@ -147,7 +149,9 @@ async def attempt(*, development_agent_prototype: bool = False) -> dict:
                     ),
                 ):
                     async with (
-                        isolated_provisioning_controller(database) as provisioner,
+                        isolated_provisioning_controller(
+                            database, authorized_bootstrap=authorized_bootstrap
+                        ) as provisioner,
                         serve(dashboard.app) as origin,
                     ):
                         config = {
@@ -243,10 +247,14 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--report", required=True, type=Path)
     parser.add_argument("--development-agent-prototype", action="store_true")
+    parser.add_argument("--authorized-disposable-bootstrap", action="store_true")
     args = parser.parse_args()
     try:
         evidence = asyncio.run(
-            attempt(development_agent_prototype=args.development_agent_prototype)
+            attempt(
+                development_agent_prototype=args.development_agent_prototype,
+                authorized_bootstrap=args.authorized_disposable_bootstrap,
+            )
         )
     except Exception as error:
         evidence = {"acceptance": "FAIL", "error_type": type(error).__name__}

@@ -12,6 +12,12 @@ on:
       - 'src/responsibleai/isolation/in_flight.py'
       - 'src/responsibleai/isolation/container_backend.py'
       - 'src/responsibleai/enterprise/security/router.py'
+      - 'src/responsibleai/enterprise/security/webauthn.py'
+      - 'tests/test_webauthn_registration_presence.py'
+      - 'tests/test_m13_virtual_authenticator.py'
+      - 'tests/test_m13_pg16_test_runner.py'
+      - 'tests/js/m13-virtual-authenticator.mjs'
+      - 'scripts/engineering/m13_pg16_test_runner.py'
       - 'src/responsibleai/enterprise/authority/service.py'
       - 'scripts/engineering/reproducers/test_m13_dual_titan_*.py'
       - 'tests/test_inflight_liveness_adversarial.py'
@@ -43,6 +49,49 @@ permissions:
   contents: read
 
 jobs:
+  virtual-authenticator-component:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.11', '3.12']
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: ${{ matrix.python }}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+      - name: Install isolated browser component dependencies
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: /tmp/m13-component-chromium
+        run: |
+          python -m pip install -r tests/requirements-m11.txt
+          python -m pip install '.[dashboard,postgres,mcp,sso]' alembic
+          npm ci --ignore-scripts --no-audit --no-fund
+          npx playwright install --with-deps chromium
+      - name: Verify genuine browser ceremonies with repository coverage enabled
+        env:
+          PYTHONPATH: src:sdk/python:.
+          PLAYWRIGHT_BROWSERS_PATH: /tmp/m13-component-chromium
+        run: |
+          git rev-parse HEAD 'HEAD^{tree}'
+          node --check tests/js/m13-virtual-authenticator.mjs
+          python -m pytest tests/test_m13_virtual_authenticator.py tests/test_webauthn_registration_presence.py tests/test_m13_pg16_test_runner.py --junitxml=/tmp/m13-browser-component.xml --tb=short -q
+      - name: Preserve component evidence separately from customer acceptance
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: m13-browser-component-${{ matrix.python }}-${{ github.sha }}
+          path: |
+            /tmp/m13-browser-component.xml
+            coverage.json
+          if-no-files-found: error
   independent-security:
     runs-on: ubuntu-24.04
     timeout-minutes: 25
@@ -173,8 +222,8 @@ jobs:
           ruff format --check scripts/engineering/m13i2_customer_journey.py tests/test_m13i2_customer_journey.py
           ruff check scripts/engineering/m13i3_browser_journey.py tests/test_m13i3_browser_evidence.py
           ruff format --check scripts/engineering/m13i3_browser_journey.py tests/test_m13i3_browser_evidence.py
-          python -m pytest tests/test_m13i2_customer_journey.py tests/test_m13i3_browser_evidence.py -o addopts='' --tb=short -ra
-          python scripts/engineering/m13i3_browser_journey.py --report /tmp/m13i3-browser-evidence.json
+          python -m pytest tests/test_m13i2_customer_journey.py tests/test_m13i3_browser_evidence.py tests/test_m13i3_provisioning_context.py -o addopts='' --tb=short -ra
+          python scripts/engineering/m13i3_browser_journey.py --authorized-disposable-bootstrap --report /tmp/m13i3-browser-evidence.json
       - name: Attempt preserved APEX 25-stage customer journey independently of legacy gate
         if: ${{ !cancelled() }}
         env:
@@ -183,7 +232,7 @@ jobs:
           PLAYWRIGHT_BROWSERS_PATH: /tmp/whitepact-m13i3-chromium
         run: |
           python -m pytest tests/test_m13_apex_journey_evidence.py -o addopts='' --tb=short -ra
-          python scripts/engineering/m13_apex_customer_journey.py --report /tmp/m13apex-customer-evidence.json
+          python scripts/engineering/m13_apex_customer_journey.py --authorized-disposable-bootstrap --report /tmp/m13apex-customer-evidence.json
       - name: Preserve redacted actual browser evidence even when blocked
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02

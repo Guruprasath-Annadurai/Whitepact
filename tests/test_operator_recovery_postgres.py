@@ -11,6 +11,7 @@ import secrets
 import sqlite3
 import subprocess
 import uuid
+from contextlib import AsyncExitStack
 from dataclasses import replace
 from datetime import UTC, datetime
 
@@ -42,6 +43,7 @@ async def real_recovery(tmp_path, monkeypatch, request):
     async for url in isolated_pg_url("wp_r1_recovery"):
         await _run_alembic(_find_alembic_ini(), _migration_env(url), "upgrade", "head")
         engine = create_engine(url)
+        installation = AsyncExitStack()
         try:
             async with engine.raw.connect() as connection:
                 server = await connection.scalar(text("SHOW server_version_num"))
@@ -56,17 +58,19 @@ async def real_recovery(tmp_path, monkeypatch, request):
                 ).one()
             provider = SqliteDurableLifecycleStateProvider(
                 tmp_path / "store-b.sqlite3",
-                **(
-                    {"secret_key": secrets.token_hex(32)}
-                    if getattr(request, "param", None) == "freshness"
-                    else {}
-                ),
+                secret_key=secrets.token_hex(32),
             )
-            provider.set_readiness_state(
-                RestoreReadinessState.READY
-                if getattr(request, "param", None) in ("normal", "freshness")
-                else RestoreReadinessState.FAILED
+            from scripts.engineering.m13_bootstrap_customer_fixture import (
+                authorized_disposable_installation,
             )
+
+            await installation.enter_async_context(
+                authorized_disposable_installation(
+                    engine, provider, deployment_id="isolated-r1-test", environment="staging"
+                )
+            )
+            if getattr(request, "param", None) not in ("normal", "freshness"):
+                provider.set_readiness_state(RestoreReadinessState.FAILED)
             gate = RestoreReadinessGate(provider=provider, db_engine=engine)
             ledger_path = tmp_path / "operator-receipts.sqlite3"
             initialize_control_ledger(ledger_path)
@@ -121,6 +125,7 @@ async def real_recovery(tmp_path, monkeypatch, request):
             monkeypatch.setenv("WHITEPACT_OPERATOR_RECOVERY_TRUST_CONFIG", str(profile_path))
             yield engine, provider, gate, profile_path, private
         finally:
+            await installation.aclose()
             await engine.close()
 
 

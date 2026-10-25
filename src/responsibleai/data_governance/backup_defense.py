@@ -571,6 +571,16 @@ class SqliteDurableLifecycleStateProvider(CurrentLifecycleStateProvider):
             raise StoreBUnavailableError("CurrentLifecycleStateProvider is unavailable")
         conn = self._get_connection()
         try:
+            bootstrap_bound = conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' "
+                "AND name='bootstrap_installation_binding'"
+            ).fetchone()
+            if bootstrap_bound or os.environ.get("WHITEPACT_NONPRODUCTION_BOOTSTRAP_PROFILE"):
+                from scripts.engineering.m13_bootstrap_publication import (
+                    verify_isolated_bootstrap_binding,
+                )
+
+                verify_isolated_bootstrap_binding(self)
             cursor = conn.execute(
                 "SELECT state FROM durable_restore_readiness WHERE key = 'global'"
             )
@@ -594,9 +604,18 @@ class SqliteDurableLifecycleStateProvider(CurrentLifecycleStateProvider):
             if state == RestoreReadinessState.READY:
                 from responsibleai.data_governance.operator_recovery_control import (
                     assert_completed_binding,
+                    enforcement_required,
                 )
 
                 verified = assert_completed_binding(self)
+                if enforcement_required() and not bootstrap_bound and not verified:
+                    from responsibleai.data_governance.operator_recovery import (
+                        RecoveryAuthorizationError,
+                    )
+
+                    raise RecoveryAuthorizationError(
+                        "Hosted READY requires verified installation or recovery receipt"
+                    )
                 if self.requires_operator_recovery() and not verified:
                     from responsibleai.data_governance.operator_recovery import (
                         RecoveryAuthorizationError,
@@ -612,14 +631,41 @@ class SqliteDurableLifecycleStateProvider(CurrentLifecycleStateProvider):
     def set_readiness_state(self, state: RestoreReadinessState, updated_by: str = "") -> None:
         if not self._available:
             raise StoreBUnavailableError("CurrentLifecycleStateProvider is unavailable")
+        if state != RestoreReadinessState.READY:
+            # A bootstrap receipt cannot supersede a later recovery incident.
+            # Record that incident outside Store B before changing readiness.
+            conn = self._get_connection()
+            try:
+                bootstrap_bound = conn.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type='table' "
+                    "AND name='bootstrap_installation_binding'"
+                ).fetchone()
+            finally:
+                conn.close()
+            if bootstrap_bound:
+                from scripts.engineering.m13_bootstrap_publication import (
+                    fence_isolated_bootstrap_recovery,
+                )
+
+                fence_isolated_bootstrap_recovery(self)
         if state == RestoreReadinessState.READY:
             from responsibleai.data_governance.operator_recovery_control import (
                 assert_ready_write_authorized,
+                enforcement_required,
             )
 
             # First establishment remains distinct from recovery of a durable
             # non-READY state. Caller labels never confer operator authority.
-            if self.get_readiness_state() not in (None, RestoreReadinessState.READY):
+            current_state = self.get_readiness_state()
+            if current_state is None and enforcement_required():
+                from responsibleai.data_governance.operator_recovery import (
+                    RecoveryAuthorizationError,
+                )
+
+                raise RecoveryAuthorizationError(
+                    "Initial READY requires signed first-deployment bootstrap"
+                )
+            if current_state not in (None, RestoreReadinessState.READY):
                 assert_ready_write_authorized(self)
         now = datetime.now(UTC).isoformat()
         conn = self._get_connection()
@@ -913,6 +959,12 @@ class RestoreReadinessGate:
                 shared = self._provider.get_readiness_state()
                 if shared is not None:
                     return shared
+                from responsibleai.data_governance.operator_recovery_control import (
+                    enforcement_required,
+                )
+
+                if enforcement_required():
+                    return RestoreReadinessState.RESTORE_PENDING
             except RecoveryInProgressError:
                 return RestoreReadinessState.RECONCILING
             except Exception:
