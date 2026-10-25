@@ -571,6 +571,16 @@ class SqliteDurableLifecycleStateProvider(CurrentLifecycleStateProvider):
             raise StoreBUnavailableError("CurrentLifecycleStateProvider is unavailable")
         conn = self._get_connection()
         try:
+            bootstrap_bound = conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' "
+                "AND name='bootstrap_installation_binding'"
+            ).fetchone()
+            if bootstrap_bound or os.environ.get("WHITEPACT_NONPRODUCTION_BOOTSTRAP_PROFILE"):
+                from scripts.engineering.m13_bootstrap_publication import (
+                    verify_isolated_bootstrap_binding,
+                )
+
+                verify_isolated_bootstrap_binding(self)
             cursor = conn.execute(
                 "SELECT state FROM durable_restore_readiness WHERE key = 'global'"
             )
@@ -612,6 +622,23 @@ class SqliteDurableLifecycleStateProvider(CurrentLifecycleStateProvider):
     def set_readiness_state(self, state: RestoreReadinessState, updated_by: str = "") -> None:
         if not self._available:
             raise StoreBUnavailableError("CurrentLifecycleStateProvider is unavailable")
+        if state != RestoreReadinessState.READY:
+            # A bootstrap receipt cannot supersede a later recovery incident.
+            # Record that incident outside Store B before changing readiness.
+            conn = self._get_connection()
+            try:
+                bootstrap_bound = conn.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type='table' "
+                    "AND name='bootstrap_installation_binding'"
+                ).fetchone()
+            finally:
+                conn.close()
+            if bootstrap_bound:
+                from scripts.engineering.m13_bootstrap_publication import (
+                    fence_isolated_bootstrap_recovery,
+                )
+
+                fence_isolated_bootstrap_recovery(self)
         if state == RestoreReadinessState.READY:
             from responsibleai.data_governance.operator_recovery_control import (
                 assert_ready_write_authorized,

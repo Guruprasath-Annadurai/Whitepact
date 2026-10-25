@@ -68,7 +68,7 @@ jobs:
         if: ${{ !cancelled() && steps.environment.conclusion == 'success' }}
         run: |
           set +e
-          python scripts/engineering/m13_apex_customer_journey.py --report /tmp/sovereign-default.json
+          python scripts/engineering/m13_apex_customer_journey.py --authorized-disposable-bootstrap --report /tmp/sovereign-default.json
           result=$?
           set -e
           test "$result" = 2
@@ -76,7 +76,7 @@ jobs:
       - name: Genuine isolated development prototype customer journey
         if: ${{ !cancelled() && steps.environment.conclusion == 'success' }}
         run: |
-          python scripts/engineering/m13_apex_customer_journey.py --development-agent-prototype --report /tmp/sovereign-prototype.json
+          python scripts/engineering/m13_apex_customer_journey.py --authorized-disposable-bootstrap --development-agent-prototype --report /tmp/sovereign-prototype.json
           python -c 'import json; r=json.load(open("/tmp/sovereign-prototype.json")); assert len(r["stages"]) == 25 and all(s["status"] == "PASS" for s in r["stages"])'
       - name: Native containment qualification
         if: ${{ !cancelled() && steps.environment.conclusion == 'success' }}

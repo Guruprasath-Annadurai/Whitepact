@@ -160,7 +160,7 @@ def _profile(path):
         raise BootstrapRefusedError("Operator trust evidence unavailable") from exc
 
 
-def _verify(profile, manifest, signatures):
+def _verify(profile, manifest, signatures, *, now=None):
     if type(manifest) is not BootstrapManifest:
         raise BootstrapRefusedError("Bootstrap manifest required, not a recovery grant")
     payload = manifest.canonical_bytes()
@@ -173,7 +173,7 @@ def _verify(profile, manifest, signatures):
     ):
         if getattr(manifest, field) != profile[field]:
             raise BootstrapRefusedError("Cross-deployment bootstrap refused")
-    now = int(time.time())
+    now = int(time.time()) if now is None else now
     if manifest.created_at > now or manifest.expires_at <= now:
         raise BootstrapRefusedError("Bootstrap approval expired or not current")
     operators = profile["operators"]
@@ -228,7 +228,9 @@ def register_signed_new_installation(profile_path, manifest, signatures):
         descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
         os.close(descriptor)
     except OSError as exc:
-        raise BootstrapRefusedError("Installation registration exists or cannot be established") from exc
+        raise BootstrapRefusedError(
+            "Installation registration exists or cannot be established"
+        ) from exc
     with _registry(profile) as connection:
         connection.execute(
             "CREATE TABLE installation(id TEXT PRIMARY KEY,digest TEXT NOT NULL,manifest BLOB NOT NULL,state TEXT NOT NULL CHECK(state IN ('UNINITIALIZED','BOOTSTRAP_AUTHORIZED')),consumed_nonce TEXT UNIQUE)"
@@ -261,4 +263,6 @@ def consume_bootstrap_approval(profile_path, manifest, signatures):
 
 def require_ready_verified(profile_path):
     _profile(profile_path)
-    raise BootstrapRefusedError("Bootstrap publication and admission integration are not implemented")
+    raise BootstrapRefusedError(
+        "Bootstrap publication and admission integration are not implemented"
+    )
