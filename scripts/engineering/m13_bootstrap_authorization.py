@@ -34,6 +34,10 @@ class BootstrapRefusedError(ValueError):
     """No bootstrap publication or execution authority has been granted."""
 
 
+class BootstrapStoreIntegrityError(BootstrapRefusedError):
+    """Lifecycle integrity failed; never a READY or recovery authorization."""
+
+
 @dataclass(frozen=True)
 class BootstrapManifest:
     installation_id: str

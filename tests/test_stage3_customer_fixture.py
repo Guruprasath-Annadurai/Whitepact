@@ -9,7 +9,7 @@ from sqlalchemy import text
 
 from responsibleai.data_governance.backup_defense import RestoreReadinessState
 from tests.test_operator_recovery_postgres import real_recovery as real_recovery
-from tests.test_stage3_controller_postgres import controller as controller
+from tests.test_stage3_bootstrap_store_preflight import fresh_target as fresh_target
 
 
 @pytest.mark.asyncio
@@ -30,8 +30,10 @@ async def test_browser_fixture_never_resets_existing_readiness(real_recovery, mo
 
 
 @pytest.mark.asyncio
-async def test_fresh_browser_controller_enrollment_never_seeds_tenant_or_ready(controller):
-    engine = controller[0].engine
+async def test_fresh_browser_controller_enrollment_never_seeds_tenant_or_ready(fresh_target):
+    # A fresh installation target is not a second Store B substituted into an
+    # already bootstrapped controller's pinned custody context.
+    engine = fresh_target[0]
     with isolated_startup_store_b():
         async with isolated_provisioning_controller(
             engine.raw.url.render_as_string(hide_password=False)

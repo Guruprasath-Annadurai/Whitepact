@@ -255,11 +255,12 @@ def verify_isolated_bootstrap_binding(provider, *, profile_path=None):
         if Path(provider.path) != Path(profile["store_b_path"]):
             raise BootstrapRefusedError("Bootstrap Store B substituted")
         authorization = _profile(profile["authorization_profile"])
-        if (
-            store_b_identity(provider) != authorization["store_b_identity"]
-            or not provider.verify_integrity()
-        ):
-            raise BootstrapRefusedError("Bootstrap Store B identity or integrity changed")
+        if store_b_identity(provider) != authorization["store_b_identity"]:
+            raise BootstrapRefusedError("Bootstrap Store B identity changed")
+        if not provider.verify_integrity():
+            from scripts.engineering.m13_bootstrap_authorization import BootstrapStoreIntegrityError
+
+            raise BootstrapStoreIntegrityError("Bootstrap Store B integrity changed")
         with _registry(authorization) as external:
             row = external.execute(
                 "SELECT i.digest,i.manifest,i.state,i.consumed_nonce,p.signatures,p.phase,p.evidence "

@@ -576,11 +576,25 @@ class SqliteDurableLifecycleStateProvider(CurrentLifecycleStateProvider):
                 "AND name='bootstrap_installation_binding'"
             ).fetchone()
             if bootstrap_bound or os.environ.get("WHITEPACT_NONPRODUCTION_BOOTSTRAP_PROFILE"):
+                from scripts.engineering.m13_bootstrap_authorization import (
+                    BootstrapStoreIntegrityError,
+                )
                 from scripts.engineering.m13_bootstrap_publication import (
                     verify_isolated_bootstrap_binding,
                 )
 
-                verify_isolated_bootstrap_binding(self)
+                try:
+                    verify_isolated_bootstrap_binding(self)
+                except BootstrapStoreIntegrityError:
+                    # A persisted FAILED state is a denial projection, not an
+                    # integrity attestation. Keep it observable after damage;
+                    # verification and every READY path still refuse corruption.
+                    failed = conn.execute(
+                        "SELECT state FROM durable_restore_readiness WHERE key='global'"
+                    ).fetchone()
+                    if failed == (RestoreReadinessState.FAILED.value,):
+                        return RestoreReadinessState.FAILED
+                    raise
             cursor = conn.execute(
                 "SELECT state FROM durable_restore_readiness WHERE key = 'global'"
             )
