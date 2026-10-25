@@ -604,9 +604,18 @@ class SqliteDurableLifecycleStateProvider(CurrentLifecycleStateProvider):
             if state == RestoreReadinessState.READY:
                 from responsibleai.data_governance.operator_recovery_control import (
                     assert_completed_binding,
+                    enforcement_required,
                 )
 
                 verified = assert_completed_binding(self)
+                if enforcement_required() and not bootstrap_bound and not verified:
+                    from responsibleai.data_governance.operator_recovery import (
+                        RecoveryAuthorizationError,
+                    )
+
+                    raise RecoveryAuthorizationError(
+                        "Hosted READY requires verified installation or recovery receipt"
+                    )
                 if self.requires_operator_recovery() and not verified:
                     from responsibleai.data_governance.operator_recovery import (
                         RecoveryAuthorizationError,
@@ -642,11 +651,21 @@ class SqliteDurableLifecycleStateProvider(CurrentLifecycleStateProvider):
         if state == RestoreReadinessState.READY:
             from responsibleai.data_governance.operator_recovery_control import (
                 assert_ready_write_authorized,
+                enforcement_required,
             )
 
             # First establishment remains distinct from recovery of a durable
             # non-READY state. Caller labels never confer operator authority.
-            if self.get_readiness_state() not in (None, RestoreReadinessState.READY):
+            current_state = self.get_readiness_state()
+            if current_state is None and enforcement_required():
+                from responsibleai.data_governance.operator_recovery import (
+                    RecoveryAuthorizationError,
+                )
+
+                raise RecoveryAuthorizationError(
+                    "Initial READY requires signed first-deployment bootstrap"
+                )
+            if current_state not in (None, RestoreReadinessState.READY):
                 assert_ready_write_authorized(self)
         now = datetime.now(UTC).isoformat()
         conn = self._get_connection()
@@ -940,6 +959,12 @@ class RestoreReadinessGate:
                 shared = self._provider.get_readiness_state()
                 if shared is not None:
                     return shared
+                from responsibleai.data_governance.operator_recovery_control import (
+                    enforcement_required,
+                )
+
+                if enforcement_required():
+                    return RestoreReadinessState.RESTORE_PENDING
             except RecoveryInProgressError:
                 return RestoreReadinessState.RECONCILING
             except Exception:

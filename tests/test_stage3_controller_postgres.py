@@ -44,20 +44,27 @@ async def controller(tmp_path, monkeypatch, request):
 
 @asynccontextmanager
 async def isolated_controller_context(tmp_path, monkeypatch, prefix="wp_stage3_controller"):
-    """Share genuine disposable provisioning setup with standalone reproducers.
-
-    This retains the existing component READY fixture. It is not a bootstrap
-    receipt or a strict-default customer acceptance environment.
-    """
+    """Use signed installation in hosted mode, not a direct initial READY write."""
     monkeypatch.setenv("WHITEPACT_ENV", "staging")
     async for url in isolated_pg_url(prefix):
         await _run_alembic(_find_alembic_ini(), _migration_env(url), "upgrade", "0067")
         engine = create_engine(url)
+        from contextlib import AsyncExitStack
+
+        installation = AsyncExitStack()
         try:
             provider = SqliteDurableLifecycleStateProvider(
                 tmp_path / "b.sqlite3", secret_key=secrets.token_hex(32)
             )
-            provider.set_readiness_state(RestoreReadinessState.READY)
+            from scripts.engineering.m13_bootstrap_customer_fixture import (
+                authorized_disposable_installation,
+            )
+
+            await installation.enter_async_context(
+                authorized_disposable_installation(
+                    engine, provider, deployment_id="stage3-isolated", environment="staging"
+                )
+            )
             key = Ed25519PrivateKey.generate()
             async with engine.raw.connect() as connection:
                 pg = await postgres_identity(connection)
@@ -85,6 +92,7 @@ async def isolated_controller_context(tmp_path, monkeypatch, prefix="wp_stage3_c
                 csrf,
             )
         finally:
+            await installation.aclose()
             await engine.close()
 
 

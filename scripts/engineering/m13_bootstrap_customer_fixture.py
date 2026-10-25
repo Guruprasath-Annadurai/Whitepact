@@ -41,7 +41,9 @@ def _write(path, value):
 
 
 @asynccontextmanager
-async def authorized_disposable_installation(engine, provider, *, deployment_id):
+async def authorized_disposable_installation(
+    engine, provider, *, deployment_id, environment="development"
+):
     with tempfile.TemporaryDirectory(prefix="wp-bootstrap-operators-") as directory:
         root = Path(directory).resolve()
         async with engine.raw.connect() as connection:
@@ -52,7 +54,7 @@ async def authorized_disposable_installation(engine, provider, *, deployment_id)
             "purpose": "NONPRODUCTION_BOOTSTRAP_QUALIFICATION",
             "installation_id": secrets.token_hex(32),
             "deployment_id": deployment_id,
-            "environment": "development",
+            "environment": environment,
             "postgres_identity": identity,
             "store_b_identity": store_b_identity(provider),
             "registry": str(root / "independent-installation.sqlite3"),
@@ -95,7 +97,7 @@ async def authorized_disposable_installation(engine, provider, *, deployment_id)
         manifest = BootstrapManifest(
             installation_id=authorization["installation_id"],
             deployment_id=deployment_id,
-            environment="development",
+            environment=environment,
             postgres_identity=identity,
             store_b_identity=authorization["store_b_identity"],
             evidence_digest=publication_digest(evidence, publication),

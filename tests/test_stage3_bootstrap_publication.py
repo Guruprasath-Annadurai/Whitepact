@@ -31,12 +31,62 @@ from scripts.engineering.m13_bootstrap_publication import (
 )
 
 from responsibleai.data_governance.backup_defense import (
+    RestoreReadinessGate,
     RestoreReadinessState,
     SqliteDurableLifecycleStateProvider,
 )
 from responsibleai.isolation.container_backend import DockerContainerBackend
 from responsibleai.isolation.durable_intent import daemon_identity
 from tests.test_stage3_bootstrap_store_preflight import fresh_target  # noqa: F401
+
+
+@pytest.mark.parametrize("label", ["", "admin", "signed-isolated-bootstrap:unverified"])
+def test_unbound_hosted_first_ready_is_denied(tmp_path, monkeypatch, label):
+    from responsibleai.data_governance.operator_recovery import RecoveryAuthorizationError
+    from responsibleai.data_governance.operator_recovery_control import enforcement_required
+
+    monkeypatch.setenv("WHITEPACT_ENV", "staging")
+    monkeypatch.delenv("WHITEPACT_ALLOW_UNISOLATED_EXECUTION", raising=False)
+    provider = SqliteDurableLifecycleStateProvider(
+        tmp_path / "unbound.sqlite3", secret_key=secrets.token_hex(32)
+    )
+    assert enforcement_required()
+    with pytest.raises(RecoveryAuthorizationError, match="Initial READY requires signed"):
+        provider.set_readiness_state(RestoreReadinessState.READY, updated_by=label)
+    assert provider.get_readiness_state() is None
+    assert provider.list_all() == []
+
+
+def test_initial_gate_hint_is_not_hosted_installation_authority(tmp_path, monkeypatch):
+    monkeypatch.setenv("WHITEPACT_ENV", "staging")
+    monkeypatch.delenv("WHITEPACT_ALLOW_UNISOLATED_EXECUTION", raising=False)
+    provider = SqliteDurableLifecycleStateProvider(tmp_path / "gate.sqlite3")
+    gate = RestoreReadinessGate(initial_state=RestoreReadinessState.READY, provider=provider)
+    assert gate.state == RestoreReadinessState.RESTORE_PENDING
+    assert not gate.is_admitted()
+
+
+def test_unbound_local_ready_cannot_be_promoted_into_hosted_authority(tmp_path, monkeypatch):
+    from responsibleai.data_governance.operator_recovery import RecoveryAuthorizationError
+
+    monkeypatch.setenv("WHITEPACT_ENV", "staging")
+    monkeypatch.setenv("WHITEPACT_ALLOW_UNISOLATED_EXECUTION", "1")
+    provider = SqliteDurableLifecycleStateProvider(tmp_path / "legacy.sqlite3")
+    provider.set_readiness_state(RestoreReadinessState.READY)
+    monkeypatch.delenv("WHITEPACT_ALLOW_UNISOLATED_EXECUTION")
+    with pytest.raises(RecoveryAuthorizationError, match="verified installation"):
+        provider.get_readiness_state()
+
+
+def test_empty_bootstrap_marker_is_not_a_completed_receipt(tmp_path, monkeypatch):
+    monkeypatch.setenv("WHITEPACT_ENV", "staging")
+    provider = SqliteDurableLifecycleStateProvider(tmp_path / "empty-marker.sqlite3")
+    with sqlite3.connect(provider.path) as store:
+        store.execute(
+            "CREATE TABLE bootstrap_installation_binding(id INTEGER PRIMARY KEY,profile_path TEXT,digest TEXT)"
+        )
+    with pytest.raises(BootstrapRefusedError, match="binding missing"):
+        provider.get_readiness_state()
 
 
 def _crash_after_store_commit(url, store_path, store_key, profile_path, manifest, signatures):

@@ -6,6 +6,7 @@ import os
 import sqlite3
 
 import pytest
+from scripts.engineering.m13_bootstrap_customer_fixture import authorized_disposable_installation
 
 from responsibleai.data_governance.backup_defense import (
     RestoreQuarantineError,
@@ -17,6 +18,7 @@ from responsibleai.data_governance.backup_defense import (
     set_restore_readiness_gate,
 )
 from responsibleai.data_governance.operator_recovery import RecoveryAuthorizationError
+from tests.test_stage3_bootstrap_store_preflight import fresh_target as fresh_target
 
 
 def test_isolated_runtime_without_store_b_denies_initial_admission(monkeypatch):
@@ -47,7 +49,7 @@ def test_fresh_harness_has_durable_store_b_but_cannot_clear_failure(monkeypatch)
             assert gate.provider is not None
             assert gate.provider.verify_integrity()
             assert gate.provider.get_readiness_state() is None
-            assert gate.state == RestoreReadinessState.READY
+            assert gate.state == RestoreReadinessState.RESTORE_PENDING
             gate.set_state(RestoreReadinessState.FAILED)
             with pytest.raises(RecoveryAuthorizationError):
                 gate.set_state(RestoreReadinessState.READY)
@@ -89,20 +91,28 @@ def test_harness_restores_prior_quarantine_and_environment_on_error(monkeypatch,
 
 
 @pytest.mark.parametrize("damage", ["missing", "corrupt"])
-def test_store_b_loss_after_initial_startup_never_reopens_admission(monkeypatch, tmp_path, damage):
+@pytest.mark.asyncio
+async def test_store_b_loss_after_initial_startup_never_reopens_admission(
+    monkeypatch, tmp_path, damage, fresh_target
+):
     monkeypatch.setenv("WHITEPACT_ENV", "development")
     monkeypatch.delenv("WHITEPACT_ALLOW_UNISOLATED_EXECUTION", raising=False)
-    provider = SqliteDurableLifecycleStateProvider(tmp_path / "store-b.sqlite3")
-    gate = RestoreReadinessGate(initial_state=RestoreReadinessState.READY, provider=provider)
-    assert gate.is_admitted()
-    # Only this disposable fixture file is damaged, never a runtime Store B.
-    if damage == "missing":
-        provider.path.unlink()
-    else:
-        provider.path.write_bytes(b"invalid disposable database")
-    assert gate.state == RestoreReadinessState.FAILED
-    with pytest.raises(RestoreQuarantineError):
-        gate.assert_traffic_admitted()
-    with pytest.raises((RecoveryAuthorizationError, sqlite3.DatabaseError, StoreBUnavailableError)):
-        gate.set_state(RestoreReadinessState.READY)
-    assert gate.state == RestoreReadinessState.FAILED
+    engine, provider, _, _ = fresh_target
+    async with authorized_disposable_installation(
+        engine, provider, deployment_id="startup-loss-fixture", environment="development"
+    ):
+        gate = RestoreReadinessGate(initial_state=RestoreReadinessState.READY, provider=provider)
+        assert gate.is_admitted()
+        # Only this disposable fixture file is damaged, never a runtime Store B.
+        if damage == "missing":
+            provider.path.unlink()
+        else:
+            provider.path.write_bytes(b"invalid disposable database")
+        assert gate.state == RestoreReadinessState.FAILED
+        with pytest.raises(RestoreQuarantineError):
+            gate.assert_traffic_admitted()
+        with pytest.raises(
+            (RecoveryAuthorizationError, sqlite3.DatabaseError, StoreBUnavailableError)
+        ):
+            gate.set_state(RestoreReadinessState.READY)
+        assert gate.state == RestoreReadinessState.FAILED

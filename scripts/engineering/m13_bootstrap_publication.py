@@ -247,7 +247,7 @@ def verify_isolated_bootstrap_binding(provider, *, profile_path=None):
             else None
         )
         pinned = profile_path or os.environ.get(PIN)
-        if not binding and not pinned:
+        if not exists and not pinned:
             return False
         if not binding or (pinned and Path(pinned).resolve() != Path(binding[0])):
             raise BootstrapRefusedError("Bootstrap binding missing or substituted")
