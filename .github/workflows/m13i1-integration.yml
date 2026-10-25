@@ -177,6 +177,23 @@ jobs:
           python -m pytest tests/test_m13_apex_origin.py tests/test_enterprise_layer2_identity_security.py tests/test_enterprise_security_branch_campaign.py tests/test_enterprise_security_branch_campaign_batch2.py -o addopts='' --tb=short -ra
           python -c 'import json; r=json.load(open("/tmp/m13apex-origin-skips.json")); assert r["exit_status"] == 0 and r["skip_count"] == 0, r'
 
+      - name: Isolated Persona synthetic protocol and HMAC denial regressions
+        if: ${{ !cancelled() }}
+        env:
+          PYTHONPATH: src:sdk/python:.
+          WHITEPACT_QUALIFICATION_SKIP_LOG: /tmp/m13-persona-skips.json
+        run: |
+          python scripts/engineering/m13_pg16_test_runner.py tests/test_stage3_persona_sandbox.py tests/test_enterprise_layer1_remediation.py::test_webhook_forged_modified_replay_stale_wrong_binding tests/test_enterprise_layer1_remediation.py::test_webhook_secret_production_preflight tests/test_enterprise_saas_layer1.py::test_forged_replay_and_cross_tenant_verification_callbacks --junitxml=/tmp/m13-persona.xml
+          python -c 'import json; r=json.load(open("/tmp/m13-persona-skips.json")); assert r["exit_status"] == 0 and r["skip_count"] == 0, r'
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: ${{ always() }}
+        with:
+          name: persona-synthetic-protocol-${{ matrix.python }}-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            /tmp/m13-persona.xml
+            /tmp/m13-persona-skips.json
+          if-no-files-found: error
+
   real-customer-journey:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
