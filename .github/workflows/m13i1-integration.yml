@@ -181,6 +181,7 @@ jobs:
         if: ${{ !cancelled() }}
         env:
           PYTHONPATH: src:sdk/python:.
+          WHITEPACT_TEST_PG_ADMIN_URL: postgresql://wp:wp@127.0.0.1:55432/postgres
           WHITEPACT_QUALIFICATION_SKIP_LOG: /tmp/m13-persona-skips.json
         run: |
           python scripts/engineering/m13_pg16_test_runner.py tests/test_stage3_persona_sandbox.py tests/test_enterprise_layer1_remediation.py::test_webhook_forged_modified_replay_stale_wrong_binding tests/test_enterprise_layer1_remediation.py::test_webhook_secret_production_preflight tests/test_enterprise_saas_layer1.py::test_forged_replay_and_cross_tenant_verification_callbacks --junitxml=/tmp/m13-persona.xml

@@ -10,6 +10,7 @@ import sqlite3
 import time
 from dataclasses import replace
 from datetime import UTC, datetime
+from pathlib import Path
 
 import httpx
 import pytest
@@ -29,6 +30,28 @@ def signed(body, secret, timestamp=None):
     stamp = str(int(time.time()) if timestamp is None else timestamp)
     digest = hmac.new(secret, stamp.encode() + b"." + body, hashlib.sha256).hexdigest()
     return f"t={stamp},v1={digest}"
+
+
+def test_hosted_persona_step_has_explicit_disposable_pg16_target():
+    """The strict PG16 runner must not rely on another pytest process's env."""
+    import yaml
+
+    workflow = yaml.safe_load(
+        (Path(__file__).parents[1] / ".github/workflows/m13i1-integration.yml").read_text()
+    )
+    job = workflow["jobs"]["independent-security"]
+    step = next(
+        value
+        for value in job["steps"]
+        if value.get("name") == "Isolated Persona synthetic protocol and HMAC denial regressions"
+    )
+    assert step["env"].get("WHITEPACT_TEST_PG_ADMIN_URL") == (
+        "postgresql://wp:wp@127.0.0.1:55432/postgres"
+    )
+    assert job["services"]["postgres"]["ports"] == ["55432:5432"]
+    assert "postgres:16-alpine@sha256:" in job["services"]["postgres"]["image"]
+    assert "--diagnostic-no-coverage" not in step["run"]
+    assert "skip_count" in step["run"]
 
 
 @pytest.fixture
