@@ -223,7 +223,7 @@ jobs:
           ruff check scripts/engineering/m13i3_browser_journey.py tests/test_m13i3_browser_evidence.py
           ruff format --check scripts/engineering/m13i3_browser_journey.py tests/test_m13i3_browser_evidence.py
           python -m pytest tests/test_m13i2_customer_journey.py tests/test_m13i3_browser_evidence.py tests/test_m13i3_provisioning_context.py -o addopts='' --tb=short -ra
-          python scripts/engineering/m13i3_browser_journey.py --report /tmp/m13i3-browser-evidence.json
+          python scripts/engineering/m13i3_browser_journey.py --authorized-disposable-bootstrap --report /tmp/m13i3-browser-evidence.json
       - name: Attempt preserved APEX 25-stage customer journey independently of legacy gate
         if: ${{ !cancelled() }}
         env:

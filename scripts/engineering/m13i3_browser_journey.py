@@ -63,7 +63,7 @@ def validate_report(result: dict) -> None:
         raise ValueError("Unexecuted privileged stages must remain explicit")
 
 
-async def attempt() -> dict:
+async def attempt(*, authorized_bootstrap: bool = False) -> dict:
     mail = []
     delivery_secret = secrets.token_urlsafe(32)
     receipt_secret = secrets.token_urlsafe(32)
@@ -102,7 +102,9 @@ async def attempt() -> dict:
             }
             with isolated_startup_store_b(), configured_settings(changes):
                 async with (
-                    isolated_provisioning_controller(database),
+                    isolated_provisioning_controller(
+                        database, authorized_bootstrap=authorized_bootstrap
+                    ),
                     serve(dashboard.app) as origin,
                 ):
                     config = {
@@ -153,9 +155,10 @@ async def attempt() -> dict:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--report", type=Path, help="Write redacted structured runtime evidence")
+    parser.add_argument("--authorized-disposable-bootstrap", action="store_true")
     args = parser.parse_args()
     try:
-        result = asyncio.run(attempt())
+        result = asyncio.run(attempt(authorized_bootstrap=args.authorized_disposable_bootstrap))
     except Exception as error:
         result = {
             "acceptance": "BLOCKED",
