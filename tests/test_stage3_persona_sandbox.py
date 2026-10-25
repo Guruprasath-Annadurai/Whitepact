@@ -18,9 +18,11 @@ from sqlalchemy import text
 
 from responsibleai.data_governance.tenant_controller import postgres_identity
 from responsibleai.enterprise.persona_sandbox import (
+    ISSUER_TRUST,
     PersonaSandboxAdapter,
     PersonaSandboxPolicy,
     PersonaSandboxRefusedError,
+    evaluate_sandbox_nonproduction_credential,
     verify_persona_signature,
 )
 from tests.test_stage3_controller_postgres import isolated_controller_context
@@ -441,3 +443,142 @@ async def test_concurrent_duplicate_is_consumed_once(persona):
     assert config["calls"].count(("GET", "/api/v1/inquiries/inq_SYNTHETICfixture")) == 1
     with adapter._ledger() as store:
         assert store.execute("SELECT count(*) FROM events").fetchone() == (1,)
+
+
+def _enrolled_receipt(**overrides):
+    receipt = {
+        "inquiry_id": "inq_enrolledfixture",
+        "customer_id": "customer",
+        "tenant_id": "tenant",
+        "outcome": "SANDBOX_APPROVED",
+        "provenance": "SANDBOX_SIMULATED",
+        "provider": "persona-sandbox",
+        "provider_environment_id": "env_sandboxfixture",
+        "deployment_id": "disposable-persona-protocol",
+        "database_identity": "a" * 64,
+        "policy_version": "fixture-policy-v1",
+        "audience": "whitepact:persona-sandbox-integration:v1",
+        "issuer_trust": ISSUER_TRUST,
+        "canonical_issuance_allowed": False,
+        "evidence_mode": "PROVIDER_NETWORK",
+    }
+    receipt.update(overrides)
+    return receipt
+
+
+def test_sandbox_module_has_no_canonical_identity_writer():
+    source = Path(__file__).parents[1] / "src/responsibleai/enterprise/persona_sandbox.py"
+    text_source = source.read_text()
+    assert "verification_status" not in text_source
+    assert "apply_provider_event" not in text_source
+    assert "web_users" not in text_source
+
+
+@pytest.mark.asyncio
+async def test_synthetic_approval_cannot_withhold_or_issue_a_credential(persona, monkeypatch):
+    adapter, config, event, secret, *_ = persona
+    await start(persona)
+    config["status"] = "approved"
+    body = event()
+    receipt = await adapter.handle_webhook(body, signed(body, secret))
+    assert receipt["issuer_trust"] == ISSUER_TRUST
+    decision = evaluate_sandbox_nonproduction_credential(
+        receipt,
+        target_environment="DEVELOPMENT",
+        enrolled_policy_version=adapter.policy.policy_version,
+    )
+    assert decision.disposition == "DENIED"
+    assert decision.reason == "SYNTHETIC_EVIDENCE_IS_NOT_ISSUER_TRUST"
+    assert decision.production_valid is False
+    assert decision.canonical_identity_written is False
+    assert decision.credential_material is None
+    monkeypatch.setenv("WHITEPACT_ENV", "production")
+    production = evaluate_sandbox_nonproduction_credential(
+        _enrolled_receipt(),
+        target_environment="DEVELOPMENT",
+        enrolled_policy_version="fixture-policy-v1",
+    )
+    assert production.reason == "SANDBOX_CREDENTIAL_INVALID_FOR_PRODUCTION"
+    assert production.credential_material is None
+
+
+@pytest.mark.parametrize(
+    ("target", "overrides", "env", "reason"),
+    [
+        ("PRODUCTION", {}, "development", "SANDBOX_CREDENTIAL_INVALID_FOR_PRODUCTION"),
+        ("STAGING", {}, "development", "SANDBOX_CREDENTIAL_INVALID_OUTSIDE_DEVELOPMENT"),
+        ("DEVELOPMENT", {}, "staging", "SANDBOX_CREDENTIAL_INVALID_OUTSIDE_DEVELOPMENT"),
+        (
+            "DEVELOPMENT",
+            {"evidence_mode": "SYNTHETIC_PROTOCOL_FIXTURE"},
+            "development",
+            "SYNTHETIC_EVIDENCE_IS_NOT_ISSUER_TRUST",
+        ),
+        (
+            "DEVELOPMENT",
+            {"canonical_issuance_allowed": True},
+            "development",
+            "SANDBOX_RECEIPT_IS_NOT_CANONICAL_IDENTITY",
+        ),
+        (
+            "DEVELOPMENT",
+            {"provenance": "PROVIDER_ASSERTED"},
+            "development",
+            "SANDBOX_RECEIPT_IS_NOT_CANONICAL_IDENTITY",
+        ),
+        (
+            "DEVELOPMENT",
+            {"policy_version": "other-policy-v1"},
+            "development",
+            "SANDBOX_POLICY_VERSION_MISMATCH",
+        ),
+        (
+            "DEVELOPMENT",
+            {"provider_environment_id": "env_production"},
+            "development",
+            "SANDBOX_ISSUER_TRUST_MISMATCH",
+        ),
+        (
+            "DEVELOPMENT",
+            {"database_identity": "production" + ("a" * 54)},
+            "development",
+            "SANDBOX_ISSUER_TRUST_MISMATCH",
+        ),
+        (
+            "DEVELOPMENT",
+            {"outcome": "PENDING"},
+            "development",
+            "SANDBOX_APPROVAL_REQUIRED_BEFORE_WITHHOLD",
+        ),
+    ],
+)
+def test_sandbox_nonproduction_path_denies_untrusted_targets(
+    monkeypatch, target, overrides, env, reason
+):
+    monkeypatch.setenv("WHITEPACT_ENV", env)
+    decision = evaluate_sandbox_nonproduction_credential(
+        _enrolled_receipt(**overrides),
+        target_environment=target,
+        enrolled_policy_version="fixture-policy-v1",
+    )
+    assert decision.disposition == "DENIED"
+    assert decision.reason == reason
+    assert decision.production_valid is False
+    assert decision.credential_material is None
+
+
+def test_enrolled_provider_receipt_is_withheld_and_not_a_credential(monkeypatch):
+    monkeypatch.setenv("WHITEPACT_ENV", "development")
+    decision = evaluate_sandbox_nonproduction_credential(
+        _enrolled_receipt(),
+        target_environment="DEVELOPMENT",
+        enrolled_policy_version="fixture-policy-v1",
+    )
+    assert decision.disposition == "WITHHELD_PENDING_ENROLLED_PROVIDER"
+    assert decision.reason == "ENROLLED_PROVIDER_RECONCILIATION_REQUIRED"
+    assert decision.production_valid is False
+    assert decision.canonical_identity_written is False
+    assert decision.credential_material is None
+    assert decision.audience == "whitepact:persona-sandbox-integration:v1"
+    assert decision.issuer_trust == ISSUER_TRUST
+    assert decision.policy_version == "fixture-policy-v1"

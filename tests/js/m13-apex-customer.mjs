@@ -124,7 +124,7 @@ try {
   const stepup = expect(await call(`${authority}/webauthn/challenge`, "POST", { action: "COMPLETE_ROOT_BOOTSTRAP", operation_digest: digest }), 200);
   assert.equal(stepup.origin, origin.origin); assert.equal(stepup.rp_id, origin.hostname);
   const proof = sign(null, Buffer.from(`WP_ROOT_POP:${org}:${boot.nonce}:${tokenHash}`), rootKey.privateKey).toString("base64url");
-  const consent = { scope_description: "Harmless local APEX read only", purpose: "Independent ephemeral customer qualification", allowed_action_types: [config.developmentAgentPrototype ? "rai_policy_check" : "apex.local.read"], allowed_targets: [config.developmentAgentPrototype ? "rai_policy_check" : "apex:local-read"], consent_method: "API_AUTHENTICATED_REQUEST" };
+  const consent = { scope_description: "Harmless local APEX policy check", purpose: "Independent ephemeral customer qualification", allowed_action_types: ["rai_policy_check"], allowed_targets: ["rai_policy_check"], consent_method: "API_AUTHENTICATED_REQUEST" };
   response = await call(`${authority}/bootstrap/complete`, "POST", { token: boot.token, nonce: boot.nonce, root_public_key: publicKey, root_signature: proof, webauthn_assertion: await assertion(stepup, registration.credential_id), ...consent });
   const established = expect(response, 200, response.value?.status === "BOOTSTRAPPED" && response.value?.passkey_verified === true && response.value?.proof_of_possession_verified === true);
   mark(current, "PASS"); current = "root_activation";
@@ -172,11 +172,72 @@ try {
     const credential = expect(credentialAdmission, 201);
     assert.ok(credential.api_key); issuedKeyId = credential.id ?? credential.key_id;
     assert.ok(issuedKeyId);
+    const intent = { name: "rai_policy_check", arguments: { text: "Harmless local customer evaluation", policy: { blocked_topics: ["prohibited-content"] } }, purpose: consent.purpose };
     const intentAdmission = await call("/api/governance/intent-contracts", "POST", { agent_id: agent.agent_id, goal: consent.purpose, max_value_usd: 0, allowed_targets: consent.allowed_targets, allowed_action_types: consent.allowed_action_types, expires_in_minutes: 2 }, credential.api_key);
     if ([401, 403].includes(intentAdmission.status)) mark(current, "BLOCKED", { reason: "AGENT_BOUND_INTENT_ADMISSION_NOT_QUALIFIED", http_status: intentAdmission.status });
     else {
-      expect(intentAdmission, 201);
-      mark(current, "BLOCKED", { reason: "INTENT_NARROWING_IS_NOT_CUSTOMER_JUDGMENT_OR_EXECUTION_GRANT", http_status: intentAdmission.status });
+      const declared = expect(intentAdmission, 201);
+      assert.equal(declared.agent_id, agent.agent_id);
+      const judgment = await call("/api/governance/tools/call", "POST", { name: intent.name, arguments: intent.arguments, purpose: intent.purpose, agent_id: agent.agent_id }, credential.api_key);
+      const approvalId = judgment.value?.approval_id;
+      if (judgment.status !== 200 || judgment.value?.error !== "governance_approval_required" || !approvalId) {
+        mark(current, "FAIL", { http_status: judgment.status, error: judgment.value?.error ?? "AGENT_BOUND_JUDGMENT_NOT_RECORDED" });
+        throw new Error("Customer contract boundary");
+      }
+      mark(current, "PASS", { approval_id: approvalId, authentication: "api_key", agent_id: agent.agent_id, intent_contract_id: declared.contract_id });
+      current = "human_approval";
+      const approval = expect(await call(`/api/web/approvals/${approvalId}`), 200);
+      assert.equal(approval.requester, agent.agent_id);
+      assert.equal(approval.organization_id, agent.organization_id);
+      assert.ok(approval.action_digest);
+      const resolved = expect(await call(`/api/web/approvals/${approvalId}/resolve`, "POST", { outcome: "APPROVED", notes: "Explicit human approval of harmless local tool" }), 200);
+      assert.equal(resolved.status, "APPROVED");
+      mark(current, "PASS", { approval_id: approvalId, action_digest: approval.action_digest });
+      current = "execution_grant";
+      const executed = expect(await call(`/api/web/approvals/${approvalId}/execute`, "POST"), 200);
+      assert.equal(executed.execution_status, "SUCCEEDED");
+      assert.equal(executed.reconciliation_required, false);
+      assert.ok(executed.evidence_id && executed.outcome_id);
+      const evidence = expect(await call(`/api/web/evidence/${executed.evidence_id}`), 200);
+      assert.equal(evidence.approval_id, approvalId);
+      assert.equal(evidence.agent_id, agent.agent_id);
+      assert.equal(evidence.identity_id, agent.agent_id);
+      assert.equal(evidence.authentication_method, "api_key");
+      assert.ok(evidence.execution_authorization_id && evidence.execution_nonce_reference);
+      mark(current, "PASS", { permit_type: "ExecutionAuthorization", authorization_id: evidence.execution_authorization_id, nonce_reference: evidence.execution_nonce_reference, evidence_id: executed.evidence_id });
+      current = "controlled_execution";
+      mark(current, "PASS", { tool: intent.name, evidence_id: executed.evidence_id, outcome_id: executed.outcome_id, execution_status: executed.execution_status });
+      current = "evidence_verification";
+      const verified = expect(await call("/api/web/evidence/verify"), 200);
+      assert.equal(verified.chain_intact, true);
+      assert.equal(verified.cryptographically_signed, false);
+      assert.equal(evidence.organization_id, agent.organization_id);
+      assert.equal(evidence.action_type, intent.name);
+      assert.ok(evidence.request_fingerprint && evidence.arguments_fingerprint);
+      mark(current, "PASS", { evidence_id: evidence.evidence_id, local_chain_status: verified.status, independently_witnessed: false });
+      const before = expect(await call("/api/web/evidence?limit=100"), 200);
+      current = "revocation";
+      const disabled = expect(await call(`${authority}/agents/${agent.agent_id}/disable`, "POST", { reason: "Actual customer authority revocation" }), 200);
+      assert.equal(disabled.status, "DISABLED");
+      assert.equal(disabled.agent_id, agent.agent_id);
+      assert.ok(Array.isArray(disabled.revoked_delegations) && disabled.revoked_delegations.length >= 1);
+      const inventory = expect(await call(`${authority}/agents`), 200);
+      const persisted = inventory.agents.find(item => item.agent_id === agent.agent_id);
+      assert.equal(persisted.lifecycle_state, "DISABLED");
+      assert.equal(persisted.has_active_delegation, false);
+      mark(current, "PASS", { agent_id: agent.agent_id, lifecycle_state: persisted.lifecycle_state, revoked_delegations: disabled.revoked_delegations, revocation_epoch: disabled.revocation_epoch });
+      current = "post_revocation_execution_attempt";
+      const denied = await call("/api/governance/tools/call", "POST", { name: intent.name, arguments: intent.arguments, purpose: intent.purpose, agent_id: agent.agent_id }, credential.api_key);
+      assert.notEqual(denied.value?.error, undefined);
+      assert.notEqual(denied.value?.approval_id, approvalId);
+      assert.ok(denied.status === 404 || denied.value?.error === "governance_denied" || denied.value?.proceed !== true);
+      mark(current, "PASS", { http_status: denied.status, error: denied.value?.error ?? "agent_not_active" });
+      current = "post_revocation_denial";
+      const replay = await call(`/api/web/approvals/${approvalId}/execute`, "POST");
+      assert.equal(replay.status, 409);
+      const after = expect(await call("/api/web/evidence?limit=100"), 200);
+      assert.deepEqual(after.evidence.map(item => item.evidence_id), before.evidence.map(item => item.evidence_id));
+      mark(current, "PASS", { http_status: denied.status, approval_replay_status: replay.status, evidence_unchanged: true });
     }
   }
   }
