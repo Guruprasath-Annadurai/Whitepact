@@ -14,12 +14,13 @@ authorized.
 | Item | Value |
 |---|---|
 | Audited baseline | `b00e2a39aa47ae24e6a2a1de4d3f2d6b6ea81c15` |
+| Implementation commit | `89b539e89b17650d7b1a0123fd1a7f3ea2c264c4` |
 | Baseline tree | `ee9d89de0f161c8189ea585ad5d8c056e692d7ae` |
 | Baseline parent | `c9fb547497156ac363735c8056ebde2c85b4b4be` |
 | Branch | `cursor/m13-i1-customer-closure-0f76` |
 | Base for review | `codex/m13-secure-antigravity-integration` |
 | Draft PR #231 | unchanged Codex head; this work is a separate branch |
-| Local journey git stamp | baseline SHA, `clean: false`, because the ceremony ran before this commit |
+| Local journey git stamp | baseline SHA, `clean: false`, because the ceremony ran on the dirty worktree before `89b539e8` |
 | Codex R1 / Fortress | not modified |
 
 Python 3.12.3 and PostgreSQL 16 on `127.0.0.1:5432` produced the local receipts.
