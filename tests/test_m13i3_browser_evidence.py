@@ -3,7 +3,11 @@
 """Evidence invariants only; these do not simulate customer authentication."""
 
 import pytest
-from scripts.engineering.m13i3_browser_journey import validate_report
+from scripts.engineering.m13i3_browser_journey import (
+    WEBAUTHN_COMPONENT_PHASES,
+    validate_report,
+    webauthn_component_qualified,
+)
 
 
 def report():
@@ -44,3 +48,27 @@ def test_duplicate_phases_cannot_conceal_failed_verification():
     )
     with pytest.raises(ValueError, match="identity"):
         validate_report(value_report)
+
+
+def test_component_qualification_never_promotes_full_customer_acceptance():
+    value_report = report()
+    value_report["phases"] = [
+        {"phase": name, "result": "CONFIRMED"} for name in sorted(WEBAUTHN_COMPONENT_PHASES)
+    ]
+    assert webauthn_component_qualified(value_report)
+    assert value_report["acceptance"] == "BLOCKED"
+    assert "controlled_execution" in value_report["not_executed"]
+
+
+@pytest.mark.parametrize("missing", sorted(WEBAUTHN_COMPONENT_PHASES))
+def test_component_requires_every_real_ceremony_phase(missing):
+    value_report = report()
+    value_report["phases"] = [
+        {"phase": name, "result": "CONFIRMED"}
+        for name in sorted(WEBAUTHN_COMPONENT_PHASES - {missing})
+    ]
+    try:
+        qualified = webauthn_component_qualified(value_report)
+    except ValueError:
+        qualified = False
+    assert not qualified

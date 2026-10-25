@@ -16,6 +16,7 @@ from pathlib import Path
 from scripts.engineering.m13_stage3_customer_fixture import isolated_provisioning_controller
 from scripts.engineering.m13i1_customer_journey import serve
 from scripts.engineering.m13i2_customer_journey import configured_settings, isolated_startup_store_b
+from sqlalchemy import text
 from starlette.applications import Starlette
 from starlette.responses import JSONResponse, Response
 from starlette.routing import Route
@@ -63,6 +64,38 @@ def validate_report(result: dict) -> None:
         raise ValueError("Unexecuted privileged stages must remain explicit")
 
 
+WEBAUTHN_COMPONENT_PHASES = frozenset(
+    {
+        "empty_chromium_virtual_authenticator",
+        "signup",
+        "genuine_mail_verification",
+        "password_login",
+        "organization_onboarding",
+        "authenticated_owner_session",
+        "recorded_authority_snapshot",
+        "registration_challenge",
+        "browser_origin_binding",
+        "browser_generated_registration",
+        "request_registration_step_up",
+        "server_registration_verification",
+        "authentication_challenge",
+        "browser_generated_assertion",
+        "server_assertion_verification",
+        "persisted_passkey_inventory",
+        "session_cleanup_logout",
+    }
+)
+
+
+def webauthn_component_qualified(result: dict) -> bool:
+    """Qualify actual ceremony evidence, never the unexecuted customer chain."""
+    validate_report(result)
+    phases = {phase["phase"]: phase for phase in result["phases"]}
+    return WEBAUTHN_COMPONENT_PHASES.issubset(phases) and all(
+        phase["result"] == "CONFIRMED" for phase in phases.values()
+    )
+
+
 async def attempt(*, authorized_bootstrap: bool = False) -> dict:
     mail = []
     delivery_secret = secrets.token_urlsafe(32)
@@ -104,7 +137,7 @@ async def attempt(*, authorized_bootstrap: bool = False) -> dict:
                 async with (
                     isolated_provisioning_controller(
                         database, authorized_bootstrap=authorized_bootstrap
-                    ),
+                    ) as provisioner,
                     serve(dashboard.app) as origin,
                 ):
                     config = {
@@ -144,6 +177,20 @@ async def attempt(*, authorized_bootstrap: bool = False) -> dict:
                             Path(dashboard.__file__).parents[3]
                         )
                         result["harness_git"] = git_identity(Path(__file__).parents[2])
+                        readiness = provisioner.provider.get_readiness_state()
+                        result["store_b_readiness"] = readiness.value if readiness else None
+                        async with provisioner.engine.raw.connect() as connection:
+                            result["authority_counts"] = {
+                                table: await connection.scalar(
+                                    text(f"SELECT count(*) FROM {table}")
+                                )
+                                for table in (
+                                    "organizations",
+                                    "governance_root_authority_records",
+                                    "governance_execution_authorizations",
+                                    "runtime_execution_attempts",
+                                )
+                            }
                         return result
                     finally:
                         if process.returncode is None:
@@ -156,6 +203,11 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--report", type=Path, help="Write redacted structured runtime evidence")
     parser.add_argument("--authorized-disposable-bootstrap", action="store_true")
+    parser.add_argument(
+        "--webauthn-component",
+        action="store_true",
+        help="Qualify only the actual 17-phase ceremony; full customer acceptance stays BLOCKED",
+    )
     args = parser.parse_args()
     try:
         result = asyncio.run(attempt(authorized_bootstrap=args.authorized_disposable_bootstrap))
@@ -165,8 +217,16 @@ if __name__ == "__main__":
             "error_type": type(error).__name__,
             "production": "GLOBAL PRODUCTION NO-GO",
         }
+    component_passed = False
+    if args.webauthn_component:
+        try:
+            component_passed = webauthn_component_qualified(result)
+        except ValueError:
+            pass
+        result["qualification_scope"] = "WEBAUTHN_COMPONENT_ONLY"
+        result["component_acceptance"] = "PASS" if component_passed else "BLOCKED"
     serialized = json.dumps(result, indent=2)
     if args.report:
         args.report.write_text(serialized + "\n")
     print(serialized)
-    raise SystemExit(2)
+    raise SystemExit(0 if component_passed else 2)
