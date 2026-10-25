@@ -162,8 +162,18 @@ async def start(target):
 
 
 @pytest.mark.asyncio
-async def test_sandbox_approval_is_bound_simulated_and_never_canonical_identity(persona):
+@pytest.mark.parametrize("falsey_transport", [False, True])
+async def test_sandbox_approval_is_bound_simulated_and_never_canonical_identity(
+    persona, falsey_transport
+):
     adapter, config, event, secret, _, _, tenant, user = persona
+    if falsey_transport:
+
+        class FalseyMockTransport(httpx.MockTransport):
+            def __bool__(self):
+                return False
+
+        adapter._transport = FalseyMockTransport(adapter._transport.handler)
     issued = await start(persona)
     config["status"] = "approved"
     body = event()

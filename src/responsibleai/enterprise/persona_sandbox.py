@@ -346,7 +346,7 @@ class PersonaSandboxAdapter:
             "canonical_issuance_allowed": False,
             "duplicate": duplicate,
             "evidence_mode": "SYNTHETIC_PROTOCOL_FIXTURE"
-            if self._transport
+            if self._transport is not None
             else "PROVIDER_NETWORK",
         }
 
