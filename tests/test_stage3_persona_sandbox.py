@@ -39,7 +39,7 @@ def test_hosted_persona_step_has_explicit_disposable_pg16_target():
     workflow = yaml.safe_load(
         (Path(__file__).parents[1] / ".github/workflows/m13i1-integration.yml").read_text()
     )
-    job = workflow["jobs"]["independent-security"]
+    job = workflow["jobs"]["persona-sandbox-protocol"]
     step = next(
         value
         for value in job["steps"]
@@ -52,6 +52,34 @@ def test_hosted_persona_step_has_explicit_disposable_pg16_target():
     assert "postgres:16-alpine@sha256:" in job["services"]["postgres"]["image"]
     assert "--diagnostic-no-coverage" not in step["run"]
     assert "skip_count" in step["run"]
+    # Pin every pre-shard security command from c9fb5474, including its no-skip
+    # check. Sharding may relocate commands, never shorten or waive them.
+    expected = {
+        "Independently execute original assertion suites": "c2f71fbb228fd0ccc870d0f0b9490d13dadbd1970dc238c3522313d3fe5e949d",
+        "Revocation and egress regression scope": "393688a03037b7e86b4d52ee0d3c7d2b5c56c7a880a952307731748445c627f3",
+        "Full MCP transport and session-binding regression": "fa29ffc98fa4852de56e951f56a474e2e0b68083415b3cde08dd423dca3c5023",
+        "Mandatory passkey downgrade restriction and supported rollback": "93d0c84d4ca13c143d03b7deb2f442c21f69e5b07b273d736c654dca7ab0708b",
+        "Mandatory root email and persisted owner denial boundaries": "0054ab195b51b17529548cd242b83cd2843ab9afb201028b71e68b1193a83a94",
+        "WebAuthn product origin binding and unchanged identity security": "bfba3acda163eb6d3cf0ceeae0e0ff7e97ca3dcd29f942ba951fd3399747fafa",
+        "Isolated Persona synthetic protocol and HMAC denial regressions": "291ac7f06637f4e8c8eb0fa0550fcdc2eac6c7ea7795a9b255353ca21b24de76",
+    }
+    found = {}
+    for name, budget in (
+        ("independent-security", 25),
+        ("independent-mcp", 25),
+        ("persona-sandbox-protocol", 15),
+    ):
+        shard = workflow["jobs"][name]
+        assert shard["timeout-minutes"] == budget
+        assert shard["strategy"]["matrix"]["python"] == ["3.11", "3.12"]
+        assert shard["strategy"]["fail-fast"] is False
+        assert not shard.get("continue-on-error")
+        for command in shard["steps"]:
+            if command.get("name") in expected:
+                assert command["name"] not in found
+                assert not command.get("continue-on-error")
+                found[command["name"]] = hashlib.sha256(command["run"].encode()).hexdigest()
+    assert found == expected
 
 
 @pytest.fixture
