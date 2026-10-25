@@ -204,13 +204,26 @@ Until one of those happens, `introduced-dco` stays red.
 `ruff check` passed on the edited Python. License headers passed.
 `node --check tests/js/m13-apex-customer.mjs` passed.
 
-Hosted I1 on this head was not finished in this environment before the report
-was written. Expected hosted result if the workflows run: Sovereign default
-journey remains exit 2 with 17/1/7; the development prototype remains a
-separate 25-stage run; `real-customer-journey` remains red while the key
-admission is 403; `introduced-dco` remains red on `39619c4b`. Security, MCP,
-Persona, browser-component, and native jobs were not behaviorally weakened.
-Python 3.11 execution is a hosted-job result, not a local one.
+Hosted checks on evidence head `3d7dc2cf6dacdafd4d29ad6a7882c6a80377d7d4`
+(tree `f3befc29ef91cbff7c06a987dbd5445f2d221ad1`, clean) started 02:11 IST on
+26 October 2026. Fifteen of seventeen checks passed. The two failures are the
+identity gate and the historical DCO commit.
+
+| Check | Result |
+|---|---|
+| I1 `real-customer-journey` run `40231949872` job `121285360677` | FAIL, exit 2. Hosted artifact `m13apex-customer-evidence.json`: acceptance `BLOCKED`, stop `judgment`, 17 PASS / 1 BLOCKED / 7 NOT_EXECUTED / 0 FAIL. HTTP 403 `IDENTITY_VERIFICATION_REQUIRED`. Chromium 151.0.7922.34. Git stamp matches this head. |
+| I1 `introduced-dco` job `121285360777` | FAIL. Only error: `39619c4b46dac5d6e69c9e00ce887c2ed9641cfc` lacks `Signed-off-by`. |
+| I1 `independent-security` 3.11 and 3.12 | PASS, 10m41s and 11m39s |
+| I1 `independent-mcp` 3.11 and 3.12 | PASS, 14m54s and 15m22s |
+| I1 `persona-sandbox-protocol` 3.11 and 3.12 | PASS, 2m48s and 3m39s |
+| I1 `virtual-authenticator-component` 3.11 and 3.12 | PASS |
+| I1 `native-container-scope` | PASS, 1m49s |
+| I1 `inherited-policy-gates` | PASS |
+| I1 WebAuthn component artifact | `component_acceptance: PASS`, scope `WEBAUTHN_COMPONENT_ONLY`, production `GLOBAL PRODUCTION NO-GO` |
+| Sovereign `development-qualification` 3.11 and 3.12, run `40231949870` | PASS, 8m50s and 9m30s. That job requires default exit 2 with 17/1/7 and prototype 25/25. |
+| Product `console`, `contracts` 3.11 and 3.12, run `40231949886` | PASS |
+
+Python 3.11 and 3.12 both ran the hosted security, MCP, Persona, authenticator, and Sovereign jobs.
 
 ## 7. Unresolved defects versus external dependencies
 
