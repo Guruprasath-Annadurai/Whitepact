@@ -149,9 +149,11 @@ async def test_floor_rechecks_authority_immediately_before_epoch_cas(
     plan = await poc.prepare(engine, provider, profile_path=profile, tenant=tenant)
     approved = signatures(plan.canonical_bytes(), keys)
     original = poc._evidence
+    reached = []
 
     async def change_after_observation(*args, **kwargs):
         evidence = await original(*args, **kwargs)
+        reached.append(fault)
         if fault == "installation":
             # The Store B lock already blocks direct writes here. Challenge
             # the independently held publication receipt instead.
@@ -165,8 +167,14 @@ async def test_floor_rechecks_authority_immediately_before_epoch_cas(
         return evidence
 
     monkeypatch.setattr(poc, "_evidence", change_after_observation)
-    with pytest.raises(RecoveryAuthorizationError):
+    expected = {
+        "installation": "installation",
+        "expired": "Stale or wrong-target floor approval",
+        "revoked_operator": "Exact independently enrolled operator roles required",
+    }[fault]
+    with pytest.raises(RecoveryAuthorizationError, match=expected):
         await poc.execute(engine, provider, profile_path=profile, plan=plan, signatures=approved)
+    assert reached == [fault]
     assert (await RevocationEpochRepository(engine).current(tenant)).epoch == 3
     assert provider.get_state(tenant).revocation_floor == 7
     await no_effect_counts(engine)
@@ -205,14 +213,17 @@ async def test_installation_loss_after_epoch_commit_never_reports_completion(
     engine, provider, gate, profile, keys, tenant = floor_target
     plan = await poc.prepare(engine, provider, profile_path=profile, tenant=tenant)
     approved = signatures(plan.canonical_bytes(), keys)
+    reached = []
 
     async def lose_receipt(phase):
         if phase == "PG_COMMITTED":
+            reached.append(phase)
             corrupt_receipt(provider, "changed_binding")
 
     monkeypatch.setattr(poc, "_checkpoint", lose_receipt)
     with pytest.raises(RecoveryAuthorizationError, match="installation"):
         await poc.execute(engine, provider, profile_path=profile, plan=plan, signatures=approved)
+    assert reached == ["PG_COMMITTED"]
     # Never lower an epoch committed while the authorization was valid.
     assert (await RevocationEpochRepository(engine).current(tenant)).epoch == 7
     assert provider.get_state(tenant).revocation_floor == 7
