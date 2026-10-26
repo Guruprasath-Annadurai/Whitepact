@@ -284,9 +284,10 @@ async def test_new_docker_workload_after_approval_is_not_ignored(publication):
         [
             docker,
             "create",
+            "--pull=never",
             "--label",
             "io.whitepact.execution=bootstrap-negative-fixture",
-            "postgres:16",
+            "postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685",
         ],
         check=True,
         capture_output=True,
