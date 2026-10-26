@@ -66,6 +66,21 @@ async def bump_epoch_on_connection(
     return int(result.scalar_one())
 
 
+async def current_epoch_on_connection(
+    conn: AsyncConnection, organization_id: str, scope: str = "governance"
+) -> RevocationEpoch:
+    """Read the epoch using the caller's connection, without nested pool checkout."""
+    if not organization_id or not scope:
+        raise ValueError("An explicit organization and scope are required")
+    value = await conn.scalar(
+        select(epochs.c.epoch).where(
+            epochs.c.organization_id == organization_id,
+            epochs.c.scope == scope,
+        )
+    )
+    return RevocationEpoch(organization_id, scope, int(value or 0))
+
+
 class RevocationEpochRepository:
     def __init__(self, engine: DatabaseEngine) -> None:
         self._engine = engine
@@ -74,15 +89,17 @@ class RevocationEpochRepository:
         if not organization_id or not scope:
             raise ValueError("An explicit organization and scope are required")
         async with self._engine.raw.connect() as conn:
-            value = await conn.scalar(
-                select(epochs.c.epoch).where(
-                    epochs.c.organization_id == organization_id,
-                    epochs.c.scope == scope,
-                )
-            )
-        return RevocationEpoch(organization_id, scope, int(value or 0))
+            return await current_epoch_on_connection(conn, organization_id, scope)
 
     async def bump(self, organization_id: str, scope: str = "governance") -> RevocationEpoch:
         async with self._engine.raw.begin() as conn:
             value = await bump_epoch_on_connection(conn, organization_id, scope)
+        try:
+            from responsibleai.isolation.in_flight import InFlightExecutionRegistry
+
+            await InFlightExecutionRegistry.get_instance().terminate_in_flight(
+                organization_id=organization_id
+            )
+        except Exception:
+            pass
         return RevocationEpoch(organization_id, scope, value)

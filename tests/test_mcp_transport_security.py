@@ -20,7 +20,7 @@ import httpx
 import pytest
 from asgi_lifespan import LifespanManager
 
-from responsibleai.db import OrgRepository, create_engine
+from responsibleai.db import OrgRepository
 from responsibleai.mcp.server import (
     _AuthFailureLimiter,
     _build_transport_security,
@@ -28,6 +28,7 @@ from responsibleai.mcp.server import (
     _split_csv,
 )
 from responsibleai.rbac.models import Plan, Role
+from tests.protected_component_tenant import component_controller, provision_component_organization
 
 
 class TestSplitCsv:
@@ -106,35 +107,36 @@ class TestAuthFailureLimiter:
 
 
 @pytest.fixture()
-async def app_factory(monkeypatch: pytest.MonkeyPatch):
+async def app_factory(monkeypatch: pytest.MonkeyPatch, tmp_path):
     """Yields a callable that builds the hosted-MCP app fresh — env vars
     set *before* calling it take effect, since `_build_http_app` and its
     helpers read `os.environ` at call time, not import time."""
     import responsibleai.db as db_module
     from responsibleai.mcp.server import _build_http_app
 
-    engine = create_engine(":memory:")
-    await engine.init()
-    monkeypatch.setattr(db_module, "create_engine", lambda _url: engine)
+    async with component_controller(tmp_path, monkeypatch, "wp_mcp_transport") as controller:
+        engine = controller.engine
+        monkeypatch.setattr(db_module, "create_engine", lambda _url: engine)
 
-    org_repo = OrgRepository(engine)
-    org = await org_repo.create_org("Acme", "acme", plan=Plan.ENTERPRISE)
-    _key_rec, raw_key = await org_repo.create_key(org.id, "test-key", role=Role.ANALYST)
+        org_repo = OrgRepository(engine)
+        org = await provision_component_organization(
+            engine, name="Acme", slug="acme", plan=Plan.ENTERPRISE
+        )
+        _key_rec, raw_key = await org_repo.create_key(org.id, "test-key", role=Role.ANALYST)
 
-    built_apps = []
+        built_apps = []
 
-    async def _build():
-        app = _build_http_app()
-        manager = LifespanManager(app)
-        await manager.__aenter__()
-        built_apps.append(manager)
-        return manager.app, raw_key
+        async def _build():
+            app = _build_http_app()
+            manager = LifespanManager(app)
+            await manager.__aenter__()
+            built_apps.append(manager)
+            return manager.app, raw_key
 
-    yield _build
+        yield _build
 
-    for manager in built_apps:
-        await manager.__aexit__(None, None, None)
-    await engine.close()
+        for manager in built_apps:
+            await manager.__aexit__(None, None, None)
 
 
 async def _raw_client(app) -> httpx.AsyncClient:
@@ -200,6 +202,34 @@ class TestAuthRateLimitIntegration:
                 statuses.append(response.status_code)
         assert statuses[:3] == [401, 401, 401]
         assert statuses[3:] == [429, 429]
+
+    async def test_rotating_bearer_tokens_does_not_reset_peer_budget(
+        self, app_factory, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A new Authorization value from the same address must not receive
+        a fresh authentication-failure budget."""
+        monkeypatch.setenv("RAI_MCP_HTTP_AUTH_MAX_FAILURES", "2")
+        monkeypatch.setenv("RAI_MCP_HTTP_AUTH_WINDOW_SECONDS", "60")
+        app, _raw_key = await app_factory()
+        async with await _raw_client(app) as client:
+            first = await client.post(
+                "/mcp",
+                json={"jsonrpc": "2.0", "method": "ping", "id": 1},
+                headers={"Authorization": "Bearer wrong-key-a"},
+            )
+            second = await client.post(
+                "/mcp",
+                json={"jsonrpc": "2.0", "method": "ping", "id": 1},
+                headers={"Authorization": "Bearer wrong-key-a"},
+            )
+            rotated = await client.post(
+                "/mcp",
+                json={"jsonrpc": "2.0", "method": "ping", "id": 1},
+                headers={"Authorization": "Bearer wrong-key-b"},
+            )
+        assert first.status_code == 401
+        assert second.status_code == 401
+        assert rotated.status_code == 429
 
     async def test_failure_budget_is_shared_between_transports(
         self, app_factory, monkeypatch: pytest.MonkeyPatch

@@ -16,6 +16,7 @@ class PrincipalType(StrEnum):
     WORKLOAD = "WORKLOAD"
     SERVICE = "SERVICE"
     MACHINE = "MACHINE"
+    APPLICATION = "APPLICATION"
 
 
 class PrincipalState(StrEnum):
@@ -24,6 +25,7 @@ class PrincipalState(StrEnum):
     PENDING_VERIFICATION = "PENDING_VERIFICATION"
     ACTIVE = "ACTIVE"
     SUSPENDED = "SUSPENDED"
+    QUARANTINED = "QUARANTINED"
     DISABLED = "DISABLED"
     REVOKED = "REVOKED"
     DELETED = "DELETED"

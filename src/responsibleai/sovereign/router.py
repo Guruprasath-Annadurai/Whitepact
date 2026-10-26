@@ -10,15 +10,25 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from responsibleai.governance.policy import PolicyRule
+from responsibleai.sovereign.access import (
+    assert_same_tenant,
+    bound_principal_id,
+    enforce_sovereign_access,
+)
 from responsibleai.sovereign.api_deps import build_sovereign_service
 from responsibleai.sovereign.context import SovereignContext
 from responsibleai.sovereign.effective import EffectiveAuthoritySnapshot
 from responsibleai.sovereign.errors import SovereignCapabilityError, SovereignTenantIsolationError
 from responsibleai.sovereign.policy_lab import PolicyTestCase
 from responsibleai.sovereign.service import SovereignService
+from responsibleai.sovereign.web_auth import require_browser_sovereign_read
 from responsibleai.sovereign.web_routes import web_router
 
-router = APIRouter(prefix="/api/sovereign", tags=["sovereign"])
+router = APIRouter(
+    prefix="/api/sovereign",
+    tags=["sovereign"],
+    dependencies=[Depends(enforce_sovereign_access)],
+)
 
 
 async def _svc() -> SovereignService:
@@ -32,10 +42,14 @@ class OrgBody(BaseModel):
 
 
 def _ctx(body: OrgBody) -> SovereignContext:
+    return _ctx_for(body.organization_id, body.environment)
+
+
+def _ctx_for(organization_id: str | None, environment: str | None) -> SovereignContext:
     return SovereignContext(
-        organization_id=body.organization_id,
-        environment=body.environment or "development",
-        principal_id=body.principal_id,
+        organization_id=assert_same_tenant(organization_id),
+        environment=environment or "development",
+        principal_id=bound_principal_id(),
     )
 
 
@@ -63,6 +77,16 @@ async def sovereign_capabilities(svc: SovereignService = Depends(_svc)) -> dict[
 
 class XRayBody(OrgBody):
     pass
+
+
+@router.get("/xray")
+async def get_xray(
+    organization_id: str | None = None,
+    environment: str | None = "development",
+    svc: SovereignService = Depends(_svc),
+) -> dict[str, Any]:
+    result = await svc.build_xray_async(_ctx_for(organization_id, environment))
+    return result.model_dump()
 
 
 @router.post("/xray")
@@ -93,6 +117,16 @@ class TraceBody(OrgBody):
 @router.post("/trace")
 async def post_trace(body: TraceBody, svc: SovereignService = Depends(_svc)) -> dict[str, Any]:
     return (await svc.trace_evidence_async(_ctx(body), body.evidence_id)).model_dump()
+
+
+@router.get("/authority/effective")
+async def get_effective(
+    organization_id: str | None = None,
+    environment: str | None = "development",
+    svc: SovereignService = Depends(_svc),
+) -> dict[str, Any]:
+    snap = await svc.load_effective_async(_ctx_for(organization_id, environment))
+    return snap.model_dump()
 
 
 @router.post("/authority/effective")
@@ -299,6 +333,7 @@ async def post_capsule_validate(
     from responsibleai.sovereign.capsule import SovereignCapsule
 
     cap = SovereignCapsule.model_validate(body.capsule)
+    assert_same_tenant(cap.organization_id)
     return {"valid": svc.validate_capsule(cap)}
 
 
@@ -309,6 +344,7 @@ async def post_capsule_reproduce(
     from responsibleai.sovereign.capsule import SovereignCapsule
 
     cap = SovereignCapsule.model_validate(body.capsule)
+    assert_same_tenant(cap.organization_id)
     return svc.reproduce_capsule(cap)
 
 
@@ -317,6 +353,16 @@ async def post_bom(body: OrgBody, svc: SovereignService = Depends(_svc)) -> dict
     return (await svc.authority_bom_async(_ctx(body))).model_dump()
 
 
-# Web session mirror (same service layer)
-web_router.add_api_route("/status", sovereign_status, methods=["GET"])
-web_router.add_api_route("/capabilities", sovereign_capabilities, methods=["GET"])
+# Browser reads use the same service handlers and the shared view policy.
+web_router.add_api_route(
+    "/status",
+    sovereign_status,
+    methods=["GET"],
+    dependencies=[Depends(require_browser_sovereign_read)],
+)
+web_router.add_api_route(
+    "/capabilities",
+    sovereign_capabilities,
+    methods=["GET"],
+    dependencies=[Depends(require_browser_sovereign_read)],
+)

@@ -28,7 +28,6 @@ from responsibleai.db.engine import governance_execution_nonces as nonces
 from responsibleai.db.engine import runtime_execution_attempts as attempts
 from responsibleai.db.engine import runtime_execution_dispatch_outbox as outbox
 from responsibleai.db.engine import runtime_execution_fences as fences
-from responsibleai.db.migrate import _find_alembic_ini, _migration_env, _run_alembic
 from responsibleai.db.org_repository import OrgRepository
 from responsibleai.db.revocation_epoch_repository import bump_epoch_on_connection
 from responsibleai.mcp.server import (
@@ -51,7 +50,10 @@ from responsibleai.runtime.errors import (
     StaleWorkerError,
 )
 from responsibleai.runtime.models import AttemptState, AuthorizationStatus, OutboxStatus
-from tests.pg_test_url import isolated_pg_url
+from tests.protected_component_tenant import (
+    component_controller,
+    provision_component_organization,
+)
 
 ISSUER = "https://testserver"
 RESOURCE = f"{ISSUER}/mcp"
@@ -65,58 +67,62 @@ def _pkce() -> tuple[str, str]:
 
 
 @pytest.fixture()
-async def mcp_oauth_app(monkeypatch: pytest.MonkeyPatch):
+async def mcp_oauth_app(monkeypatch: pytest.MonkeyPatch, tmp_path):
     import responsibleai.dashboard.config as config_module
     import responsibleai.db as db_module
 
-    engine = create_engine(":memory:")
-    await engine.init()
-    monkeypatch.setattr(db_module, "create_engine", lambda _url: engine)
-    monkeypatch.setenv("RAI_MCP_HTTP_AUTH_MAX_FAILURES", "100")
-    settings = Settings(
-        mcp_oauth_issuer=ISSUER,
-        mcp_oauth_resource_uri=RESOURCE,
-        mcp_oauth_scopes=["whitepact:review", "offline_access"],
-    )
-    monkeypatch.setattr(config_module, "get_settings", lambda: settings)
+    async with component_controller(tmp_path, monkeypatch, "wp_b10_oauth") as controller:
+        engine = controller.engine
+        monkeypatch.setattr(db_module, "create_engine", lambda _url: engine)
+        monkeypatch.setenv("RAI_MCP_HTTP_AUTH_MAX_FAILURES", "100")
+        settings = Settings(
+            mcp_oauth_issuer=ISSUER,
+            mcp_oauth_resource_uri=RESOURCE,
+            mcp_oauth_scopes=["whitepact:review", "offline_access"],
+        )
+        monkeypatch.setattr(config_module, "get_settings", lambda: settings)
 
-    org_repo = OrgRepository(engine)
-    org = await org_repo.create_org("Batch10", "batch10", plan=Plan.ENTERPRISE)
-    _rec, raw_key = await org_repo.create_key(org.id, "analyst", role=Role.ANALYST)
-    other = await org_repo.create_org("Other", "batch10-other", plan=Plan.ENTERPRISE)
+        org_repo = OrgRepository(engine)
+        org = await provision_component_organization(
+            engine, name="Batch10", slug="batch10", plan=Plan.ENTERPRISE
+        )
+        _rec, raw_key = await org_repo.create_key(org.id, "analyst", role=Role.ANALYST)
+        other = await provision_component_organization(
+            engine, name="Other", slug="batch10-other", plan=Plan.ENTERPRISE
+        )
 
-    app = _build_http_app()
-    manager = LifespanManager(app)
-    await manager.__aenter__()
-    try:
-        yield manager.app, engine, org, other, raw_key
-    finally:
-        await manager.__aexit__(None, None, None)
-        await engine.close()
+        app = _build_http_app()
+        manager = LifespanManager(app)
+        await manager.__aenter__()
+        try:
+            yield manager.app, engine, org, other, raw_key
+        finally:
+            await manager.__aexit__(None, None, None)
 
 
 @pytest.fixture()
-async def mcp_api_only_app(monkeypatch: pytest.MonkeyPatch):
+async def mcp_api_only_app(monkeypatch: pytest.MonkeyPatch, tmp_path):
     import responsibleai.dashboard.config as config_module
     import responsibleai.db as db_module
 
-    engine = create_engine(":memory:")
-    await engine.init()
-    monkeypatch.setattr(db_module, "create_engine", lambda _url: engine)
-    monkeypatch.setattr(config_module, "get_settings", lambda: Settings(mcp_oauth_issuer=""))
+    async with component_controller(tmp_path, monkeypatch, "wp_b10_api") as controller:
+        engine = controller.engine
+        monkeypatch.setattr(db_module, "create_engine", lambda _url: engine)
+        monkeypatch.setattr(config_module, "get_settings", lambda: Settings(mcp_oauth_issuer=""))
 
-    org_repo = OrgRepository(engine)
-    org = await org_repo.create_org("ApiOnly", "api-only", plan=Plan.ENTERPRISE)
-    _rec, raw_key = await org_repo.create_key(org.id, "key", role=Role.ANALYST)
+        org_repo = OrgRepository(engine)
+        org = await provision_component_organization(
+            engine, name="ApiOnly", slug="api-only", plan=Plan.ENTERPRISE
+        )
+        _rec, raw_key = await org_repo.create_key(org.id, "key", role=Role.ANALYST)
 
-    app = _build_http_app()
-    manager = LifespanManager(app)
-    await manager.__aenter__()
-    try:
-        yield manager.app, raw_key
-    finally:
-        await manager.__aexit__(None, None, None)
-        await engine.close()
+        app = _build_http_app()
+        manager = LifespanManager(app)
+        await manager.__aenter__()
+        try:
+            yield manager.app, raw_key
+        finally:
+            await manager.__aexit__(None, None, None)
 
 
 @pytest.fixture()
@@ -146,17 +152,15 @@ async def mcp_oidc_resource_app(monkeypatch: pytest.MonkeyPatch):
 
 
 @pytest.fixture
-async def pg_url() -> AsyncGenerator[str, None]:
-    async for url in isolated_pg_url("wp_batch10_kern"):
-        ini = _find_alembic_ini()
-        assert ini is not None
-        await _run_alembic(ini, _migration_env(url), "upgrade", "head")
-        yield url
+async def pg_url(tmp_path, monkeypatch: pytest.MonkeyPatch) -> AsyncGenerator[str, None]:
+    async with component_controller(tmp_path, monkeypatch, "wp_b10_kern") as controller:
+        yield controller.engine.raw.url.render_as_string(hide_password=False)
 
 
 async def _pg_org(engine, name: str = "B10"):
-    repo = OrgRepository(engine)
-    return await repo.create_org(name, f"b10-{uuid.uuid4().hex[:10]}", plan=Plan.ENTERPRISE)
+    return await provision_component_organization(
+        engine, name=name, slug=f"b10-{uuid.uuid4().hex[:10]}", plan=Plan.ENTERPRISE
+    )
 
 
 def _issue_kwargs(org_id: str, **extra):

@@ -8,7 +8,6 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-import re
 import shutil
 import signal
 import statistics
@@ -18,8 +17,7 @@ import tempfile
 import time
 import urllib.error
 import urllib.request
-from collections import defaultdict
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -170,6 +168,7 @@ def stop_stack(stack: ServerStack) -> None:
 def discover_cli_verbs() -> list[str]:
     sys.path.insert(0, str(ROOT / "src"))
     import click
+
     from biasbuster.cli import main
 
     verbs: list[str] = []
@@ -344,10 +343,10 @@ console.log(JSON.stringify({{ ok: true, health: h }}));
     script = ts / "ts_live.mjs"
     script.write_text(snippet, encoding="utf-8")
     run = _run(["node", "ts_live.mjs"], cwd=ts, timeout=60)
-    refused = f"""
-import {{ RAIClient }} from './dist/index.js';
-const client = new RAIClient({{ apiKey: 'x', baseUrl: 'http://127.0.0.1:1', timeout: 500, maxRetries: 0 }});
-try {{ await client.health(); console.log('unexpected'); }} catch (e) {{ console.log(JSON.stringify({{ ok: false, name: e.name }})); }}
+    refused = """
+import { RAIClient } from './dist/index.js';
+const client = new RAIClient({ apiKey: 'x', baseUrl: 'http://127.0.0.1:1', timeout: 500, maxRetries: 0 });
+try { await client.health(); console.log('unexpected'); } catch (e) { console.log(JSON.stringify({ ok: false, name: e.name })); }
 """
     script2 = ts / "ts_refused.mjs"
     script2.write_text(refused, encoding="utf-8")
@@ -477,7 +476,7 @@ def mcp_benchmark_md() -> str:
     )
     body = proc.stdout or proc.stderr
     header = "# Authoritative MCP performance (v1.3.1 9.5 closure)\n\n"
-    header += f"Environment: LOCAL in-process (script `run_v131_production_tool_benchmarks.py`)\n\n"
+    header += "Environment: LOCAL in-process (script `run_v131_production_tool_benchmarks.py`)\n\n"
     header += f"Exit code: {proc.returncode}\n\n```\n{body[-12000:]}\n```\n"
     return header
 
@@ -605,7 +604,7 @@ def production_shaped_perf(stack: ServerStack) -> str:
     url = f"{stack.base_url}/api/health"
     lines = [
         "# Production-shaped performance (LOCAL-CONTAINER)\n\n",
-        f"Environment label: **LOCAL-CONTAINER** (PostgreSQL + single uvicorn worker)\n\n",
+        "Environment label: **LOCAL-CONTAINER** (PostgreSQL + single uvicorn worker)\n\n",
         f"Target: `{url}`\n\n",
     ]
 

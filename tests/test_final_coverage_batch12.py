@@ -465,8 +465,18 @@ class TestOidcSamlResolutionBatch12:
         repo = OrgRepository(engine)
         org = await repo.create_org("OIDC Org", f"oidc-{uuid.uuid4().hex[:8]}")
         provider = MagicMock()
+        provider.issuer = "https://idp.example"
         provider.validate_token = AsyncMock(
             return_value=JWTClaims(sub="user-1", org_id=org.id, roles=["ADMIN"])
+        )
+        from responsibleai.db import WebIdentityRepository
+
+        await WebIdentityRepository(engine).bind_sso_principal(
+            org_id=org.id,
+            issuer="https://idp.example",
+            subject="user-1",
+            role=Role.ADMIN,
+            email=f"user-1-{org.id[:8]}@example.com",
         )
         monkeypatch = pytest.MonkeyPatch()
         monkeypatch.setattr(app_module, "_oidc_provider", provider)
@@ -933,7 +943,11 @@ def test_is_available_true_for_executable_path(
     assert DockerContainerBackend(docker_cmd=str(fake)).is_available() is True
 
 
-def test_remove_containers_tolerates_rm_errors(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_remove_containers_fails_closed_on_rm_and_inspect_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import itertools
+
     backend = DockerContainerBackend(docker_cmd="docker")
 
     def fake_run(cmd, **_k):
@@ -942,14 +956,63 @@ def test_remove_containers_tolerates_rm_errors(monkeypatch: pytest.MonkeyPatch) 
         return subprocess.CompletedProcess(args=cmd, returncode=1)
 
     monkeypatch.setattr(subprocess, "run", fake_run)
+    clock = itertools.count(1000.0, 0.001)
     monkeypatch.setattr(
         "responsibleai.isolation.container_backend.time.monotonic",
-        lambda: 1000.0,
+        lambda: next(clock),
     )
-    backend._remove_containers(["c1"], stable_seconds=0, wait_seconds=0.01)
+    with pytest.raises(RuntimeError, match="containment unconfirmed"):
+        backend._remove_containers(["c1"], stable_seconds=0, wait_seconds=0.01)
+
+
+@pytest.fixture
+def isolated_mock_container_registry(tmp_path, monkeypatch):
+    """Mock containers must not share real temporary tracking with other tests.
+
+    Keep production records untouched and retain uncertainty within each test.
+    Restore the previous singleton rather than treating its state as resolved.
+    """
+    from responsibleai.isolation import in_flight
+
+    monkeypatch.setattr(in_flight, "_DISTRIBUTED_REGISTRY_DIR", tmp_path / "mock-tracking")
+    monkeypatch.setattr(in_flight.InFlightExecutionRegistry, "_instance", None)
+    # These tests already replace Docker startup and cleanup. Supply the new
+    # inert CREATE acknowledgement as well; real CREATE/receipt behavior is
+    # exercised separately by protocol and native suites, not this unit double.
+    monkeypatch.setattr(DockerContainerBackend, "_create_stopped_container", lambda *a: "c" * 64)
+    try:
+        yield
+    finally:
+        in_flight.InFlightExecutionRegistry.reset_instance()
+
+
+def test_mock_registry_isolation_preserves_external_uncertainty(tmp_path, monkeypatch):
+    from responsibleai.isolation import in_flight
+
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    record = outside / "unattributed.json"
+    record.write_text("{", encoding="utf-8")
+    monkeypatch.setattr(in_flight, "_DISTRIBUTED_REGISTRY_DIR", outside)
+    previous = in_flight.InFlightExecutionRegistry()
+    monkeypatch.setattr(in_flight.InFlightExecutionRegistry, "_instance", previous)
+    assert previous.has_unresolved("tenant")
+
+    with pytest.MonkeyPatch.context() as isolated:
+        fixture = isolated_mock_container_registry.__wrapped__(tmp_path / "isolated", isolated)
+        next(fixture)
+        try:
+            assert in_flight.InFlightExecutionRegistry.get_instance() is not previous
+        finally:
+            fixture.close()
+
+    assert in_flight.InFlightExecutionRegistry.get_instance() is previous
+    assert record.read_text(encoding="utf-8") == "{"
+    assert previous.has_unresolved("tenant")
 
 
 @pytest.mark.asyncio
+@pytest.mark.usefixtures("portable_workspace_mapping", "isolated_mock_container_registry")
 async def test_execute_mock_success_path(monkeypatch: pytest.MonkeyPatch) -> None:
     backend = DockerContainerBackend(docker_cmd="docker")
     monkeypatch.setattr(backend, "is_available", lambda: True)
@@ -977,9 +1040,7 @@ async def test_execute_mock_success_path(monkeypatch: pytest.MonkeyPatch) -> Non
         organization_id="org-1",
         action_type="noop",
         arguments={},
-        workspace_files={
-            "runner.py": 'import json; print(json.dumps({"status":"success","result":{}}))'
-        },
+        workspace_files={"notes.txt": "not the entrypoint"},
     )
     outcome = await backend.execute(req)
     assert outcome.result_payload == {"echo": True}
@@ -987,6 +1048,7 @@ async def test_execute_mock_success_path(monkeypatch: pytest.MonkeyPatch) -> Non
 
 
 @pytest.mark.asyncio
+@pytest.mark.usefixtures("portable_workspace_mapping", "isolated_mock_container_registry")
 async def test_execute_mock_runner_error_status(monkeypatch: pytest.MonkeyPatch) -> None:
     backend = DockerContainerBackend(docker_cmd="docker")
     monkeypatch.setattr(backend, "is_available", lambda: True)
@@ -1017,6 +1079,7 @@ async def test_execute_mock_runner_error_status(monkeypatch: pytest.MonkeyPatch)
 
 
 @pytest.mark.asyncio
+@pytest.mark.usefixtures("portable_workspace_mapping", "isolated_mock_container_registry")
 async def test_execute_mock_nonzero_exit(monkeypatch: pytest.MonkeyPatch) -> None:
     backend = DockerContainerBackend(docker_cmd="docker")
     monkeypatch.setattr(backend, "is_available", lambda: True)
@@ -1047,7 +1110,16 @@ async def test_execute_mock_nonzero_exit(monkeypatch: pytest.MonkeyPatch) -> Non
 
 
 @pytest.mark.asyncio
+@pytest.mark.usefixtures("portable_workspace_mapping", "isolated_mock_container_registry")
 async def test_execute_mock_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+    from types import SimpleNamespace
+
+    from responsibleai.isolation import container_backend as backend_module
+
+    # This unit double intentionally makes client communication/drain fail.
+    # Keep preparation deterministic so a loaded host cannot time out BEFORE
+    # that mocked phase. asyncio's own clock and the native250ms soak are untouched.
+    monkeypatch.setattr(backend_module, "time", SimpleNamespace(monotonic=lambda: 0.0))
     backend = DockerContainerBackend(docker_cmd="docker")
     monkeypatch.setattr(backend, "is_available", lambda: True)
 
@@ -1077,6 +1149,9 @@ async def test_execute_mock_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
     outcome = await backend.execute(req)
     assert outcome.timed_out is True
     assert outcome.exit_code == -9
+    from responsibleai.isolation.in_flight import InFlightExecutionRegistry
+
+    assert InFlightExecutionRegistry.get_instance().has_unresolved("org-1")
 
 
 @pytest.mark.asyncio

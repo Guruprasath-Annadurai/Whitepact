@@ -318,11 +318,14 @@ class InternalToolExecutor:
         self._nonce_repo = nonce_repo
         self._broker: Any = broker
         if broker is None:
-            # In production or hosted execution, automatically initialize IsolationBroker
             import os
 
-            is_prod = os.environ.get("ENVIRONMENT", "").lower() == "production"
-            if is_prod or os.environ.get("WHITEPACT_ISOLATION_BACKEND"):
+            from responsibleai.isolation.mode import unisolated_execution_allowed
+
+            # Isolation is the default. Same-process execution is reachable only through
+            # an explicit non-production opt-in (see responsibleai.isolation.mode), never
+            # because an environment variable was left unset.
+            if os.environ.get("WHITEPACT_ISOLATION_BACKEND") or not unisolated_execution_allowed():
                 from responsibleai.isolation.broker import IsolationBroker
 
                 self._broker = IsolationBroker()
@@ -330,26 +333,54 @@ class InternalToolExecutor:
                 self._broker = None
 
     async def execute(self, authorization: ExecutionAuthorization, action: ActionRequest) -> Any:
-        from responsibleai.data_governance.backup_defense import assert_restore_readiness_admitted
+        from responsibleai.isolation.errors import IsolationError
+        from responsibleai.isolation.mode import is_production
 
-        assert_restore_readiness_admitted()
-
-        await admit_execution(authorization, action, self._nonce_repo)
-
-        if self._broker is not None:
-            return await self._broker.execute(authorization, action)
-
-        import os
-
-        if os.environ.get("ENVIRONMENT", "").lower() == "production":
-            from responsibleai.isolation.errors import IsolationError
-
+        # Reject a configuration that cannot execute safely before consuming
+        # its single-use permit. This does not admit any execution path.
+        if self._broker is None and is_production():
             raise IsolationError(
                 "Same-process tool execution is strictly forbidden in production. "
                 "An IsolationBroker is mandatory."
             )
 
+        from responsibleai.data_governance.backup_defense import (
+            assert_current_restore_readiness_admitted,
+        )
+
+        await assert_current_restore_readiness_admitted()
+
+        await admit_execution(authorization, action, self._nonce_repo)
+
         from responsibleai.governance.synthetic_counter import SYNTHETIC_COUNTER_TOOL
+        from responsibleai.isolation.mode import synthetic_host_tool_allowed
+
+        # The test-only database fixture cannot run in a network-less container. It is the
+        # single tool allowed host-side, and only with its own explicit non-production switch.
+        host_fixture = (
+            action.action_type == SYNTHETIC_COUNTER_TOOL and synthetic_host_tool_allowed()
+        )
+
+        if self._broker is not None and not host_fixture:
+            return await self._broker.execute(authorization, action)
+
+        from responsibleai.isolation.mode import (
+            UNISOLATED_EXECUTION_ENV,
+            unisolated_execution_allowed,
+        )
+
+        if is_production():
+            raise IsolationError(
+                "Same-process tool execution is strictly forbidden in production. "
+                "An IsolationBroker is mandatory."
+            )
+        if not host_fixture and not unisolated_execution_allowed():
+            raise IsolationError(
+                "Same-process tool execution is forbidden: an IsolationBroker is mandatory. "
+                f"Only an explicit non-production {UNISOLATED_EXECUTION_ENV}=1 opt-in may "
+                "bypass isolation."
+            )
+
         from responsibleai.mcp.tools import dispatch_tool
 
         dispatch_args = dict(action.arguments)

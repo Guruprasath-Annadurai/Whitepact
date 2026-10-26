@@ -4,7 +4,11 @@
 
 from __future__ import annotations
 
+import hashlib
+import hmac
+import re
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any, Literal
 
 import httpx
@@ -38,6 +42,58 @@ class PaddleBillingError(Exception):
 
 class PaddleNotConfiguredError(PaddleBillingError):
     """Raised when Paddle billing is invoked without API credentials."""
+
+
+class PaddleWebhookRejectedError(PaddleBillingError):
+    """A sandbox or live webhook failed verification. The message has no secret."""
+
+    def __init__(self, status_code: int, detail: str) -> None:
+        super().__init__(detail)
+        self.status_code = status_code
+        self.detail = detail
+
+
+# Existing callers and tests catch this name. It is the same rejection.
+PaddleWebhookRejected = PaddleWebhookRejectedError
+
+
+def verify_paddle_webhook_signature(
+    secret: str,
+    raw_body: bytes,
+    signature_header: str,
+    *,
+    tolerance_seconds: int = 300,
+    now: datetime | None = None,
+) -> None:
+    """Verify a Paddle-Signature header. Raises PaddleWebhookRejected on failure."""
+    if not secret:
+        raise PaddleWebhookRejected(503, "Paddle billing is not configured on this server.")
+    if not signature_header:
+        raise PaddleWebhookRejected(400, "Missing Paddle-Signature header.")
+    parts = dict(re.findall(r"([a-z0-9_]+)=([^;]+)", signature_header))
+    ts_str = parts.get("ts")
+    provided = parts.get("h1")
+    if not ts_str or not provided:
+        raise PaddleWebhookRejected(400, "Malformed Paddle-Signature header.")
+    try:
+        timestamp = int(ts_str)
+    except ValueError:
+        raise PaddleWebhookRejected(400, "Invalid timestamp in Paddle-Signature header.") from None
+    current = now or datetime.now(UTC)
+    now_ts = int(current.timestamp())
+    if (now_ts - timestamp) > tolerance_seconds:
+        raise PaddleWebhookRejected(
+            400, f"Paddle webhook signature has expired (> {tolerance_seconds}s)."
+        )
+    if (timestamp - now_ts) > tolerance_seconds:
+        raise PaddleWebhookRejected(
+            400,
+            f"Paddle webhook signature timestamp is in the future (> {tolerance_seconds}s).",
+        )
+    signed = f"{ts_str}:".encode() + raw_body
+    expected = hmac.new(secret.encode("utf-8"), signed, hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(expected, provided):
+        raise PaddleWebhookRejected(400, "Invalid Paddle webhook signature.")
 
 
 @dataclass(frozen=True)

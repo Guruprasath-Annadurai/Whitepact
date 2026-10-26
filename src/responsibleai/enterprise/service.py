@@ -104,6 +104,7 @@ class Actor:
     environment_id: str | None = None
     scopes: frozenset[str] = frozenset()
     request_id: str | None = None
+    session_id: str | None = None
 
 
 class EnterpriseIAM:
@@ -189,67 +190,41 @@ class EnterpriseIAM:
         slug: str,
         kind: str,
         request_id: str | None = None,
+        session_token: str = "",
+        csrf: str = "",
     ) -> dict[str, Any]:
         kind = kind.upper()
         if kind not in {"ORGANIZATION", "INDIVIDUAL"}:
             raise forbidden(FORBIDDEN, "Workspace kind must be ORGANIZATION or INDIVIDUAL.")
-        now = _iso()
-        org_id = str(uuid.uuid4())
-        async with self._engine.raw.begin() as conn:
-            user = (
-                await conn.execute(
-                    select(web_users).where(
-                        web_users.c.id == actor_user_id, web_users.c.disabled == 0
-                    )
+        from responsibleai.data_governance.tenant_client import (
+            TenantCreationDeniedError,
+            provision_organization,
+        )
+        from responsibleai.db.web_identity_repository import WebIdentityRepository
+
+        async with self._engine.raw.connect() as connection:
+            account = (
+                await connection.execute(
+                    select(web_users.c.disabled).where(web_users.c.id == actor_user_id)
                 )
             ).fetchone()
-            if user is None:
-                raise forbidden(FORBIDDEN, "Account is not eligible to create a workspace.")
-            await conn.execute(
-                insert(organizations).values(
-                    id=org_id,
-                    name=name.strip(),
-                    slug=slug.strip(),
-                    monthly_budget_usd=10_000.0,
-                    created_at=now,
-                    plan="FREE",
-                    sso_required=0,
-                    mfa_required=0,
-                    governance_status=GovernanceStatus.ACTIVE.value,
-                    workspace_kind=kind,
-                    owner_user_id=actor_user_id,
-                    settings_json="{}",
-                )
-            )
-            await conn.execute(
-                insert(web_memberships).values(
-                    id=str(uuid.uuid4()),
-                    user_id=actor_user_id,
-                    org_id=org_id,
-                    role=Role.OWNER.value,
-                    status="ACTIVE",
-                    invited_by_user_id=None,
-                    accepted_at=now,
-                    created_at=now,
-                    updated_at=now,
-                )
-            )
-            for env_type, env_name in (
-                ("DEVELOPMENT", "Development"),
-                ("STAGING", "Staging"),
-                ("PRODUCTION", "Production"),
-            ):
-                await conn.execute(
-                    insert(enterprise_environments).values(
-                        id=str(uuid.uuid4()),
-                        org_id=org_id,
-                        type=env_type,
-                        name=env_name,
-                        status="ACTIVE",
-                        created_at=now,
-                        metadata_json=json.dumps({"stricter_defaults": env_type == "PRODUCTION"}),
-                    )
-                )
+        if account is None or account.disabled:
+            raise forbidden(FORBIDDEN, "Workspace creator is not an active account.")
+        principal = (
+            await WebIdentityRepository(self._engine).get_principal(session_token)
+            if session_token
+            else None
+        )
+        if principal is None or principal.user_id != actor_user_id:
+            raise TenantCreationDeniedError("Authenticated workspace creator mismatch")
+        org_id = await provision_organization(
+            name=name.strip(),
+            slug=slug.strip(),
+            kind=kind,
+            request_id=request_id,
+            session_token=session_token,
+            csrf=csrf,
+        )
         await self.audit.record(
             org_id=org_id,
             actor_type="human",
@@ -374,6 +349,16 @@ class EnterpriseIAM:
             raise forbidden(FORBIDDEN, "Only the current owner may transfer ownership.")
         async with self._engine.raw.begin() as conn:
             dialect = conn.engine.dialect.name
+            # Match root/passkey lock order: organization before memberships.
+            # The earlier authorization read cannot protect a later mutation.
+            org_lock = select(organizations).where(organizations.c.id == org_id)
+            if dialect != "sqlite":
+                org_lock = org_lock.with_for_update()
+            org = (await conn.execute(org_lock)).fetchone()
+            if org is None:
+                raise forbidden(WRONG_TENANT, "Organization not found.")
+            if org.governance_status != GovernanceStatus.ACTIVE.value or org.deactivated_at:
+                raise forbidden(ORG_DISABLED, "Ownership transfer requires an active organization.")
             lock = select(web_memberships).where(web_memberships.c.org_id == org_id)
             if dialect != "sqlite":
                 lock = lock.with_for_update()

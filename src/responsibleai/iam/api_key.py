@@ -41,11 +41,11 @@ class ApiKeyService:
         ttl_days: int = 90,
     ) -> tuple[str, str, str]:
         """INTERNAL lineage helper. Hosted issuance must use EnterpriseIAM.create_api_key."""
-        import os
 
         from responsibleai.dashboard.config import is_production_environment
+        from responsibleai.environment import effective_environment_name
 
-        env_name = os.environ.get("WHITEPACT_ENV") or os.environ.get("RAI_ENV") or "development"
+        env_name = effective_environment_name()
         if is_production_environment(env_name):
             raise RuntimeError(
                 "ApiKeyService.create_key is not a production issuance path. "

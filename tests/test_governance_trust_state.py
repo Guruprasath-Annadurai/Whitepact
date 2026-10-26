@@ -58,7 +58,10 @@ class TestEnrichAgentTrustState:
         assert result.trust_state.overall_score == 88.0
 
     @respx.mock
-    async def test_fails_open_on_network_error(self) -> None:
+    async def test_network_error_is_recorded_and_does_not_raise(self) -> None:
+        """The client records the outage. It does not treat the outage as a
+        successful unknown-model response. Gateway admission is fail-closed;
+        see TestGatewayTrustLookupFailure."""
         respx.get("https://api.test/api/trust-index/check").mock(
             side_effect=httpx.ConnectError("boom")
         )
@@ -181,6 +184,43 @@ class TestGatewayLowTrustDowngrade:
         )
         result = gateway.evaluate(action, authority)
         assert result.decision == GovernanceDecision.ALLOW_WITH_REDACTION
+
+
+class TestGatewayTrustLookupFailure:
+    def _gateway_authority(self) -> tuple[WhitePactRuntimeGateway, AuthorityContext]:
+        return (
+            WhitePactRuntimeGateway(),
+            AuthorityContext(delegated_by="org-1", granted_action_types=frozenset({"rai_scan"})),
+        )
+
+    @respx.mock
+    async def test_lookup_error_requires_approval(self) -> None:
+        respx.get("https://api.test/api/trust-index/check").mock(
+            side_effect=httpx.ConnectError("trust index down")
+        )
+        gateway, authority = self._gateway_authority()
+        agent = AgentContext(identity=_identity(), provider="openai", model="gpt-4o")
+        agent = await enrich_agent_trust_state(agent, TrustClient("https://api.test"))
+        action = ActionRequest(agent=agent, action_type="rai_scan", target="rai_scan", arguments={})
+        result = gateway.evaluate(action, authority)
+        assert result.decision == GovernanceDecision.REQUIRE_APPROVAL
+        assert any(code.startswith("TRUST_LOOKUP_UNAVAILABLE:") for code in result.reason_codes)
+
+    def test_successful_unknown_model_still_allows(self) -> None:
+        gateway, authority = self._gateway_authority()
+        agent = AgentContext(identity=_identity(), provider="openai", model="obscure")
+        agent.trust_state = TrustCheckResult(
+            model="obscure",
+            provider="openai",
+            known=False,
+            trust_score=None,
+            certified=False,
+            has_reported_incidents=False,
+            error=None,
+        )
+        action = ActionRequest(agent=agent, action_type="rai_scan", target="rai_scan", arguments={})
+        result = gateway.evaluate(action, authority)
+        assert result.decision == GovernanceDecision.ALLOW
 
 
 class TestGatewayStaleTrustDowngrade:

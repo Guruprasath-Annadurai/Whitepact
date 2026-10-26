@@ -35,7 +35,7 @@ from typing import Any
 from sqlalchemy import insert, select, update
 
 from responsibleai.db.engine import DatabaseEngine, governance_delegations
-from responsibleai.db.revocation_epoch_repository import bump_epoch_on_connection
+from responsibleai.db.revocation_epoch_repository import bump_epoch_on_connection, lock_epoch
 from responsibleai.governance.delegation import DelegationRecord
 from responsibleai.governance.delegation_graph import DelegationGraph, DelegationGraphNode
 from responsibleai.governance.models import validate_attenuation
@@ -80,6 +80,79 @@ class DelegationRepository:
     def __init__(self, engine: DatabaseEngine) -> None:
         self._engine = engine
 
+    async def _grant_on_conn(
+        self,
+        conn: Any,
+        org_id: str,
+        to_identity_id: str,
+        *,
+        granted_action_types: frozenset[str],
+        constraints: dict[str, Any] | None = None,
+        require_approval_for: frozenset[str] = frozenset(),
+        purpose: str,
+        granted_by: str,
+        from_identity_id: str | None = None,
+        expires_at: datetime | None = None,
+    ) -> DelegationRecord:
+        constraints = constraints or {}
+        now = _now()
+        delegation_id = str(uuid.uuid4())
+        await lock_epoch(conn, org_id)
+        if from_identity_id is not None:
+            if from_identity_id == to_identity_id:
+                raise DelegationEscalationError(
+                    f"Delegation cycle detected: self-delegation from {from_identity_id!r} to itself is prohibited."
+                )
+            parent = await self._get_active_delegation_on_conn(conn, org_id, from_identity_id)
+            if parent is None or not parent.is_active():
+                raise DelegationEscalationError(
+                    f"{from_identity_id!r} has no active delegation to delegate from."
+                )
+            ancestor_chain = await self._get_authority_chain_on_conn(conn, org_id, from_identity_id)
+            ancestor_ids = {a.to_identity_id for a in ancestor_chain} | {
+                a.from_identity_id for a in ancestor_chain if a.from_identity_id
+            }
+            if to_identity_id in ancestor_ids:
+                raise DelegationEscalationError(
+                    f"Delegation cycle detected: {to_identity_id!r} is already an ancestor of {from_identity_id!r}."
+                )
+            from responsibleai.governance.models import AuthorityContext
+
+            proposed = AuthorityContext(
+                delegated_by=from_identity_id,
+                granted_action_types=granted_action_types,
+                constraints=constraints,
+                require_approval_for=require_approval_for,
+            )
+            escalation = validate_attenuation(parent.to_authority_context(), proposed)
+            if escalation is not None:
+                raise DelegationEscalationError(escalation)
+
+        await conn.execute(
+            insert(governance_delegations).values(
+                id=delegation_id,
+                org_id=org_id,
+                from_identity_id=from_identity_id,
+                to_identity_id=to_identity_id,
+                granted_action_types=json.dumps(sorted(granted_action_types)),
+                constraints=json.dumps(constraints) if constraints else None,
+                require_approval_for=json.dumps(sorted(require_approval_for))
+                if require_approval_for
+                else None,
+                purpose=purpose,
+                granted_by=granted_by,
+                granted_at=now,
+                expires_at=expires_at.isoformat() if expires_at else None,
+            )
+        )
+        row = (
+            await conn.execute(
+                select(governance_delegations).where(governance_delegations.c.id == delegation_id)
+            )
+        ).fetchone()
+        assert row is not None
+        return _row_to_record(row)
+
     async def grant(
         self,
         org_id: str,
@@ -101,49 +174,19 @@ class DelegationRepository:
         skips this check -- there's no parent in the graph to compare
         against; an org's authority ceiling, if configured, is the real
         root-level constraint (see ``OrgAuthorityCeiling``)."""
-        constraints = constraints or {}
-        if from_identity_id is not None:
-            parent = await self.get_active_delegation(org_id, from_identity_id)
-            if parent is None or not parent.is_active():
-                raise DelegationEscalationError(
-                    f"{from_identity_id!r} has no active delegation to delegate from."
-                )
-            from responsibleai.governance.models import AuthorityContext
-
-            proposed = AuthorityContext(
-                delegated_by=from_identity_id,
+        async with self._engine.raw.begin() as conn:
+            return await self._grant_on_conn(
+                conn,
+                org_id,
+                to_identity_id,
                 granted_action_types=granted_action_types,
                 constraints=constraints,
                 require_approval_for=require_approval_for,
+                purpose=purpose,
+                granted_by=granted_by,
+                from_identity_id=from_identity_id,
+                expires_at=expires_at,
             )
-            escalation = validate_attenuation(parent.to_authority_context(), proposed)
-            if escalation is not None:
-                raise DelegationEscalationError(escalation)
-
-        now = _now()
-        delegation_id = str(uuid.uuid4())
-        async with self._engine.raw.begin() as conn:
-            await bump_epoch_on_connection(conn, org_id)
-            await conn.execute(
-                insert(governance_delegations).values(
-                    id=delegation_id,
-                    org_id=org_id,
-                    from_identity_id=from_identity_id,
-                    to_identity_id=to_identity_id,
-                    granted_action_types=json.dumps(sorted(granted_action_types)),
-                    constraints=json.dumps(constraints) if constraints else None,
-                    require_approval_for=json.dumps(sorted(require_approval_for))
-                    if require_approval_for
-                    else None,
-                    purpose=purpose,
-                    granted_by=granted_by,
-                    granted_at=now,
-                    expires_at=expires_at.isoformat() if expires_at else None,
-                )
-            )
-        record = await self.get(delegation_id)
-        assert record is not None
-        return record
 
     async def get(self, delegation_id: str) -> DelegationRecord | None:
         async with self._engine.raw.connect() as conn:
@@ -156,6 +199,48 @@ class DelegationRepository:
             ).fetchone()
         return _row_to_record(row) if row is not None else None
 
+    async def _get_latest_delegation_on_conn(
+        self, conn: Any, org_id: str, identity_id: str
+    ) -> DelegationRecord | None:
+        row = (
+            await conn.execute(
+                select(governance_delegations)
+                .where(governance_delegations.c.org_id == org_id)
+                .where(governance_delegations.c.to_identity_id == identity_id)
+                .order_by(governance_delegations.c.granted_at.desc())
+                .limit(1)
+            )
+        ).fetchone()
+        return _row_to_record(row) if row is not None else None
+
+    async def _get_active_delegation_on_conn(
+        self, conn: Any, org_id: str, identity_id: str
+    ) -> DelegationRecord | None:
+        latest = await self._get_latest_delegation_on_conn(conn, org_id, identity_id)
+        if latest is None or not latest.is_active():
+            return None
+        return latest
+
+    async def _get_authority_chain_on_conn(
+        self, conn: Any, org_id: str, identity_id: str
+    ) -> list[DelegationRecord]:
+        chain: list[DelegationRecord] = []
+        current_id: str | None = identity_id
+        seen: set[str] = set()
+        while current_id is not None:
+            if current_id in seen:
+                break
+            seen.add(current_id)
+            record = await self._get_active_delegation_on_conn(conn, org_id, current_id)
+            if record is None:
+                # An ancestor delegation has been revoked or expired; the authority
+                # chain is broken and cannot reach root. Fail closed.
+                return []
+            chain.append(record)
+            current_id = record.from_identity_id
+        chain.reverse()
+        return chain
+
     async def get_latest_delegation(self, org_id: str, identity_id: str) -> DelegationRecord | None:
         """The most recently granted delegation for *identity_id*,
         regardless of whether it's still active -- ``None`` means this
@@ -163,22 +248,11 @@ class DelegationRepository:
         all (the case every live MCP caller was in before this feature
         existed)."""
         async with self._engine.raw.connect() as conn:
-            row = (
-                await conn.execute(
-                    select(governance_delegations)
-                    .where(governance_delegations.c.org_id == org_id)
-                    .where(governance_delegations.c.to_identity_id == identity_id)
-                    .order_by(governance_delegations.c.granted_at.desc())
-                    .limit(1)
-                )
-            ).fetchone()
-        return _row_to_record(row) if row is not None else None
+            return await self._get_latest_delegation_on_conn(conn, org_id, identity_id)
 
     async def get_active_delegation(self, org_id: str, identity_id: str) -> DelegationRecord | None:
-        latest = await self.get_latest_delegation(org_id, identity_id)
-        if latest is None or not latest.is_active():
-            return None
-        return latest
+        async with self._engine.raw.connect() as conn:
+            return await self._get_active_delegation_on_conn(conn, org_id, identity_id)
 
     async def get_effective_authority(self, org_id: str, identity_id: str):  # noqa: ANN201
         record = await self.get_active_delegation(org_id, identity_id)
@@ -190,20 +264,8 @@ class DelegationRepository:
         *active* delegation -- if an ancestor has no active delegation
         (revoked/expired/never granted), the chain stops there, since
         there's nothing further up to reconstruct."""
-        chain: list[DelegationRecord] = []
-        current_id: str | None = identity_id
-        seen: set[str] = set()
-        while current_id is not None:
-            if current_id in seen:
-                break  # defensive: a cycle should never exist, but never loop forever if one did
-            seen.add(current_id)
-            record = await self.get_active_delegation(org_id, current_id)
-            if record is None:
-                break
-            chain.append(record)
-            current_id = record.from_identity_id
-        chain.reverse()
-        return chain
+        async with self._engine.raw.connect() as conn:
+            return await self._get_authority_chain_on_conn(conn, org_id, identity_id)
 
     async def validate_delegation(
         self,
@@ -241,6 +303,58 @@ class DelegationRepository:
             ).fetchall()
         return [_row_to_record(r) for r in rows]
 
+    async def revoke_branches_on_conn(
+        self,
+        conn: Any,
+        org_id: str,
+        identity_ids: list[str] | tuple[str, ...],
+        *,
+        revoked_by: str,
+        reason: str,
+        bump_epoch: bool = True,
+    ) -> list[str]:
+        """Atomically revoke all active delegations for *identity_ids* and their descendants on *conn*."""
+        now = _now()
+        if bump_epoch:
+            await bump_epoch_on_connection(conn, org_id)
+        if not identity_ids:
+            return []
+
+        rows = (
+            await conn.execute(
+                select(governance_delegations).where(governance_delegations.c.org_id == org_id)
+            )
+        ).fetchall()
+        records = [_row_to_record(row) for row in rows]
+        latest: dict[str, DelegationRecord] = {}
+        children: defaultdict[str, set[str]] = defaultdict(set)
+        for record in records:
+            children[record.from_identity_id or ""].add(record.to_identity_id)
+            existing = latest.get(record.to_identity_id)
+            if existing is None or record.granted_at > existing.granted_at:
+                latest[record.to_identity_id] = record
+
+        revoked_ids: list[str] = []
+        queue = deque(identity_ids)
+        seen: set[str] = set()
+        while queue:
+            current = queue.popleft()
+            if current in seen:
+                continue
+            seen.add(current)
+            active = latest.get(current)
+            if active is not None and active.is_active():
+                revoked_ids.append(active.delegation_id)
+            queue.extend(children[current])
+
+        if revoked_ids:
+            await conn.execute(
+                update(governance_delegations)
+                .where(governance_delegations.c.id.in_(revoked_ids))
+                .values(revoked_at=now, revoked_by=revoked_by, revoke_reason=reason)
+            )
+        return revoked_ids
+
     async def revoke_branch(
         self, org_id: str, identity_id: str, *, revoked_by: str, reason: str
     ) -> list[str]:
@@ -259,43 +373,15 @@ class DelegationRepository:
         together. There is no per-node commit that could leave a live
         descendant after a parent branch revocation starts.
         """
-        now = _now()
         async with self._engine.raw.begin() as conn:
-            rows = (
-                await conn.execute(
-                    select(governance_delegations).where(governance_delegations.c.org_id == org_id)
-                )
-            ).fetchall()
-            records = [_row_to_record(row) for row in rows]
-            latest: dict[str, DelegationRecord] = {}
-            children: defaultdict[str, set[str]] = defaultdict(set)
-            for record in records:
-                children[record.from_identity_id or ""].add(record.to_identity_id)
-                existing = latest.get(record.to_identity_id)
-                if existing is None or record.granted_at > existing.granted_at:
-                    latest[record.to_identity_id] = record
-
-            revoked_ids: list[str] = []
-            queue = deque([identity_id])
-            seen: set[str] = set()
-            while queue:
-                current = queue.popleft()
-                if current in seen:
-                    continue
-                seen.add(current)
-                active = latest.get(current)
-                if active is not None and active.is_active():
-                    revoked_ids.append(active.delegation_id)
-                queue.extend(children[current])
-
-            if revoked_ids:
-                await bump_epoch_on_connection(conn, org_id)
-                await conn.execute(
-                    update(governance_delegations)
-                    .where(governance_delegations.c.id.in_(revoked_ids))
-                    .values(revoked_at=now, revoked_by=revoked_by, revoke_reason=reason)
-                )
-        return revoked_ids
+            return await self.revoke_branches_on_conn(
+                conn,
+                org_id,
+                [identity_id],
+                revoked_by=revoked_by,
+                reason=reason,
+                bump_epoch=True,
+            )
 
     async def explain_authority(self, org_id: str, identity_id: str) -> dict[str, Any]:
         """A deterministic, structured explanation of *identity_id*'s

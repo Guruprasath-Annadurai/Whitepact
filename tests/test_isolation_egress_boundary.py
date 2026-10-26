@@ -549,13 +549,21 @@ async def test_execution_boundary_restore_readiness_failure_rejects_sandbox() ->
     action = _make_action()
     auth = _make_authorization(action)
 
-    with patch(
-        "responsibleai.data_governance.backup_defense.assert_restore_readiness_admitted",
-        side_effect=PermissionError("System in restore mode"),
+    with (
+        patch(
+            "responsibleai.data_governance.backup_defense.assert_current_restore_readiness_admitted",
+            new_callable=AsyncMock,
+            side_effect=PermissionError("System in restore mode"),
+        ),
+        patch("responsibleai.mcp.tools.dispatch_tool", new_callable=AsyncMock) as dispatch,
     ):
         executor = InternalToolExecutor()
+        executor._broker = MagicMock(execute=AsyncMock())
         with pytest.raises(PermissionError):
             await executor.execute(auth, action)
+        assert not auth.consumed
+        executor._broker.execute.assert_not_awaited()
+        dispatch.assert_not_awaited()
 
 
 @pytest.mark.asyncio

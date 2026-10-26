@@ -8,7 +8,6 @@ Redis is never canonical. Failures deny. This module cannot mint ExecutionAuthor
 from __future__ import annotations
 
 import hashlib
-import hmac
 import json
 import secrets
 import time
@@ -19,7 +18,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from urllib.parse import urlparse
 
-from sqlalchemy import insert, select, update
+from sqlalchemy import insert, or_, select, update
 from sqlalchemy.exc import IntegrityError
 
 from responsibleai.auth import mfa
@@ -166,11 +165,11 @@ class IdentitySecurityService:
         self.four_eyes = IdentityFourEyesService(self.engine)
 
     def _raw_id_token_permitted(self) -> bool:
-        import os
 
         from responsibleai.dashboard.config import is_production_environment
+        from responsibleai.environment import effective_environment_name
 
-        env = os.environ.get("WHITEPACT_ENV") or os.environ.get("RAI_ENV") or "development"
+        env = effective_environment_name()
         if is_production_environment(env):
             return False
         return bool(self.allow_raw_id_token)
@@ -213,18 +212,21 @@ class IdentitySecurityService:
         if not org_id:
             return OrgAuthPolicy()
         async with self.engine.raw.connect() as conn:
-            row = (
-                await conn.execute(
-                    select(org_security_policies).where(org_security_policies.c.org_id == org_id)
-                )
-            ).fetchone()
-            sso = (
-                await conn.execute(
-                    select(organization_sso_configs).where(
-                        organization_sso_configs.c.org_id == org_id
-                    )
-                )
-            ).fetchone()
+            return await self._org_policy_on_conn(conn, org_id)
+
+    async def _org_policy_on_conn(self, conn: Any, org_id: str | None) -> OrgAuthPolicy:
+        if not org_id:
+            return OrgAuthPolicy()
+        row = (
+            await conn.execute(
+                select(org_security_policies).where(org_security_policies.c.org_id == org_id)
+            )
+        ).fetchone()
+        sso = (
+            await conn.execute(
+                select(organization_sso_configs).where(organization_sso_configs.c.org_id == org_id)
+            )
+        ).fetchone()
         if row is None and sso is None:
             return OrgAuthPolicy()
         roles = json.loads(row.privileged_roles_json) if row else ["OWNER", "SECURITY_ADMIN"]
@@ -247,6 +249,157 @@ class IdentitySecurityService:
             break_glass_user_id=row.break_glass_user_id if row else None,
             sso_provisioning=sso.provisioning if sso is not None else "INVITE_ONLY",
         )
+
+    async def _can_bootstrap_first_passkey(
+        self, conn: Any, *, session: SessionAssurance, grant_row: Any
+    ) -> bool:
+        """Evaluate if an authenticated, email-verified initial organization owner can bootstrap their first passkey."""
+        if not session.org_id or grant_row.org_id != session.org_id:
+            return False
+        if session.level != "PASSWORD" or AuthMethod.PASSWORD not in session.methods:
+            return False
+        if AuthMethod.RECOVERY in session.methods:
+            return False
+
+        # Fresh session check (must be within _RECOVERY_TTL = 900 seconds)
+        try:
+            auth_val = session.auth_time
+            auth_dt = datetime.fromisoformat(auth_val) if isinstance(auth_val, str) else auth_val
+            if auth_dt.tzinfo is None:
+                auth_dt = auth_dt.replace(tzinfo=UTC)
+            if (_now() - auth_dt).total_seconds() > _RECOVERY_TTL:
+                return False
+        except Exception:
+            return False
+
+        # Active, unrevoked web_sessions row matching session context
+        sess_row = (
+            await conn.execute(
+                select(web_sessions).where(
+                    web_sessions.c.session_id == session.session_id,
+                    web_sessions.c.user_id == session.user_id,
+                    web_sessions.c.org_id == session.org_id,
+                    web_sessions.c.revoked == 0,
+                    web_sessions.c.assurance_level == "PASSWORD",
+                )
+            )
+        ).fetchone()
+        if sess_row is None:
+            return False
+        now = _now()
+        for deadline in (sess_row.expires_at, sess_row.inactivity_expires_at):
+            if deadline and _iso(now) >= deadline:
+                return False
+        try:
+            persisted_auth = datetime.fromisoformat(sess_row.auth_time or sess_row.created_at)
+            if persisted_auth.tzinfo is None:
+                persisted_auth = persisted_auth.replace(tzinfo=UTC)
+            if not 0 <= (now - persisted_auth).total_seconds() <= _RECOVERY_TTL:
+                return False
+        except (TypeError, ValueError):
+            return False
+
+        # Verified human identity
+        user_row = (
+            await conn.execute(select(web_users).where(web_users.c.id == session.user_id))
+        ).fetchone()
+        if (
+            user_row is None
+            or user_row.disabled
+            or not getattr(user_row, "email_verified_at", None)
+            or user_row.verification_status == "SUSPENDED"
+        ):
+            return False
+
+        # Verified initial organization owner (organizations.owner_user_id matches)
+        org_row = (
+            await conn.execute(select(organizations).where(organizations.c.id == session.org_id))
+        ).fetchone()
+        if (
+            org_row is None
+            or org_row.owner_user_id != session.user_id
+            or getattr(org_row, "governance_status", "ACTIVE") != "ACTIVE"
+            or getattr(org_row, "deactivated_at", None) is not None
+        ):
+            return False
+
+        # Active owner membership
+        mem_row = (
+            await conn.execute(
+                select(web_memberships).where(
+                    web_memberships.c.user_id == session.user_id,
+                    web_memberships.c.org_id == session.org_id,
+                )
+            )
+        ).fetchone()
+        if (
+            mem_row is None
+            or mem_row.role not in {"OWNER", Role.OWNER.value}
+            or getattr(mem_row, "status", "ACTIVE") != "ACTIVE"
+        ):
+            return False
+
+        # Org security policy cannot require SSO or existing phishing resistance
+        policy = await self._org_policy_on_conn(conn, session.org_id)
+        if policy.sso_enforcement == "SSO_REQUIRED" or policy.phishing_resistant_required:
+            return False
+
+        # Zero passkeys of any status (ACTIVE, REMOVED, REVOKED)
+        existing_passkey = (
+            await conn.execute(
+                select(passkey_credentials.c.id)
+                .where(passkey_credentials.c.user_id == session.user_id)
+                .limit(1)
+            )
+        ).fetchone()
+        if existing_passkey is not None:
+            return False
+
+        # Zero active or confirmed TOTP factors
+        active_totp = (
+            await conn.execute(
+                select(human_totp_factors.c.user_id)
+                .where(
+                    human_totp_factors.c.user_id == session.user_id,
+                    human_totp_factors.c.status.in_(["ACTIVE", "CONFIRMED"]),
+                )
+                .limit(1)
+            )
+        ).fetchone()
+        if active_totp is not None:
+            return False
+
+        # No unconsumed active account recovery requests
+        now_str = _iso()
+        pending_recovery = (
+            await conn.execute(
+                select(account_recovery_requests.c.id)
+                .where(
+                    account_recovery_requests.c.user_id == session.user_id,
+                    account_recovery_requests.c.consumed_at.is_(None),
+                    account_recovery_requests.c.expires_at > now_str,
+                )
+                .limit(1)
+            )
+        ).fetchone()
+        if pending_recovery is not None:
+            return False
+
+        # Zero prior first-passkey bootstrap replay markers
+        prior_marker = (
+            await conn.execute(
+                select(auth_replay_records.c.id)
+                .where(
+                    auth_replay_records.c.kind == "first_passkey_bootstrap",
+                    auth_replay_records.c.replay_key == f"first_passkey:{session.user_id}",
+                )
+                .limit(1)
+            )
+        ).fetchone()
+        if prior_marker is not None:
+            return False
+
+        return True
 
     async def consume_replay(self, kind: str, replay_key: str) -> None:
         try:
@@ -301,7 +454,14 @@ class IdentitySecurityService:
         }
 
     async def _consume_challenge(
-        self, conn: Any, *, challenge_b64: str, ceremony: str, user_id: str | None
+        self,
+        conn: Any,
+        *,
+        challenge_b64: str,
+        ceremony: str,
+        user_id: str | None,
+        expected_session_id: str | None = None,
+        expected_org_id: str | None = None,
     ) -> bytes:
         raw = b64url_decode(challenge_b64)
         digest = _sha256_bytes(raw)
@@ -323,6 +483,14 @@ class IdentitySecurityService:
             raise forbidden(WEBAUTHN_INVALID, "Challenge is bound to another user.")
         if ceremony == "authenticate" and row.user_id and user_id and row.user_id != user_id:
             raise forbidden(WEBAUTHN_INVALID, "Challenge cannot be reused across accounts.")
+        if (
+            expected_session_id is not None
+            and row.session_id
+            and row.session_id != expected_session_id
+        ):
+            raise forbidden(WEBAUTHN_INVALID, "Challenge is bound to another session.")
+        if expected_org_id is not None and row.org_id and row.org_id != expected_org_id:
+            raise forbidden(WEBAUTHN_INVALID, "Challenge is bound to another organization.")
         result = await conn.execute(
             update(webauthn_challenges)
             .where(
@@ -348,14 +516,88 @@ class IdentitySecurityService:
     ) -> dict[str, Any]:
         if session.user_id != user_id:
             raise unauthenticated()
+
+        is_bootstrap_candidate = session.rank() < ASSURANCE_RANK["TOTP"]
         await self.require_step_up(
-            session, SensitiveAction.ADD_PASSKEY, org_id=session.org_id, grant=grant
+            session,
+            SensitiveAction.ADD_PASSKEY,
+            org_id=session.org_id,
+            grant=grant,
+            allow_initial_owner_passkey_bootstrap=is_bootstrap_candidate,
         )
+
         try:
             async with self.engine.raw.begin() as conn:
+                if is_bootstrap_candidate:
+                    # Hold the revocable context through the credential write. Database
+                    # lock/read errors propagate; they cannot authorize enrollment.
+                    for table, conditions in (
+                        (web_users, (web_users.c.id == user_id,)),
+                        (organizations, (organizations.c.id == session.org_id,)),
+                        (
+                            web_memberships,
+                            (
+                                web_memberships.c.org_id == session.org_id,
+                                web_memberships.c.user_id == user_id,
+                            ),
+                        ),
+                        (web_sessions, (web_sessions.c.session_id == session.session_id,)),
+                    ):
+                        await conn.execute(select(table).where(*conditions).with_for_update())
+                    consumed_grant = (
+                        await conn.execute(
+                            select(step_up_grants).where(
+                                step_up_grants.c.grant_hash == _hash(grant or "")
+                            )
+                        )
+                    ).fetchone()
+                    if consumed_grant is None or not await self._can_bootstrap_first_passkey(
+                        conn, session=session, grant_row=consumed_grant
+                    ):
+                        raise EnterpriseError(
+                            "AUTHENTICATION_ASSURANCE_TOO_LOW",
+                            "First-passkey enrollment qualification is no longer valid.",
+                            403,
+                        )
+                    # Re-verify zero passkeys and zero auth_replay_records under lock
+                    cred_check = (
+                        await conn.execute(
+                            select(passkey_credentials.c.id)
+                            .where(passkey_credentials.c.user_id == user_id)
+                            .limit(1)
+                        )
+                    ).fetchone()
+                    if cred_check is not None:
+                        raise EnterpriseError(
+                            "AUTHENTICATION_ASSURANCE_TOO_LOW",
+                            "First passkey already enrolled.",
+                            403,
+                        )
+                    replay_check = (
+                        await conn.execute(
+                            select(auth_replay_records.c.id)
+                            .where(
+                                auth_replay_records.c.kind == "first_passkey_bootstrap",
+                                auth_replay_records.c.replay_key == f"first_passkey:{user_id}",
+                            )
+                            .limit(1)
+                        )
+                    ).fetchone()
+                    if replay_check is not None:
+                        raise EnterpriseError(
+                            "AUTHENTICATION_ASSURANCE_TOO_LOW",
+                            "First passkey already enrolled.",
+                            403,
+                        )
+
                 challenge = parse_client_data_challenge(client_data_b64)
                 await self._consume_challenge(
-                    conn, challenge_b64=challenge, ceremony="register", user_id=user_id
+                    conn,
+                    challenge_b64=challenge,
+                    ceremony="register",
+                    user_id=user_id,
+                    expected_session_id=session.session_id if is_bootstrap_candidate else None,
+                    expected_org_id=session.org_id if is_bootstrap_candidate else None,
                 )
                 cred_id, public_key, sign_count, flags = verify_registration(
                     client_data_b64=client_data_b64,
@@ -367,6 +609,17 @@ class IdentitySecurityService:
                 )
                 cred_id_b64 = b64url_encode(cred_id)
                 record_id = str(uuid.uuid4())
+
+                if is_bootstrap_candidate:
+                    await conn.execute(
+                        insert(auth_replay_records).values(
+                            id=str(uuid.uuid4()),
+                            kind="first_passkey_bootstrap",
+                            replay_key=f"first_passkey:{user_id}",
+                            created_at=_iso(),
+                        )
+                    )
+
                 await conn.execute(
                     insert(passkey_credentials).values(
                         id=record_id,
@@ -383,10 +636,22 @@ class IdentitySecurityService:
                     )
                 )
         except IntegrityError as exc:
+            if is_bootstrap_candidate and "auth_replay_records" in str(exc):
+                raise EnterpriseError(
+                    "AUTHENTICATION_ASSURANCE_TOO_LOW", "First passkey already enrolled.", 403
+                ) from exc
             raise forbidden(WEBAUTHN_INVALID, "Duplicate credential.") from exc
         except ValueError as exc:
             raise forbidden(WEBAUTHN_INVALID, str(exc)) from exc
-        await self._notify("passkey_added", user_id=user_id)
+
+        if is_bootstrap_candidate:
+            await self._notify(
+                "first_passkey_bootstrapped",
+                user_id=user_id,
+                org_id=session.org_id,
+                payload={"credential_id": cred_id_b64, "session_id": session.session_id},
+            )
+        await self._notify("passkey_added", user_id=user_id, org_id=session.org_id)
         return {
             "id": record_id,
             "credential_id": cred_id_b64,
@@ -402,6 +667,8 @@ class IdentitySecurityService:
         signature_b64: str,
         credential_id: str,
         expected_user_id: str | None = None,
+        org_id: str | None = None,
+        rotate_from: str | None = None,
     ) -> tuple[str, str, SessionAssurance]:
         await self.limiter.check(f"passkey:{credential_id}", limit=20, window_seconds=60)
         try:
@@ -464,13 +731,22 @@ class IdentitySecurityService:
                 user_id = cred.user_id
         except ValueError as exc:
             raise forbidden(WEBAUTHN_INVALID, str(exc)) from exc
+
+        resolved_org = org_id
+        if not resolved_org:
+            from responsibleai.db.web_identity_repository import WebIdentityRepository
+
+            resolved_org = await WebIdentityRepository(self.engine).primary_org_id(user_id)
+
         token, csrf, assurance = await self.issue_session(
             user_id=user_id,
             methods=(AuthMethod.PASSKEY_UV,),
+            org_id=resolved_org,
             ip_label=None,
             user_agent=None,
+            rotate_from=rotate_from,
         )
-        await self._notify("passkey_used", user_id=user_id)
+        await self._notify("passkey_used", user_id=user_id, org_id=resolved_org)
         return token, csrf, assurance
 
     async def list_passkeys(self, user_id: str) -> list[dict[str, Any]]:
@@ -579,26 +855,36 @@ class IdentitySecurityService:
             ).fetchone()
             if row is None or not row.pending_secret_encrypted:
                 raise forbidden(MFA_REQUIRED, "No TOTP enrollment in progress.")
-            if not mfa.verify_code(row.pending_secret_encrypted, code):
+            now = time.time()
+            matched = mfa.verify_code_with_counter(row.pending_secret_encrypted, code, now=now)
+            if matched is None:
                 await conn.execute(
                     update(human_totp_factors)
                     .where(human_totp_factors.c.user_id == user_id)
                     .values(failed_attempts=int(row.failed_attempts or 0) + 1)
                 )
                 raise forbidden(AUTHENTICATION_FAILED, "Invalid authenticator code.")
-            timestep = int(time.time()) // 30
-            await conn.execute(
+            activated = await conn.execute(
                 update(human_totp_factors)
-                .where(human_totp_factors.c.user_id == user_id)
+                .where(
+                    human_totp_factors.c.user_id == user_id,
+                    human_totp_factors.c.pending_secret_encrypted.is_not(None),
+                    or_(
+                        human_totp_factors.c.last_timestep.is_(None),
+                        human_totp_factors.c.last_timestep < matched,
+                    ),
+                )
                 .values(
                     secret_encrypted=row.pending_secret_encrypted,
                     pending_secret_encrypted=None,
                     status="ACTIVE",
                     confirmed_at=_iso(),
-                    last_timestep=timestep,
+                    last_timestep=matched,
                     failed_attempts=0,
                 )
             )
+            if (activated.rowcount or 0) != 1:
+                raise forbidden(CHALLENGE_REPLAY, "TOTP code already used.")
         await self._notify("totp_added", user_id=user_id)
 
     async def verify_totp(self, user_id: str, code: str) -> None:
@@ -611,17 +897,24 @@ class IdentitySecurityService:
             ).fetchone()
             if row is None or row.status != "ACTIVE":
                 raise forbidden(MFA_REQUIRED, "TOTP is not enrolled.")
-            timestep = int(time.time()) // 30
-            if row.last_timestep is not None and abs(timestep - int(row.last_timestep)) == 0:
-                if hmac.compare_digest(str(row.last_timestep), str(timestep)):
-                    raise forbidden(CHALLENGE_REPLAY, "TOTP code already used.")
-            if not mfa.verify_code(row.secret_encrypted, code):
+            now = time.time()
+            matched = mfa.verify_code_with_counter(row.secret_encrypted, code, now=now)
+            if matched is None:
                 raise forbidden(AUTHENTICATION_FAILED, "Invalid authenticator code.")
-            await conn.execute(
+            consumed = await conn.execute(
                 update(human_totp_factors)
-                .where(human_totp_factors.c.user_id == user_id)
-                .values(last_timestep=timestep, failed_attempts=0)
+                .where(
+                    human_totp_factors.c.user_id == user_id,
+                    human_totp_factors.c.status == "ACTIVE",
+                    or_(
+                        human_totp_factors.c.last_timestep.is_(None),
+                        human_totp_factors.c.last_timestep < matched,
+                    ),
+                )
+                .values(last_timestep=matched, failed_attempts=0)
             )
+            if (consumed.rowcount or 0) != 1:
+                raise forbidden(CHALLENGE_REPLAY, "TOTP code already used.")
 
     async def remove_totp(
         self, *, user_id: str, session: SessionAssurance, grant: str | None = None
@@ -922,7 +1215,12 @@ class IdentitySecurityService:
         return grant
 
     async def consume_step_up(
-        self, session: SessionAssurance, action: SensitiveAction | str, grant: str
+        self,
+        session: SessionAssurance,
+        action: SensitiveAction | str,
+        grant: str,
+        *,
+        allow_initial_owner_passkey_bootstrap: bool = False,
     ) -> None:
         async with self.engine.raw.begin() as conn:
             row = (
@@ -944,9 +1242,19 @@ class IdentitySecurityService:
                     STEP_UP_REQUIRED, "Step-up grant is bound to another session.", 401
                 )
             if session.rank() < ASSURANCE_RANK.get(row.assurance_required, 0):
-                raise EnterpriseError(
-                    "AUTHENTICATION_ASSURANCE_TOO_LOW", "Assurance too low for this action.", 403
+                can_bootstrap = (
+                    allow_initial_owner_passkey_bootstrap
+                    and str(action) == str(SensitiveAction.ADD_PASSKEY)
+                    and await self._can_bootstrap_first_passkey(
+                        conn, session=session, grant_row=row
+                    )
                 )
+                if not can_bootstrap:
+                    raise EnterpriseError(
+                        "AUTHENTICATION_ASSURANCE_TOO_LOW",
+                        "Assurance too low for this action.",
+                        403,
+                    )
             result = await conn.execute(
                 update(step_up_grants)
                 .where(step_up_grants.c.id == row.id, step_up_grants.c.consumed_at.is_(None))
@@ -967,13 +1275,19 @@ class IdentitySecurityService:
         *,
         org_id: str | None,
         grant: str | None = None,
+        allow_initial_owner_passkey_bootstrap: bool = False,
     ) -> None:
         if not grant:
             issued = await self.issue_step_up(session, action, org_id=org_id)
             raise EnterpriseError(
                 STEP_UP_REQUIRED, f"Fresh step-up authentication is required:{issued}", 401
             )
-        await self.consume_step_up(session, action, grant)
+        await self.consume_step_up(
+            session,
+            action,
+            grant,
+            allow_initial_owner_passkey_bootstrap=allow_initial_owner_passkey_bootstrap,
+        )
 
     async def authenticate_password(
         self, email: str, password: str, *, org_id: str | None = None

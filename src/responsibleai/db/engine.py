@@ -120,6 +120,88 @@ organizations = Table(
     Index("idx_org_paddle_subscription", "paddle_subscription_id", unique=True),
 )
 
+tenant_provisioning_records = Table(
+    "tenant_provisioning_records",
+    metadata,
+    Column(
+        "tenant_id",
+        String(36),
+        primary_key=True,
+    ),
+    Column("deployment_id", String(256), nullable=False),
+    Column("request_id", String(128), nullable=False, unique=True),
+    Column("generation_id", String(64), nullable=False, unique=True),
+    Column("principal_id", String(36), nullable=False),
+    Column("operation_digest", String(64), nullable=False),
+    Column("pending_receipt_digest", String(64), nullable=False),
+    Column("publication_manifest", Text),
+    Column("publication_signature", Text),
+    Column("publication_digest", String(64)),
+    Column("completion_digest", String(64)),
+    Column("security_epoch", BigInteger, nullable=False),
+    Column("revocation_floor", BigInteger, nullable=False),
+    Column("state", String(16), nullable=False),
+    CheckConstraint(
+        "state IN ('PENDING','PUBLISHED','COMPLETE')", name="ck_tenant_provisioning_state"
+    ),
+    CheckConstraint("length(generation_id)=64", name="ck_tenant_generation_length"),
+    CheckConstraint("security_epoch>=1 AND revocation_floor>=1", name="ck_tenant_initial_floors"),
+    CheckConstraint(
+        "state='PENDING' OR publication_digest IS NOT NULL", name="ck_tenant_publication_receipt"
+    ),
+    CheckConstraint(
+        "state!='COMPLETE' OR completion_digest IS NOT NULL", name="ck_tenant_completion_receipt"
+    ),
+)
+
+tenant_provisioning_outbox = Table(
+    "tenant_provisioning_outbox",
+    metadata,
+    Column("receipt_id", String(64), primary_key=True),
+    Column(
+        "tenant_id",
+        String(36),
+        nullable=False,
+        unique=True,
+    ),
+    Column("generation_id", String(64), nullable=False),
+    Column("receipt_digest", String(64), nullable=False),
+    Column("receipt_json", Text, nullable=False),
+    Column("created_at", String(32), nullable=False),
+)
+
+runtime_containment_records = Table(
+    "runtime_containment_records",
+    metadata,
+    Column("execution_id", String(64), primary_key=True),
+    Column(
+        "organization_id",
+        String(36),
+        ForeignKey("organizations.id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    Column("owner_generation", String(64), nullable=False),
+    Column("backend_identity", String(128), nullable=False),
+    Column("authorization_id", String(64), nullable=False),
+    Column("action_digest", String(64), nullable=False),
+    Column("admission_epoch", Integer, nullable=False),
+    Column("expected_container_name", String(128), nullable=False),
+    Column("container_id", String(64), nullable=True),
+    Column("state", String(16), nullable=False),
+    Column("created_at", String(32), nullable=False),
+    Column("updated_at", String(32), nullable=False),
+    CheckConstraint(
+        "state IN ('PREPARING','ACTIVE','UNRESOLVED','CONTAINED')",
+        name="chk_runtime_containment_state",
+    ),
+    CheckConstraint("admission_epoch >= 0", name="chk_runtime_containment_epoch"),
+    CheckConstraint(
+        "state NOT IN ('ACTIVE','CONTAINED') OR container_id IS NOT NULL",
+        name="chk_runtime_containment_receipt",
+    ),
+    Index("idx_runtime_containment_org_state", "organization_id", "state"),
+)
+
 mcp_tool_calls = Table(
     "mcp_tool_calls",
     metadata,
@@ -151,6 +233,8 @@ org_api_keys = Table(
     # confirmed can't silently gate login.
     Column("mfa_secret", EncryptedString(), nullable=True),
     Column("mfa_enrolled", Integer, nullable=False, default=0),
+    # Highest TOTP time step already accepted for this key's step-up: a code is single-use.
+    Column("mfa_last_timestep", Integer, nullable=True),
     Column("mfa_backup_codes", Text, nullable=True),
     Column("created_by_user_id", String(36), nullable=True),
     Column("accountable_human_user_id", String(36), nullable=True),
@@ -797,6 +881,29 @@ governance_policy_versions = Table(
     Column("org_id", String(36), primary_key=True),
     Column("version", Integer, nullable=False, default=0),
     Column("updated_at", String(32), nullable=False),
+)
+
+# Append-only history of every policy mutation: WHO changed WHAT and the full rule set that took effect
+# at each `governance_policy_versions.version`. Evidence records carry only `policy_version`; without
+# this table the rules that governed a past decision were unrecoverable once edited. Written in the same
+# transaction as the mutation (see `db/policy_repository.py`), hash-chained per org so a rewritten or
+# deleted row is detectable.
+governance_policy_history = Table(
+    "governance_policy_history",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column("org_id", String(36), nullable=False, index=True),
+    Column("version", Integer, nullable=False),
+    Column("change", String(32), nullable=False),
+    Column("rule_id", String(128), nullable=True),
+    Column("actor_type", String(32), nullable=False),
+    Column("actor_id", String(128), nullable=False),
+    Column("rules_json", Text, nullable=False),
+    Column("rules_digest", String(64), nullable=False),
+    Column("prev_entry_digest", String(64), nullable=False),
+    Column("entry_digest", String(64), nullable=False),
+    Column("created_at", String(32), nullable=False),
+    UniqueConstraint("org_id", "version", name="uq_policy_history_org_version"),
 )
 
 # One row per org: a structural ceiling no per-call `AuthorityContext`
@@ -1514,6 +1621,7 @@ trust_fabric_bootstrap_records = Table(
     Column("consumed_at", String(32), nullable=True),
     Column("claimed_by_principal_id", String(64), nullable=True),
     Column("nonce", String(64), nullable=False, unique=True),
+    Column("require_passkey_stepup", Integer, nullable=False, server_default="0"),
     Column("created_at", String(32), nullable=False),
     Index("idx_tf_boot_org", "org_id"),
     Index("idx_tf_boot_nonce", "nonce"),
@@ -2682,6 +2790,84 @@ sovereign_shadow_observations = Table(
     Column("schema_version", String(32), nullable=False),
     Column("diagnostic_json", Text, nullable=False, server_default="{}"),
     Column("created_at", String(32), nullable=False),
+)
+
+authority_step_up_challenges = Table(
+    "authority_step_up_challenges",
+    metadata,
+    Column("challenge_hash", String(64), primary_key=True),
+    Column("org_id", String(36), nullable=False),
+    Column("user_id", String(36), nullable=False),
+    Column("session_id", String(64), nullable=True),
+    Column("action", String(64), nullable=False),
+    Column("operation_digest", String(64), nullable=False),
+    Column("rp_id", String(255), nullable=False),
+    Column("origin", String(512), nullable=False),
+    Column("raw_challenge_b64", String(128), nullable=False),
+    Column("created_at", String(32), nullable=False),
+    Column("expires_at", String(32), nullable=False),
+    Column("consumed_at", String(32), nullable=True),
+    Index("idx_auth_stepup_user", "user_id"),
+    Index("idx_auth_stepup_org", "org_id"),
+    Index("idx_auth_stepup_digest", "operation_digest"),
+)
+
+authority_containment_records = Table(
+    "authority_containment_records",
+    metadata,
+    Column("id", String(64), primary_key=True),
+    Column("org_id", String(36), nullable=False),
+    Column("responder_user_id", String(36), nullable=False),
+    Column("target_type", String(32), nullable=False),
+    Column("target_id", String(128), nullable=False),
+    Column("containment_action", String(64), nullable=False),
+    Column("reason", Text, nullable=False),
+    Column("status", String(32), nullable=False),
+    Column("revocation_epoch", Integer, nullable=False),
+    Column("evidence_id", String(36), nullable=True),
+    Column("contained_at", String(32), nullable=False),
+    Index("idx_containment_org", "org_id"),
+    Index("idx_containment_target", "target_id"),
+)
+
+authority_recovery_requests = Table(
+    "authority_recovery_requests",
+    metadata,
+    Column("id", String(64), primary_key=True),
+    Column("org_id", String(36), nullable=False),
+    Column("request_type", String(32), nullable=False),
+    Column("target_root_id", String(36), nullable=True),
+    Column("requester_user_id", String(36), nullable=False),
+    Column("proposed_parameters_json", Text, nullable=False),
+    Column("action_digest", String(64), nullable=False),
+    Column("required_quorum_m", Integer, nullable=False, server_default="2"),
+    Column("eligible_quorum_n", Integer, nullable=False, server_default="3"),
+    Column("status", String(32), nullable=False, server_default="PENDING"),
+    Column("created_at", String(32), nullable=False),
+    Column("expires_at", String(32), nullable=False),
+    Column("executed_at", String(32), nullable=True),
+    Column("executed_by_user_id", String(36), nullable=True),
+    Index("idx_rec_req_org", "org_id"),
+    Index("idx_rec_req_digest", "action_digest"),
+)
+
+authority_recovery_votes = Table(
+    "authority_recovery_votes",
+    metadata,
+    Column("id", String(64), primary_key=True),
+    Column(
+        "request_id",
+        String(64),
+        ForeignKey("authority_recovery_requests.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column("voter_user_id", String(36), nullable=False),
+    Column("decision", String(20), nullable=False),
+    Column("action_digest", String(64), nullable=False),
+    Column("voted_at", String(32), nullable=False),
+    Column("notes", Text, nullable=True),
+    UniqueConstraint("request_id", "voter_user_id", name="uq_rec_vote_request_voter"),
+    Index("idx_rec_votes_req", "request_id"),
 )
 
 

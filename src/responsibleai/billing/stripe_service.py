@@ -47,6 +47,7 @@ class PlanUpdate:
     stripe_subscription_id: str | None
     plan_renews_at: str | None
     subscription_status: str
+    event_timestamp: str | None = None
 
 
 class StripeService:
@@ -143,6 +144,9 @@ class StripeService:
         if data_object is None:
             return None
 
+        created_sec = getattr(event, "created", None) or getattr(data_object, "created", None)
+        event_ts = datetime.fromtimestamp(created_sec, tz=UTC).isoformat() if created_sec else None
+
         if etype == "checkout.session.completed":
             metadata = getattr(data_object, "metadata", {}) or {}
             org_id = metadata.get("org_id") or getattr(data_object, "client_reference_id", None)
@@ -158,6 +162,7 @@ class StripeService:
                 stripe_subscription_id=str(subscription_id) if subscription_id else None,
                 plan_renews_at=None,
                 subscription_status="active",
+                event_timestamp=event_ts,
             )
 
         if etype == "customer.subscription.updated":
@@ -184,6 +189,7 @@ class StripeService:
                 stripe_subscription_id=str(subscription_id) if subscription_id else None,
                 plan_renews_at=renews_at,
                 subscription_status=str(status or "unknown"),
+                event_timestamp=event_ts,
             )
 
         if etype == "customer.subscription.deleted":
@@ -199,6 +205,7 @@ class StripeService:
                 stripe_subscription_id=None,
                 plan_renews_at=None,
                 subscription_status="canceled",
+                event_timestamp=event_ts,
             )
 
         if etype in {"invoice.payment_failed", "invoice.payment_action_required"}:
@@ -218,6 +225,7 @@ class StripeService:
                 stripe_subscription_id=str(subscription_id) if subscription_id else None,
                 plan_renews_at=None,
                 subscription_status="past_due",
+                event_timestamp=event_ts,
             )
 
         return None

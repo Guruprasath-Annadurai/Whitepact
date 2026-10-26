@@ -20,8 +20,21 @@ from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 
 from responsibleai.dashboard.config import Settings
-from responsibleai.db import OrgRepository, PrincipalRepository, create_engine
+from responsibleai.db import OrgRepository, PrincipalRepository, WebIdentityRepository
 from responsibleai.rbac.models import Plan, Role
+from tests.protected_component_tenant import component_controller, provision_component_organization
+
+
+async def _bind_vc(
+    engine, org_id: str, subject: str, issuer: str = "https://issuer.example.com"
+) -> None:
+    await WebIdentityRepository(engine).bind_sso_principal(
+        org_id=org_id,
+        issuer=issuer,
+        subject=subject,
+        role=Role.ANALYST,
+        email=f"{subject}-{org_id[:8]}@vc.example",
+    )
 
 
 def _make_vc_jwt(payload: dict) -> str:
@@ -52,38 +65,39 @@ def _vc_payload(
 
 
 @pytest.fixture()
-async def mcp_app(monkeypatch: pytest.MonkeyPatch):
+async def mcp_app(monkeypatch: pytest.MonkeyPatch, tmp_path):
     import responsibleai.dashboard.config as config_module
     import responsibleai.db as db_module
     from responsibleai.mcp.server import _build_http_app
 
-    engine = create_engine(":memory:")
-    await engine.init()
-    monkeypatch.setattr(db_module, "create_engine", lambda _url: engine)
+    async with component_controller(tmp_path, monkeypatch, "wp_mcp_vc") as controller:
+        engine = controller.engine
+        monkeypatch.setattr(db_module, "create_engine", lambda _url: engine)
 
-    org_repo = OrgRepository(engine)
-    org = await org_repo.create_org("Acme", "acme", plan=Plan.ENTERPRISE)
-    _key_rec, raw_key = await org_repo.create_key(org.id, "test-key", role=Role.ANALYST)
-
-    built = []
-
-    async def _build(*, vc_trusted_issuers: list[str] | None = None):
-        settings = Settings(
-            vc_trusted_issuers=vc_trusted_issuers or [],
-            vc_skip_verification=True,
+        org_repo = OrgRepository(engine)
+        org = await provision_component_organization(
+            engine, name="Acme", slug="acme", plan=Plan.ENTERPRISE
         )
-        monkeypatch.setattr(config_module, "get_settings", lambda: settings)
-        app = _build_http_app()
-        manager = LifespanManager(app)
-        await manager.__aenter__()
-        built.append(manager)
-        return manager.app
+        _key_rec, raw_key = await org_repo.create_key(org.id, "test-key", role=Role.ANALYST)
 
-    yield _build, org.id, raw_key, engine
+        built = []
 
-    for manager in built:
-        await manager.__aexit__(None, None, None)
-    await engine.close()
+        async def _build(*, vc_trusted_issuers: list[str] | None = None):
+            settings = Settings(
+                vc_trusted_issuers=vc_trusted_issuers or [],
+                vc_skip_verification=True,
+            )
+            monkeypatch.setattr(config_module, "get_settings", lambda: settings)
+            app = _build_http_app()
+            manager = LifespanManager(app)
+            await manager.__aenter__()
+            built.append(manager)
+            return manager.app
+
+        yield _build, org.id, raw_key, engine
+
+        for manager in built:
+            await manager.__aexit__(None, None, None)
 
 
 async def _raw_client(app) -> httpx.AsyncClient:
@@ -111,7 +125,8 @@ async def _list_tools_over_mcp(app, token: str) -> list:
 
 class TestVerifiedPrincipalAuth:
     async def test_valid_vc_jwt_authenticates_mcp(self, mcp_app) -> None:
-        build, org_id, _raw_key, _engine = mcp_app
+        build, org_id, _raw_key, engine = mcp_app
+        await _bind_vc(engine, org_id, "service-account-1")
         app = await build(vc_trusted_issuers=["https://issuer.example.com"])
         token = _make_vc_jwt(_vc_payload(org_id=org_id))
         tools = await _list_tools_over_mcp(app, token)
@@ -119,6 +134,7 @@ class TestVerifiedPrincipalAuth:
 
     async def test_verification_is_recorded_in_audit_trail(self, mcp_app) -> None:
         build, org_id, _raw_key, engine = mcp_app
+        await _bind_vc(engine, org_id, "agent-99")
         app = await build(vc_trusted_issuers=["https://issuer.example.com"])
         token = _make_vc_jwt(_vc_payload(sub="agent-99", org_id=org_id))
         await _list_tools_over_mcp(app, token)
@@ -134,6 +150,63 @@ class TestVerifiedPrincipalAuth:
         assert claims[0].org_id == org_id
         assert claims[0].holder_kind == "service_account"
         assert claims[0].issuer == "https://issuer.example.com"
+
+    async def test_vc_unknown_org_leaves_no_principal_row(self, mcp_app) -> None:
+        build, _org_id, _raw_key, engine = mcp_app
+        app = await build(vc_trusted_issuers=["https://issuer.example.com"])
+        token = _make_vc_jwt(_vc_payload(sub="ghost-agent", org_id="org-does-not-exist"))
+        async with await _raw_client(app) as client:
+            response = await client.post(
+                "/mcp",
+                json={"jsonrpc": "2.0", "method": "ping", "id": 1},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        assert response.status_code == 401
+        assert await PrincipalRepository(engine).get_recent_for_principal("ghost-agent") == []
+
+    async def test_vc_unbound_existing_org_leaves_no_principal_row(self, mcp_app) -> None:
+        build, org_id, _raw_key, engine = mcp_app
+        app = await build(vc_trusted_issuers=["https://issuer.example.com"])
+        token = _make_vc_jwt(_vc_payload(sub="unbound-agent", org_id=org_id))
+        async with await _raw_client(app) as client:
+            response = await client.post(
+                "/mcp",
+                json={"jsonrpc": "2.0", "method": "ping", "id": 1},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        assert response.status_code == 401
+        assert await PrincipalRepository(engine).get_recent_for_principal("unbound-agent") == []
+
+    async def test_vc_suspended_org_is_rejected(self, mcp_app) -> None:
+        build, org_id, _raw_key, engine = mcp_app
+        await _bind_vc(engine, org_id, "suspended-agent")
+        await OrgRepository(engine).set_governance_status(org_id, "SUSPENDED")
+        app = await build(vc_trusted_issuers=["https://issuer.example.com"])
+        token = _make_vc_jwt(_vc_payload(sub="suspended-agent", org_id=org_id))
+        async with await _raw_client(app) as client:
+            response = await client.post(
+                "/mcp",
+                json={"jsonrpc": "2.0", "method": "ping", "id": 1},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        assert response.status_code == 401
+        assert await PrincipalRepository(engine).get_recent_for_principal("suspended-agent") == []
+
+    async def test_vc_role_elevation_is_rejected(self, mcp_app) -> None:
+        build, org_id, _raw_key, engine = mcp_app
+        await _bind_vc(engine, org_id, "capped-agent")
+        app = await build(vc_trusted_issuers=["https://issuer.example.com"])
+        payload = _vc_payload(sub="capped-agent", org_id=org_id)
+        payload["vc"]["credentialSubject"]["roles"] = ["OWNER"]
+        token = _make_vc_jwt(payload)
+        async with await _raw_client(app) as client:
+            response = await client.post(
+                "/mcp",
+                json={"jsonrpc": "2.0", "method": "ping", "id": 1},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        assert response.status_code == 401
+        assert await PrincipalRepository(engine).get_recent_for_principal("capped-agent") == []
 
     async def test_untrusted_issuer_rejected(self, mcp_app) -> None:
         build, org_id, _raw_key, _engine = mcp_app

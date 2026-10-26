@@ -155,6 +155,11 @@ class GovernanceServices:
     epoch_repo: RevocationEpochRepository | None = None
     authority_resolver: AuthorityResolver | None = None
     org_repo: OrgRepository | None = None
+    # Durable limiter for the read-only authority tools (mcp/authority_tools.py). Unset means
+    # those tools refuse to run rather than run unthrottled.
+    authority_read_limiter: Any | None = None
+    # AuthorityReadBackend on a dedicated least-privilege engine (None => tools unavailable).
+    authority_read_backend: Any | None = None
 
 
 @dataclass
@@ -170,6 +175,10 @@ class GovernanceOutcome:
     # without first passing through authorize_execution().
     result: dict[str, Any] | None = None
     outcome_status: OutcomeStatus | None = None
+
+    def __post_init__(self) -> None:
+        if not self.proceed and self.blocked_response is not None:
+            self.blocked_response.setdefault("isError", True)
 
 
 async def apply_governance(
@@ -218,10 +227,20 @@ async def apply_governance(
         if services.epoch_repo is not None
         else None
     )
+    if ctx.authentication_method == "agent_pop" and (
+        epoch is None or ctx.authentication_epoch != epoch
+    ):
+        return GovernanceOutcome(
+            proceed=False,
+            arguments=arguments,
+            blocked_response={"error": "agent_authentication_epoch_stale"},
+        )
 
     identity = IdentityContext(
         identity_id=ctx.key_id,
-        kind="oidc" if ctx.key_id.startswith("oidc:") else "api_key",
+        kind="agent"
+        if ctx.authentication_method == "agent_pop"
+        else ("oidc" if ctx.key_id.startswith("oidc:") else "api_key"),
         org_id=ctx.org_id,
         display_name=ctx.org_name,
     )
@@ -666,21 +685,22 @@ async def _record_outcome(
 
 
 def _agent_from_approval(approval: ApprovalRequest) -> AgentContext:
-    """A resume flow has no live request context (no fresh OrgContext,
-    no MCP call in flight) -- reconstructs the minimal `AgentContext`
-    `build_resume_action()`/evidence recording need from what the
-    original `ApprovalRequest` itself already recorded. `identity_id`
-    falls back to `"unknown"` only for a pre-existing approval that
-    somehow has no `requested_by` (shouldn't happen for anything built
-    via `build_approval_request()`, which always sets it), rather than
-    raising and blocking an otherwise-valid resume."""
+    """A resume flow has no live request context. The agent identity
+    comes only from the approval's recorded requester. A missing
+    requester is not an identity and must not resume as ``unknown``."""
+    requester = (approval.requested_by or "").strip()
+    if not requester:
+        raise ValueError("Approval has no requested_by identity and cannot be resumed.")
     identity = IdentityContext(
-        identity_id=approval.requested_by or "unknown",
-        kind="api_key",
+        identity_id=requester,
+        kind="agent" if approval.authentication_method == "agent_pop" else "api_key",
         org_id=approval.organization_id,
     )
     return AgentContext(
-        identity=identity, organization_id=approval.organization_id, framework="resumed-approval"
+        identity=identity,
+        organization_id=approval.organization_id,
+        agent_id=requester,
+        framework="resumed-approval",
     )
 
 

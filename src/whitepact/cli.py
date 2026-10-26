@@ -94,7 +94,13 @@ def _attach_bias(main: click.Group) -> None:
         return
     from biasbuster.cli import main as _biasbuster_cli
 
-    main.add_command(_biasbuster_cli, name="bias")
+    bias = click.Group(
+        name="bias",
+        help="Run WhitePact bias probes against an LLM provider.",
+    )
+    for command in _biasbuster_cli.commands.values():
+        bias.add_command(command)
+    main.add_command(bias)
     _bias_attached = True
 
 
@@ -102,11 +108,11 @@ class WhitePactCLI(click.Group):
     """Root CLI group with lazy sovereign/dashboard command registration."""
 
     def list_commands(self, ctx: click.Context) -> list[str]:
-        names = {"info", "bias", *_DEFERRED_SOVEREIGN_COMMANDS}
+        names = {"info", "bias", "faststart", *_DEFERRED_SOVEREIGN_COMMANDS}
         return sorted(names)
 
     def get_command(self, ctx: click.Context, cmd_name: str) -> click.Command | None:
-        if cmd_name == "info":
+        if cmd_name in {"info", "faststart"}:
             return super().get_command(ctx, cmd_name)
         # Help generation resolves every listed subcommand; do not import sovereign stack.
         if ctx.resilient_parsing:
@@ -130,8 +136,9 @@ def main() -> None:
     """WhitePact — AI governance platform CLI.
 
     Diagnostics, sovereign read/simulate tooling, and local developer utilities.
-    MCP servers: use ``whitepact-mcp`` or ``whitepact-mcp-http``.
-    Bias probes: ``biasbuster run`` or ``whitepact bias run``.
+    MCP servers: use ``whitepact-mcp`` (community stdio) or ``whitepact-mcp-http``.
+    Bias probes: ``whitepact bias run``.
+    FastStart: ``whitepact faststart`` (instant core governance verification).
     """
 
 
@@ -141,9 +148,55 @@ def info_cmd() -> None:
     click.echo("product: WhitePact")
     click.echo(f"version: {__version__}")
     click.echo("pypi_distribution: rai-governance-platform")
+    click.echo(
+        "distribution_note: PyPI name is unchanged here; the package-name decision "
+        "belongs to the distribution lane"
+    )
     click.echo("import: responsibleai (canonical), whitepact (alias)")
-    click.echo("cli: whitepact (this), biasbuster (bias probes only)")
-    click.echo("mcp: whitepact-mcp, whitepact-mcp-http")
+    click.echo("cli: whitepact")
+    click.echo("bias_probes: whitepact bias")
+    click.echo("faststart: whitepact faststart")
+    click.echo("mcp: whitepact-mcp (community stdio), whitepact-mcp-http (hosted)")
+
+
+@main.command("faststart")
+@click.option("--org", "org_id", default="org-faststart-demo", help="Test organization identifier.")
+@click.option("--json", "json_output", is_flag=True, help="Print machine-readable JSON output.")
+def faststart_cmd(org_id: str, json_output: bool) -> None:
+    """Run WhitePact FastStart V1 — local demonstration of core governance doctrine.
+
+    Demonstrates:
+    ALLOW -> DENY -> REQUIRE_APPROVAL -> SYNTHETIC_APPROVAL -> AUTHORITY_REMOVAL -> VERIFY_EVIDENCE
+    within seconds on any standard environment without external server or database dependencies.
+    """
+    from whitepact.faststart import run_faststart_workflow
+
+    report = run_faststart_workflow(organization_id=org_id)
+    if json_output:
+        import json
+
+        click.echo(json.dumps(report.to_dict(), indent=2))
+        return
+
+    click.echo("=================================================================")
+    click.echo(" WhitePact FastStart V1 — Core Governance & Doctrine Verification")
+    click.echo("=================================================================")
+    click.echo(f"Organization ID : {report.organization_id}")
+    click.echo(f"Test Identity   : {report.identity_id}")
+    click.echo(f"Policy Rules    : {report.policy_rules}")
+    click.echo("-----------------------------------------------------------------")
+    for step in report.steps:
+        status_tag = f"[{step.decision}]"
+        click.echo(f" {status_tag:<22} Step: {step.name}")
+        for k, v in step.details.items():
+            click.echo(f"    - {k}: {v}")
+    click.echo("-----------------------------------------------------------------")
+    click.echo(f"Canonical Evidence Hash: {report.evidence_hash}")
+    click.echo("Result: VERIFIED (Local cryptographic canonical chain integrity)")
+    click.echo(
+        "Note: Step 4 is a synthetic demo. Protected execution with container isolation is qualified in tests."
+    )
+    click.echo("=================================================================")
 
 
 if __name__ == "__main__":

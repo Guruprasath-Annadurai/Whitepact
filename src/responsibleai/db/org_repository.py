@@ -17,9 +17,10 @@ import hmac
 import json
 import secrets
 from datetime import UTC, datetime
+from enum import StrEnum
 from typing import Any
 
-from sqlalchemy import delete, insert, or_, select, update
+from sqlalchemy import and_, delete, insert, or_, select, update
 from sqlalchemy.exc import IntegrityError
 
 from responsibleai.db.engine import (
@@ -30,6 +31,7 @@ from responsibleai.db.engine import (
     tenant_tombstones,
 )
 from responsibleai.db.revocation_epoch_repository import bump_epoch_on_connection
+from responsibleai.db.tenant_scope import org_scope
 from responsibleai.rbac.models import (
     GovernanceStatus,
     Organization,
@@ -51,6 +53,22 @@ def _plan_from_str(s: str | None) -> Plan:
 
 def _now() -> str:
     return datetime.now(UTC).isoformat()
+
+
+LAST_USED_REFRESH_SECONDS = 60
+
+
+def _last_used_is_stale(last_used: object) -> bool:
+    """True when ``last_used_at`` is missing, unparseable, or older than the refresh interval."""
+    if not last_used:
+        return True
+    try:
+        previous = datetime.fromisoformat(str(last_used))
+    except ValueError:
+        return True
+    if previous.tzinfo is None:
+        previous = previous.replace(tzinfo=UTC)
+    return (datetime.now(UTC) - previous).total_seconds() >= LAST_USED_REFRESH_SECONDS
 
 
 def _hash_key(raw: str) -> str:
@@ -94,6 +112,14 @@ _BASE_ORG_COLUMNS = (
 )
 
 
+class SetPlanStatus(StrEnum):
+    APPLIED = "applied"
+    STALE = "stale"
+    NOT_FOUND = "not_found"
+    TOMBSTONED = "tombstoned"
+    INVALID_TIMESTAMP = "invalid_timestamp"
+
+
 class OrgRepository:
     """CRUD operations for organizations and their API keys."""
 
@@ -122,46 +148,65 @@ class OrgRepository:
         monthly_budget_usd: float = 10_000.0,
         plan: Plan = Plan.FREE,
         provisioner_key_id: str | None = None,
+        *,
+        session_token: str = "",
+        csrf: str = "",
+        request_id: str | None = None,
     ) -> Organization:
-        org = Organization(
+        from responsibleai.data_governance.tenant_client import (
+            TenantCreationDeniedError,
+            TenantProvisioningUnavailableError,
+            provision_organization,
+        )
+
+        if plan != Plan.FREE:
+            raise TenantCreationDeniedError("Tenant creation cannot assign paid entitlement")
+        if provisioner_key_id is not None:
+            from responsibleai.db.web_identity_repository import WebIdentityRepository
+
+            principal = (
+                await WebIdentityRepository(self._engine).get_principal(session_token)
+                if session_token
+                else None
+            )
+            if principal is None:
+                raise TenantCreationDeniedError("A verified human creation session is required")
+            async with self._engine.raw.connect() as connection:
+                key_id = await connection.scalar(
+                    select(org_api_keys.c.id)
+                    .join(organizations, organizations.c.id == org_api_keys.c.org_id)
+                    .where(
+                        org_api_keys.c.id == provisioner_key_id,
+                        org_api_keys.c.revoked == 0,
+                        org_api_keys.c.role == Role.OWNER.value,
+                        organizations.c.owner_user_id == principal.user_id,
+                    )
+                )
+            if key_id is None:
+                raise TenantCreationDeniedError(
+                    "Creation origin key is not owned by this principal"
+                )
+        tenant_id = await provision_organization(
             name=name,
             slug=slug,
             monthly_budget_usd=monthly_budget_usd,
-            created_at=_now(),
-            plan=plan,
-            provisioner_key_id=provisioner_key_id,
+            session_token=session_token,
+            csrf=csrf,
+            request_id=request_id,
         )
-        async with self._engine.raw.begin() as conn:
-            # Check tombstone ledger
-            ts = (
-                await conn.execute(
-                    select(tenant_tombstones).where(
-                        (tenant_tombstones.c.org_id == org.id)
-                        | (tenant_tombstones.c.original_name == name)
-                    )
+        if provisioner_key_id is not None:
+            async with self._engine.raw.begin() as connection:
+                await connection.execute(
+                    update(organizations)
+                    .where(organizations.c.id == tenant_id)
+                    .values(provisioner_key_id=provisioner_key_id)
                 )
-            ).fetchone()
-            if ts:
-                from responsibleai.data_governance.deletion_orchestrator import TenantDeletionError
-
-                raise TenantDeletionError(
-                    f"Cannot create tenant: identifier '{org.id}' or name '{name}' is tombstoned ({ts.org_id})"
-                )
-
-            await conn.execute(
-                insert(organizations).values(
-                    id=org.id,
-                    name=org.name,
-                    slug=org.slug,
-                    monthly_budget_usd=org.monthly_budget_usd,
-                    created_at=org.created_at,
-                    plan=org.plan.value,
-                    provisioner_key_id=provisioner_key_id,
-                )
-            )
+        org = await self.get_org(tenant_id)
+        if org is None:
+            raise TenantProvisioningUnavailableError("Completed organization readback failed")
         return org
 
-    async def set_plan(
+    async def set_plan_status(
         self,
         org_id: str,
         plan: Plan,
@@ -169,8 +214,15 @@ class OrgRepository:
         stripe_subscription_id: str | None = None,
         plan_renews_at: str | None = None,
         subscription_status: str | None = None,
-    ) -> bool:
-        """Update an org's billing plan — called from Stripe webhook handlers."""
+        event_timestamp: str | None = None,
+    ) -> SetPlanStatus:
+        """Atomically transition an organization's billing plan in monotonic chronological order.
+
+        Uses atomic conditional update expressions (UPDATE ... WHERE entitlement_updated_at <= :ts)
+        to guarantee race-free serialization across concurrent transactions.
+        Enforces canonical UTC comparisons and prevents stale or unauthorized equal-timestamp
+        widening transitions.
+        """
         values: dict[str, object] = {"plan": plan.value}
         if stripe_customer_id is not None:
             values["stripe_customer_id"] = stripe_customer_id
@@ -180,9 +232,131 @@ class OrgRepository:
             values["plan_renews_at"] = plan_renews_at
         if subscription_status is not None:
             values["subscription_status"] = subscription_status
+
+        effective_event_ts: str
+        if not event_timestamp or not isinstance(event_timestamp, str):
+            return SetPlanStatus.INVALID_TIMESTAMP
+
+        try:
+            dt = datetime.fromisoformat(event_timestamp.replace("Z", "+00:00"))
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=UTC)
+            effective_event_ts = dt.astimezone(UTC).isoformat()
+        except (ValueError, TypeError):
+            return SetPlanStatus.INVALID_TIMESTAMP
+
+        values["entitlement_updated_at"] = effective_event_ts
+
+        async with self._engine.raw.begin() as conn:
+            # 1. Check tenant tombstone ledger
+            try:
+                ts = await conn.scalar(
+                    select(tenant_tombstones.c.id).where(tenant_tombstones.c.org_id == org_id)
+                )
+                if ts is not None:
+                    return SetPlanStatus.TOMBSTONED
+
+                # 2. Check if organization exists
+                org_row = (
+                    await conn.execute(select(organizations).where(organizations.c.id == org_id))
+                ).first()
+                if org_row is None:
+                    return SetPlanStatus.NOT_FOUND
+            except Exception:
+                return SetPlanStatus.NOT_FOUND
+
+            # 3. Monotonic chronology check on current state
+            org_data = dict(org_row._mapping)
+            current_ts = org_data.get("entitlement_updated_at")
+            if effective_event_ts and current_ts:
+                try:
+                    curr_dt = datetime.fromisoformat(str(current_ts).replace("Z", "+00:00"))
+                    if curr_dt.tzinfo is None:
+                        curr_dt = curr_dt.replace(tzinfo=UTC)
+                    event_dt = datetime.fromisoformat(
+                        str(effective_event_ts).replace("Z", "+00:00")
+                    )
+                    if event_dt.tzinfo is None:
+                        event_dt = event_dt.replace(tzinfo=UTC)
+
+                    if event_dt < curr_dt:
+                        # Strictly older out-of-order event: safely drop
+                        return SetPlanStatus.STALE
+                    elif event_dt == curr_dt:
+                        # Equal timestamp: ambiguous provider delivery.
+                        # Reject upward plan elevation or restrictive->active status widening
+                        curr_plan = org_data.get("plan") or Plan.FREE
+                        curr_status = str(org_data.get("subscription_status") or "inactive")
+                        in_status = str(subscription_status or "active")
+                        if not is_equal_timestamp_transition_allowed(
+                            current_plan=curr_plan,
+                            current_status=curr_status,
+                            incoming_plan=plan,
+                            incoming_status=in_status,
+                        ):
+                            return SetPlanStatus.STALE
+                        if curr_plan == plan.value and curr_status == in_status:
+                            return SetPlanStatus.STALE
+                except (ValueError, TypeError):
+                    if str(current_ts) >= str(effective_event_ts):
+                        return SetPlanStatus.STALE
+
+            # 4. Atomic conditional update: update ONLY IF entitlement_updated_at is still NULL or <= effective_event_ts
+            if effective_event_ts:
+                where_cond = and_(
+                    organizations.c.id == org_id,
+                    or_(
+                        organizations.c.entitlement_updated_at.is_(None),
+                        organizations.c.entitlement_updated_at <= effective_event_ts,
+                    ),
+                )
+            else:
+                where_cond = organizations.c.id == org_id
+
+            res = await conn.execute(update(organizations).where(where_cond).values(**values))
+            if res.rowcount == 0:
+                # Concurrent update committed a newer timestamp during race
+                return SetPlanStatus.STALE
+            return SetPlanStatus.APPLIED
+
+    async def set_plan(
+        self,
+        org_id: str,
+        plan: Plan,
+        stripe_customer_id: str | None = None,
+        stripe_subscription_id: str | None = None,
+        plan_renews_at: str | None = None,
+        subscription_status: str | None = None,
+        event_timestamp: str | None = None,
+    ) -> bool:
+        """Update an org's billing plan — called from Stripe webhook handlers.
+
+        Enforces monotonic chronological order using event_timestamp to prevent
+        stale out-of-order events from overwriting newer subscriptions.
+        """
+        if event_timestamp is None:
+            event_timestamp = datetime.now(UTC).isoformat()
+        status = await self.set_plan_status(
+            org_id=org_id,
+            plan=plan,
+            stripe_customer_id=stripe_customer_id,
+            stripe_subscription_id=stripe_subscription_id,
+            plan_renews_at=plan_renews_at,
+            subscription_status=subscription_status,
+            event_timestamp=event_timestamp,
+        )
+        return status == SetPlanStatus.APPLIED
+
+    async def deactivate_org(self, org_id: str) -> bool:
+        """Mark a tenant deleted. Authentication must reject the row afterward."""
         async with self._engine.raw.begin() as conn:
             result = await conn.execute(
-                update(organizations).where(organizations.c.id == org_id).values(**values)
+                update(organizations)
+                .where(organizations.c.id == org_id)
+                .values(
+                    governance_status=GovernanceStatus.DISABLED.value,
+                    deactivated_at=_now(),
+                )
             )
         return result.rowcount > 0
 
@@ -206,11 +380,18 @@ class OrgRepository:
             await bump_epoch_on_connection(conn, org_id)
         return True
 
-    async def update_org_name(self, org_id: str, name: str) -> bool:
+    async def update_org_name(
+        self,
+        org_id: str,
+        name: str,
+        *,
+        expected_name: str | None = None,
+    ) -> bool:
+        stmt = update(organizations).where(organizations.c.id == org_id)
+        if expected_name is not None:
+            stmt = stmt.where(organizations.c.name == expected_name)
         async with self._engine.raw.begin() as conn:
-            result = await conn.execute(
-                update(organizations).where(organizations.c.id == org_id).values(name=name)
-            )
+            result = await conn.execute(stmt.values(name=name))
         return result.rowcount > 0
 
     async def set_sso_required(self, org_id: str, required: bool) -> bool:
@@ -426,15 +607,11 @@ class OrgRepository:
         and CredentialIssuancePolicy. Tests and migrations may pass
         ``internal_unverified_fixture=True``.
         """
-        import os
 
         from responsibleai.dashboard.config import is_production_environment
+        from responsibleai.environment import effective_environment_name
 
-        env_name = (
-            os.environ.get("WHITEPACT_ENV")
-            or os.environ.get("RAI_ENV")
-            or os.environ.get("ENVIRONMENT", "development")
-        )
+        env_name = effective_environment_name()
         if not accountable_human_user_id:
             internal_unverified_fixture = True
         if is_production_environment(env_name) and internal_unverified_fixture:
@@ -483,9 +660,8 @@ class OrgRepository:
         return key_rec, raw
 
     async def revoke_key(self, key_id: str, org_id: str | None = None) -> bool:
-        where = org_api_keys.c.id == key_id
-        if org_id is not None:
-            where = where & (org_api_keys.c.org_id == org_id)
+        """Revoke one key in the caller scope. None matches only NULL-org keys."""
+        where = (org_api_keys.c.id == key_id) & org_scope(org_api_keys.c.org_id, org_id)
         async with self._engine.raw.begin() as conn:
             resolved_org = await conn.scalar(select(org_api_keys.c.org_id).where(where))
             if resolved_org is not None:
@@ -601,16 +777,20 @@ class OrgRepository:
         if org is not None and org.sso_required:
             raise SSORequiredError(org.id)
 
-        # Update last_used_at (best-effort, fire & forget)
-        try:
-            async with self._engine.raw.begin() as conn:
-                await conn.execute(
-                    update(org_api_keys)
-                    .where(org_api_keys.c.id == row.id)
-                    .values(last_used_at=_now())
-                )
-        except Exception:
-            pass
+        # last_used_at is telemetry, not an authorization input: revocation, expiry and the key
+        # hash are all re-read from the database on every call above. Writing and committing it on
+        # every request cost a database round trip and a commit per authenticated call, so it is
+        # refreshed at most once per interval. Best effort.
+        if _last_used_is_stale(getattr(row, "last_used_at", None)):
+            try:
+                async with self._engine.raw.begin() as conn:
+                    await conn.execute(
+                        update(org_api_keys)
+                        .where(org_api_keys.c.id == row.id)
+                        .values(last_used_at=_now())
+                    )
+            except Exception:
+                pass
 
         return OrgContext(
             key_id=row.id,

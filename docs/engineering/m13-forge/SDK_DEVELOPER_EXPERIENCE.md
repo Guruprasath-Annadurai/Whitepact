@@ -1,0 +1,7 @@
+# Developer experience
+
+Forge preserves public SDK APIs and package names while correcting deadline behavior. Fresh TypeScript tarball installation passed for external ESM and CommonJS consumers, including a repeat after the fix. Fresh Python wheel build/install/import and negative insecure-transport test passed in an isolated environment (`--noconftest` excludes unrelated application fixtures). Initial Python attempts failed because the shared interpreter lacked build and the isolated interpreter lacked unrelated numpy fixtures; these were environment failures, not passes. Optional framework qualification remains NOT EXECUTED locally on Forge. No packages published.
+
+The unchanged `getAttestation: bounded hanging body, one dispatch` regression failed in exact-head CI at e581f6f7 (job 116871840077). The SDK now races each header/body read against the request's abort deadline, retaining fetch cancellation and one-shot mutation semantics. Three added regressions cover transports that ignore abort during headers, success bodies and error bodies. The 24 focused deadline tests pass, including the original real HTTP tests unchanged.
+
+A genuine external Go module also passed using the isolated local Go toolchain and existing consumer source, with network disabled. This is an external module/negative transport check, not complete runtime authority acceptance or Linux qualification. Continue optional frameworks and supported quickstart verification; unavailable dependencies remain SKIPPED/UNVERIFIED.

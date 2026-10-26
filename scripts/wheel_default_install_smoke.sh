@@ -29,6 +29,7 @@ python -m pip install -q "${WORKDIR}/dist/"*.whl
 whitepact --help | grep -q "WhitePact"
 whitepact --version | grep -q .
 whitepact info | grep -q "rai-governance-platform"
+whitepact faststart --json | grep -q '"verified": true'
 biasbuster --help | grep -q "BiasBuster"
 
 set +e

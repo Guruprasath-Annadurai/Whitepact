@@ -1,0 +1,3 @@
+# Source-only M11 property tests supplement the exact SDK qualification pins.
+-r ../sdk/python/requirements-test.txt
+hypothesis==6.169.1

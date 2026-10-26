@@ -22,9 +22,11 @@ UNKNOWN_EXECUTION_MESSAGE = (
 KNOWN_SUCCESS_MESSAGE = "Execution completed with a known outcome."
 
 CHAIN_INTEGRITY_NOTE = (
-    "This check recomputes the organization's evidence hash chain. "
-    "It is not a cryptographic signature of individual records. "
-    "INCOMPLETE means the chain hashes but still contains legacy "
+    "This check recomputes the organization's evidence hash chain and "
+    "detects internal inconsistency. It is not a cryptographic signature "
+    "and does not detect a full database rewrite that recomputes the "
+    "hashes. Independent verification requires an external evidence-head "
+    "witness. INCOMPLETE means the chain hashes but still contains legacy "
     "pre-canonical entries."
 )
 

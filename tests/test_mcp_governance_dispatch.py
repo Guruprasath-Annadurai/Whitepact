@@ -16,6 +16,7 @@ the governance-core unit tests).
 from __future__ import annotations
 
 import json
+from contextlib import asynccontextmanager
 
 import httpx
 import pytest
@@ -23,109 +24,143 @@ from asgi_lifespan import LifespanManager
 from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 
-from responsibleai.db import EvidenceRepository, OrgRepository, create_engine
+from responsibleai.db import EvidenceRepository, OrgRepository
 from responsibleai.governance import QUARANTINE_VIOLATION_THRESHOLD, WhitePactRuntimeGateway
 from responsibleai.mcp.tools import TOOL_DEFS, WHITEPACT_PURPOSE_ARGUMENT
 from responsibleai.rbac.models import Plan, Role
 
 TEST_GOVERNANCE_PURPOSE = "automated-test"
+_ENGINE_CONTROLLERS: dict[int, object] = {}
+
+
+def component_controller_for_engine(engine):
+    """Controller bound to this engine for one additional protected provision."""
+    return _ENGINE_CONTROLLERS[id(engine)]
 
 
 @pytest.fixture()
-async def governed_app(monkeypatch: pytest.MonkeyPatch, seed_runtime_authority):
+async def governed_app(governed_app_with_key):
     """Same DB-engine-substitution trick as test_mcp_http_transport.py's
     `seeded_app`, plus forcing `mcp_governance_enabled=True` on the
     shared Settings singleton before building the app — the feature is
     opt-in (default False), so every test in this file explicitly
     proves what changes *when it's turned on*, not the default state."""
-    import responsibleai.db as db_module
-    from responsibleai.dashboard.config import get_settings
-    from responsibleai.mcp.server import _build_http_app
-
-    settings = get_settings()
-    monkeypatch.setattr(settings, "mcp_governance_enabled", True)
-
-    engine = create_engine(":memory:")
-    await engine.init()
-    monkeypatch.setattr(db_module, "create_engine", lambda _url: engine)
-
-    org_repo = OrgRepository(engine)
-    org = await org_repo.create_org("Governed Co", "governed-co", plan=Plan.ENTERPRISE)
-    key_rec, raw_key = await org_repo.create_key(org.id, "test-key", role=Role.ANALYST)
-    tool_names = tuple(definition.name for definition in TOOL_DEFS)
-    await seed_runtime_authority(
-        engine,
-        organization_id=org.id,
-        principal_id=key_rec.id,
-        action_types=tool_names,
-        targets=tool_names,
-    )
-
-    app = _build_http_app()
-    async with LifespanManager(app) as manager:
-        yield manager.app, raw_key, org.id, engine
-
-    await engine.close()
+    app, raw_key, org_id, engine, _ = governed_app_with_key
+    yield app, raw_key, org_id, engine
 
 
 @pytest.fixture()
-async def governed_app_with_key(monkeypatch: pytest.MonkeyPatch, seed_runtime_authority):
+async def governed_app_with_key(monkeypatch: pytest.MonkeyPatch, seed_runtime_authority, tmp_path):
     """Same as `governed_app`, but also yields the API key's own
     `key_id` -- `apply_governance()` builds `AgentContext.agent_id` from
     `ctx.key_id`, which the Delegation Graph tests need in order to
     grant/revoke delegations against the exact identity a live MCP call
     will present as."""
+    async with _protected_mcp_app(monkeypatch, tmp_path, seed_runtime_authority) as value:
+        yield value
+
+
+@asynccontextmanager
+async def _protected_mcp_app(
+    monkeypatch, tmp_path, seed_runtime_authority=None, *, enabled=True, start_lifespan=True
+):
+    """Genuine tenant setup; keep optional component authority seeding explicit."""
     import responsibleai.db as db_module
     from responsibleai.dashboard.config import get_settings
     from responsibleai.mcp.server import _build_http_app
 
     settings = get_settings()
-    monkeypatch.setattr(settings, "mcp_governance_enabled", True)
+    monkeypatch.setattr(settings, "mcp_governance_enabled", enabled)
 
-    engine = create_engine(":memory:")
-    await engine.init()
-    monkeypatch.setattr(db_module, "create_engine", lambda _url: engine)
+    from datetime import UTC, datetime
 
-    org_repo = OrgRepository(engine)
-    org = await org_repo.create_org("Governed Co", "governed-co", plan=Plan.ENTERPRISE)
-    key_rec, raw_key = await org_repo.create_key(org.id, "test-key", role=Role.ANALYST)
-    tool_names = tuple(definition.name for definition in TOOL_DEFS)
-    await seed_runtime_authority(
-        engine,
-        organization_id=org.id,
-        principal_id=key_rec.id,
-        action_types=tool_names,
-        targets=tool_names,
+    from responsibleai.data_governance.backup_defense import (
+        RestoreReadinessGate,
+        get_restore_readiness_gate,
+        set_restore_readiness_gate,
     )
+    from tests.test_stage3_controller_postgres import isolated_controller_context
 
-    app = _build_http_app()
-    async with LifespanManager(app) as manager:
-        yield manager.app, raw_key, org.id, engine, key_rec.id
-
-    await engine.close()
+    async with isolated_controller_context(tmp_path, monkeypatch, "wp_mcp_governance") as context:
+        controller, _, _, token, csrf = context
+        engine = controller.engine
+        tenant = await controller.create(
+            session_token=token,
+            csrf=csrf,
+            request_id="mcp-governed-fixture",
+            name="Governed Co",
+            slug="governed-co",
+        )
+        org_repo = OrgRepository(engine)
+        # Preserve the original enterprise component-fixture entitlement using
+        # the separate monotonic billing transition, never tenant creation.
+        # This is not live payment, customer enrollment or bootstrap evidence.
+        applied = await org_repo.set_plan_status(
+            tenant, Plan.ENTERPRISE, event_timestamp=datetime.now(UTC).isoformat()
+        )
+        assert applied.value == "applied"
+        assert (await org_repo.get_org(tenant)).plan == Plan.ENTERPRISE
+        key_rec, raw_key = await org_repo.create_key(tenant, "test-key", role=Role.ANALYST)
+        tool_names = tuple(definition.name for definition in TOOL_DEFS)
+        if seed_runtime_authority is not None:
+            await seed_runtime_authority(
+                engine,
+                organization_id=tenant,
+                principal_id=key_rec.id,
+                action_types=tool_names,
+                targets=tool_names,
+            )
+        monkeypatch.setattr(db_module, "create_engine", lambda _url: engine)
+        previous = get_restore_readiness_gate()
+        set_restore_readiness_gate(
+            RestoreReadinessGate(provider=controller.provider, db_engine=engine)
+        )
+        monkeypatch.setenv("WHITEPACT_STORE_B_PATH", str(controller.provider.path))
+        monkeypatch.setenv("WHITEPACT_STORE_B_KEY", controller.provider._secret_key)
+        # The protected process is started only by the test that provisions
+        # another tenant. Starting it for every governed app pushed the
+        # Python 3.12 I1 job past its 25-minute limit.
+        _ENGINE_CONTROLLERS[id(engine)] = controller
+        try:
+            app = _build_http_app()
+            if start_lifespan:
+                async with LifespanManager(app) as manager:
+                    yield manager.app, raw_key, tenant, engine, key_rec.id
+            else:
+                # The webhook regression retains its original real lifespan
+                # context and captures the manager before starting that context.
+                yield app, raw_key, tenant, engine, key_rec.id
+        finally:
+            _ENGINE_CONTROLLERS.pop(id(engine), None)
+            set_restore_readiness_gate(previous)
 
 
 @pytest.fixture()
-async def ungoverned_app(monkeypatch: pytest.MonkeyPatch):
+async def ungoverned_app(monkeypatch: pytest.MonkeyPatch, tmp_path):
     """Disabled governance keeps discovery usable but refuses execution."""
-    import responsibleai.db as db_module
-    from responsibleai.dashboard.config import get_settings
-    from responsibleai.mcp.server import _build_http_app
+    async with _protected_mcp_app(monkeypatch, tmp_path, enabled=False) as value:
+        app, raw_key, _, _, _ = value
+        yield app, raw_key
 
-    monkeypatch.setattr(get_settings(), "mcp_governance_enabled", False)
-    engine = create_engine(":memory:")
-    await engine.init()
-    monkeypatch.setattr(db_module, "create_engine", lambda _url: engine)
 
-    org_repo = OrgRepository(engine)
-    org = await org_repo.create_org("Ungoverned Co", "ungoverned-co", plan=Plan.ENTERPRISE)
-    _key_rec, raw_key = await org_repo.create_key(org.id, "test-key", role=Role.ANALYST)
+@pytest.fixture
+async def webhook_governed_app(monkeypatch, tmp_path, seed_runtime_authority):
+    import responsibleai.webhooks.manager as webhook_manager_module
 
-    app = _build_http_app()
-    async with LifespanManager(app) as manager:
-        yield manager.app, raw_key
+    created_managers: list[webhook_manager_module.WebhookManager] = []
+    original = webhook_manager_module.WebhookManager
 
-    await engine.close()
+    class CapturingWebhookManager(original):
+        def __init__(self):
+            super().__init__()
+            created_managers.append(self)
+
+    monkeypatch.setattr(webhook_manager_module, "WebhookManager", CapturingWebhookManager)
+    async with _protected_mcp_app(
+        monkeypatch, tmp_path, seed_runtime_authority, start_lifespan=False
+    ) as (app, raw_key, tenant, engine, _):
+        org = await OrgRepository(engine).get_org(tenant)
+        yield app, raw_key, org, engine, created_managers
 
 
 def _client(app, raw_key: str) -> httpx.AsyncClient:
@@ -671,7 +706,7 @@ class TestRequireApprovalFiresWebhook:
     async def test_queued_approval_fires_a_registered_webhook(
         self,
         monkeypatch: pytest.MonkeyPatch,
-        seed_runtime_authority,
+        webhook_governed_app,
     ) -> None:
         """webhooks/manager.py's validate_webhook_url() (the SSRF guard)
         does a real socket.getaddrinfo() lookup before every delivery, not
@@ -694,42 +729,9 @@ class TestRequireApprovalFiresWebhook:
         import httpx as httpx_module
         import respx
 
-        import responsibleai.db as db_module
-        import responsibleai.webhooks.manager as webhook_manager_module
-        from responsibleai.dashboard.config import get_settings
-        from responsibleai.mcp.server import _build_http_app
         from responsibleai.webhooks.models import WebhookConfig, WebhookEvent
 
-        settings = get_settings()
-        monkeypatch.setattr(settings, "mcp_governance_enabled", True)
-
-        engine = create_engine(":memory:")
-        await engine.init()
-        monkeypatch.setattr(db_module, "create_engine", lambda _url: engine)
-
-        created_managers: list[webhook_manager_module.WebhookManager] = []
-        _real_webhook_manager_cls = webhook_manager_module.WebhookManager
-
-        class _CapturingWebhookManager(_real_webhook_manager_cls):  # type: ignore[misc]
-            def __init__(self) -> None:
-                super().__init__()
-                created_managers.append(self)
-
-        monkeypatch.setattr(webhook_manager_module, "WebhookManager", _CapturingWebhookManager)
-
-        org_repo = OrgRepository(engine)
-        org = await org_repo.create_org("Webhook Co", "webhook-co", plan=Plan.ENTERPRISE)
-        key_rec, raw_key = await org_repo.create_key(org.id, "test-key", role=Role.ANALYST)
-        tool_names = tuple(definition.name for definition in TOOL_DEFS)
-        await seed_runtime_authority(
-            engine,
-            organization_id=org.id,
-            principal_id=key_rec.id,
-            action_types=tool_names,
-            targets=tool_names,
-        )
-
-        app = _build_http_app()
+        app, raw_key, org, engine, created_managers = webhook_governed_app
         assert len(created_managers) == 1
         webhook_manager = created_managers[0]
 

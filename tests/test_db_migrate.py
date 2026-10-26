@@ -9,14 +9,14 @@ so if alembic isn't importable here it wouldn't be importable there either.
 
 from __future__ import annotations
 
-import uuid
+from contextlib import aclosing
 from pathlib import Path
 
 import pytest
 
 pytest.importorskip("alembic")
 
-from sqlalchemy import text
+from sqlalchemy import inspect, text
 
 from responsibleai.db.engine import create_engine
 from responsibleai.db.migrate import (
@@ -27,6 +27,7 @@ from responsibleai.db.migrate import (
     _run_alembic,
     run_migrations_or_raise,
 )
+from tests.pg_test_url import isolated_pg_url
 
 
 async def _build_baseline_only_schema(db_path: str) -> None:
@@ -129,18 +130,54 @@ class TestNeedsBaselineStamp:
         assert result is True
 
 
-class TestRunMigrationsOrRaise:
-    async def test_fresh_database_reaches_head(self, tmp_sqlite_path):
-        await run_migrations_or_raise(tmp_sqlite_path)
+@pytest.fixture
+def canonical_migration_head():
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
 
-        engine = create_engine(tmp_sqlite_path)
+    ini = _find_alembic_ini()
+    assert ini is not None
+    config = Config(str(ini))
+    location = config.get_main_option("script_location")
+    assert location is not None
+    migration_directory = Path(location)
+    if not migration_directory.is_absolute():
+        migration_directory = ini.parent / migration_directory
+    config.set_main_option("script_location", str(migration_directory))
+    heads = ScriptDirectory.from_config(config).get_heads()
+    assert len(heads) == 1, "Startup qualification requires one canonical migration head"
+    return heads[0]
+
+
+@pytest.fixture
+async def postgres_migration_targets():
+    """Supported current-head successors; original SQLite source is Git-pinned.
+
+    Revision 0067 intentionally refuses SQLite. These are actual independent
+    PostgreSQL databases, never a mocked migration or a compatibility waiver.
+    """
+    async with aclosing(isolated_pg_url("wp_migration_first")) as first:
+        async for database_a in first:
+            async with aclosing(isolated_pg_url("wp_migration_second")) as second:
+                async for database_b in second:
+                    yield database_a, database_b
+
+
+class TestRunMigrationsOrRaise:
+    async def test_fresh_database_reaches_head(
+        self, postgres_migration_targets, canonical_migration_head
+    ):
+        database = postgres_migration_targets[0]
+        await run_migrations_or_raise(database)
+
+        engine = create_engine(database)
         try:
             async with engine.raw.connect() as conn:
                 rows = await conn.execute(text("SELECT version_num FROM alembic_version"))
-                assert rows.scalar() == "0061"
+                assert rows.scalar() == canonical_migration_head
 
-                cols = await conn.execute(text("PRAGMA table_info(organizations)"))
-                col_names = {r[1] for r in cols.fetchall()}
+                cols = await conn.run_sync(lambda c: inspect(c).get_columns("organizations"))
+                col_names = {column["name"] for column in cols}
                 assert "plan" in col_names
                 assert "sso_required" in col_names
         finally:
@@ -165,15 +202,18 @@ class TestRunMigrationsOrRaise:
         finally:
             await engine2.raw.dispose()
 
-    async def test_running_twice_is_idempotent(self, tmp_sqlite_path):
-        await run_migrations_or_raise(tmp_sqlite_path)
-        await run_migrations_or_raise(tmp_sqlite_path)  # should not raise — already at head
+    async def test_running_twice_is_idempotent(
+        self, postgres_migration_targets, canonical_migration_head
+    ):
+        database = postgres_migration_targets[0]
+        await run_migrations_or_raise(database)
+        await run_migrations_or_raise(database)  # should not raise — already at head
 
-        engine = create_engine(tmp_sqlite_path)
+        engine = create_engine(database)
         try:
             async with engine.raw.connect() as conn:
                 rows = await conn.execute(text("SELECT version_num FROM alembic_version"))
-                assert rows.scalar() == "0061"
+                assert rows.scalar() == canonical_migration_head
         finally:
             await engine.raw.dispose()
 
@@ -187,11 +227,55 @@ class TestRunMigrationsOrRaise:
         with pytest.raises(MigrationError, match="Could not locate alembic.ini"):
             await run_migrations_or_raise(tmp_sqlite_path)
 
-    async def test_unique_temp_dbs_do_not_interfere(self, tmp_path):
-        """Sanity check that two independent DBs migrate independently."""
-        db_a = str(tmp_path / f"{uuid.uuid4()}.db")
-        db_b = str(tmp_path / f"{uuid.uuid4()}.db")
-
+    async def test_unique_temp_dbs_do_not_interfere(
+        self, postgres_migration_targets, canonical_migration_head
+    ):
+        """A migration changes only its actual PostgreSQL database, not its sibling."""
+        db_a, db_b = postgres_migration_targets
+        assert db_a != db_b
         await run_migrations_or_raise(db_a)
-        assert Path(db_a).exists()
-        assert not Path(db_b).exists()
+        for database, expected in ((db_a, True), (db_b, False)):
+            engine = create_engine(database)
+            try:
+                async with engine.raw.connect() as connection:
+                    exists = await connection.run_sync(
+                        lambda c: inspect(c).has_table("alembic_version")
+                    )
+                    assert exists is expected
+                    if expected:
+                        assert (
+                            await connection.scalar(text("SELECT version_num FROM alembic_version"))
+                            == canonical_migration_head
+                        )
+            finally:
+                await engine.close()
+        await run_migrations_or_raise(db_b)
+        for database in (db_a, db_b):
+            engine = create_engine(database)
+            try:
+                async with engine.raw.connect() as connection:
+                    assert (
+                        await connection.scalar(text("SELECT version_num FROM alembic_version"))
+                        == canonical_migration_head
+                    )
+            finally:
+                await engine.close()
+
+    async def test_sqlite_current_head_remains_explicitly_unsupported(self, tmp_sqlite_path):
+        with pytest.raises(MigrationError, match="Cross-store provisioning requires PostgreSQL"):
+            await run_migrations_or_raise(tmp_sqlite_path)
+        engine = create_engine(tmp_sqlite_path)
+        try:
+            async with engine.raw.connect() as connection:
+                assert (
+                    await connection.scalar(text("SELECT version_num FROM alembic_version"))
+                    == "0066"
+                )
+                assert not await connection.run_sync(
+                    lambda c: inspect(c).has_table("tenant_provisioning_records")
+                )
+                assert not await connection.run_sync(
+                    lambda c: inspect(c).has_table("tenant_provisioning_outbox")
+                )
+        finally:
+            await engine.close()

@@ -17,9 +17,10 @@ from mcp.client.streamable_http import streamable_http_client
 from sqlalchemy import select, update
 
 from responsibleai.dashboard.config import Settings
-from responsibleai.db import OrgRepository, create_engine
+from responsibleai.db import OrgRepository
 from responsibleai.db.engine import oauth_auth_events, oauth_clients, oauth_credentials
 from responsibleai.rbac.models import Plan, Role
+from tests.protected_component_tenant import component_controller, provision_component_organization
 
 ISSUER = "https://testserver"
 RESOURCE = "https://testserver/mcp"
@@ -35,39 +36,40 @@ def _pkce() -> tuple[str, str]:
 
 
 @pytest.fixture()
-async def oauth_app(monkeypatch: pytest.MonkeyPatch):
+async def oauth_app(monkeypatch: pytest.MonkeyPatch, tmp_path):
     import responsibleai.dashboard.config as config_module
     import responsibleai.db as db_module
     from responsibleai.mcp.server import _build_http_app
 
-    engine = create_engine(":memory:")
-    await engine.init()
-    monkeypatch.setattr(db_module, "create_engine", lambda _url: engine)
-    monkeypatch.setenv("RAI_MCP_HTTP_AUTH_MAX_FAILURES", "100")
-    settings = Settings(
-        mcp_oauth_issuer=ISSUER,
-        mcp_oauth_resource_uri=RESOURCE,
-        mcp_oauth_scopes=[REVIEW_SCOPE, "offline_access"],
-        mcp_oauth_access_token_ttl_seconds=900,
-        mcp_oauth_refresh_token_ttl_seconds=2_592_000,
-    )
-    monkeypatch.setattr(config_module, "get_settings", lambda: settings)
+    async with component_controller(tmp_path, monkeypatch, "wp_mcp_oauth_as") as controller:
+        engine = controller.engine
+        monkeypatch.setattr(db_module, "create_engine", lambda _url: engine)
+        monkeypatch.setenv("RAI_MCP_HTTP_AUTH_MAX_FAILURES", "100")
+        settings = Settings(
+            mcp_oauth_issuer=ISSUER,
+            mcp_oauth_resource_uri=RESOURCE,
+            mcp_oauth_scopes=[REVIEW_SCOPE, "offline_access"],
+            mcp_oauth_access_token_ttl_seconds=900,
+            mcp_oauth_refresh_token_ttl_seconds=2_592_000,
+        )
+        monkeypatch.setattr(config_module, "get_settings", lambda: settings)
 
-    org_repo = OrgRepository(engine)
-    reviewer_org = await org_repo.create_org(
-        "OpenAI Reviewer", "openai-reviewer", plan=Plan.ENTERPRISE
-    )
-    key_record, reviewer_key = await org_repo.create_key(
-        reviewer_org.id, "reviewer", role=Role.VIEWER
-    )
-    other_org = await org_repo.create_org("Other", "other", plan=Plan.ENTERPRISE)
+        org_repo = OrgRepository(engine)
+        reviewer_org = await provision_component_organization(
+            engine, name="OpenAI Reviewer", slug="openai-reviewer", plan=Plan.ENTERPRISE
+        )
+        key_record, reviewer_key = await org_repo.create_key(
+            reviewer_org.id, "reviewer", role=Role.VIEWER
+        )
+        other_org = await provision_component_organization(
+            engine, name="Other", slug="other", plan=Plan.ENTERPRISE
+        )
 
-    app = _build_http_app()
-    manager = LifespanManager(app)
-    await manager.__aenter__()
-    yield manager.app, engine, reviewer_org, other_org, key_record, reviewer_key
-    await manager.__aexit__(None, None, None)
-    await engine.close()
+        app = _build_http_app()
+        manager = LifespanManager(app)
+        await manager.__aenter__()
+        yield manager.app, engine, reviewer_org, other_org, key_record, reviewer_key
+        await manager.__aexit__(None, None, None)
 
 
 def _client(app, token: str | None = None) -> httpx.AsyncClient:
@@ -501,7 +503,7 @@ class TestAuthenticatedMcpReview:
         )
 
     async def test_forged_bearer_and_missing_scope_are_denied(self, oauth_app) -> None:
-        app, *_rest, reviewer_key = oauth_app
+        app, engine, *_rest, reviewer_key = oauth_app
         async with _client(app, "wp_at_forged") as client:
             forged = await client.post("/mcp", json={"jsonrpc": "2.0", "id": 1, "method": "ping"})
         assert forged.status_code == 401
@@ -517,6 +519,12 @@ class TestAuthenticatedMcpReview:
                 "/mcp", json={"jsonrpc": "2.0", "id": 1, "method": "ping"}
             )
         assert insufficient.status_code == 403
+        assert insufficient.json()["error"] == "insufficient_scope"
+        async with engine.raw.connect() as connection:
+            rows = (await connection.execute(select(oauth_auth_events))).fetchall()
+        assert any(row.outcome == "scope_missing" for row in rows)
+        assert all(row.outcome != "insufficient_scope" for row in rows)
+        assert all(len(row.outcome) <= 16 for row in rows)
 
     async def test_tokens_never_appear_in_errors_or_logs(
         self, oauth_app, caplog: pytest.LogCaptureFixture

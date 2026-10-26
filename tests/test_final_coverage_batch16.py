@@ -706,7 +706,9 @@ def test_remove_containers_waits_for_stable_absence(monkeypatch: pytest.MonkeyPa
         seen[target] = seen.get(target, 0) + 1
         if seen[target] < 3:
             return subprocess.CompletedProcess(args=cmd, returncode=0)
-        return subprocess.CompletedProcess(args=cmd, returncode=1)
+        return subprocess.CompletedProcess(
+            args=cmd, returncode=1, stderr=f"Error: No such container: {target}"
+        )
 
     monkeypatch.setattr(subprocess, "run", fake_run)
     t0 = time.monotonic()
@@ -734,6 +736,7 @@ async def test_remove_containers_uninterruptible_runs_in_thread(
 
 
 @pytest.mark.asyncio
+@pytest.mark.usefixtures("portable_workspace_mapping")
 async def test_execute_invalid_json_stdout_is_violation(monkeypatch: pytest.MonkeyPatch) -> None:
     backend = DockerContainerBackend(docker_cmd="docker")
     monkeypatch.setattr(backend, "is_available", lambda: True)
@@ -1160,7 +1163,9 @@ def test_remove_containers_exits_when_targets_absent(monkeypatch: pytest.MonkeyP
     backend = DockerContainerBackend(docker_cmd="docker")
 
     def fake_run(cmd, **_kwargs):
-        return subprocess.CompletedProcess(args=cmd, returncode=1)
+        return subprocess.CompletedProcess(
+            args=cmd, returncode=1, stderr=f"Error: No such container: {cmd[-1]}"
+        )
 
     monkeypatch.setattr(subprocess, "run", fake_run)
     backend._remove_containers(["wp_iso_absent"], stable_seconds=0.1, wait_seconds=0.2)
@@ -1201,14 +1206,25 @@ async def test_auth_failure_limiter_require_durable_without_backend() -> None:
 async def test_resolve_saml_maps_developer_role(engine) -> None:
     repo = OrgRepository(engine)
     org = await repo.create_org("SAML Dev", f"saml-dev-{uuid.uuid4().hex[:8]}")
+    from responsibleai.db import WebIdentityRepository
+
+    await WebIdentityRepository(engine).bind_sso_principal(
+        org_id=org.id,
+        issuer="test-idp",
+        subject="saml-dev-user",
+        role=Role.DEVELOPER,
+        email=f"dev-{org.id[:8]}@example.com",
+    )
     claims = SAMLAssertionClaims(
         sub="saml-dev-user",
         org_id=org.id,
-        roles=["DEVELOPER", "bogus"],
+        roles=["DEVELOPER"],
         email="dev@example.com",
     )
+    saml_config = MagicMock()
+    saml_config.idp_entity_id = "test-idp"
     monkeypatch = pytest.MonkeyPatch()
-    monkeypatch.setattr(app_module, "_saml_config", MagicMock())
+    monkeypatch.setattr(app_module, "_saml_config", saml_config)
     monkeypatch.setattr(app_module, "_org_repo", repo)
     monkeypatch.setattr(app_module, "validate_session_token", lambda _cfg, _tok: claims)
     ctx = await _resolve_saml_context("wp_saml.valid.token")
@@ -1431,7 +1447,7 @@ async def test_step_up_invalid_auth_time_rejected(engine) -> None:
         token_or_code="valid-token-1234567890",
         claims={"auth_time": 1},
     )
-    with pytest.raises(StepUpVerificationFailedError, match="auth_time"):
+    with pytest.raises(StepUpVerificationFailedError, match="not supported"):
         await verifier.verify_and_consume_step_up(
             org_id="org-step",
             principal_id="principal-1",
@@ -1462,7 +1478,7 @@ async def test_step_up_oidc_missing_auth_time_claim(engine) -> None:
         token_or_code="missing_auth_time",
         claims={},
     )
-    with pytest.raises(StepUpVerificationFailedError, match="auth_time"):
+    with pytest.raises(StepUpVerificationFailedError, match="not supported"):
         await verifier.verify_and_consume_step_up(
             org_id="org-step",
             principal_id="principal-1",
@@ -1581,7 +1597,7 @@ async def test_step_up_webauthn_unsupported_stub_rejected(engine) -> None:
         auth_time=datetime.now(UTC).isoformat(),
         token_or_code="unsupported_stub",
     )
-    with pytest.raises(StepUpVerificationFailedError, match="Unsupported WebAuthn"):
+    with pytest.raises(StepUpVerificationFailedError, match="not supported"):
         await verifier.verify_and_consume_step_up(
             org_id="org-step",
             principal_id="principal-1",
@@ -1649,7 +1665,7 @@ async def test_step_up_stale_auth_time_rejected(engine) -> None:
         token_or_code="valid-token-1234567890",
         claims={"auth_time": stale},
     )
-    with pytest.raises(StepUpVerificationFailedError, match="freshness window"):
+    with pytest.raises(StepUpVerificationFailedError, match="not supported"):
         await verifier.verify_and_consume_step_up(
             org_id="org-step",
             principal_id="principal-1",
@@ -2132,7 +2148,9 @@ def test_remove_containers_stable_window_elapsed(monkeypatch: pytest.MonkeyPatch
         return clock["now"]
 
     def fake_run(cmd, **_kwargs):
-        return subprocess.CompletedProcess(args=cmd, returncode=1)
+        return subprocess.CompletedProcess(
+            args=cmd, returncode=1, stderr=f"Error: No such container: {cmd[-1]}"
+        )
 
     monkeypatch.setattr(time, "monotonic", fake_monotonic)
     monkeypatch.setattr(subprocess, "run", fake_run)
@@ -2141,6 +2159,7 @@ def test_remove_containers_stable_window_elapsed(monkeypatch: pytest.MonkeyPatch
 
 
 @pytest.mark.asyncio
+@pytest.mark.usefixtures("portable_workspace_mapping")
 async def test_container_execute_reads_cidfile_for_cleanup(monkeypatch: pytest.MonkeyPatch) -> None:
     from responsibleai.isolation.models import IsolatedExecutionRequest
 
@@ -2165,21 +2184,20 @@ async def test_container_execute_reads_cidfile_for_cleanup(monkeypatch: pytest.M
         def kill(self):
             pass
 
-    monkeypatch.setattr(asyncio, "create_subprocess_exec", AsyncMock(return_value=_Proc()))
+    owned_cid = "a" * 64
 
-    from responsibleai.isolation.container_backend import EphemeralWorkspace
-
-    real_enter = EphemeralWorkspace.__enter__
-
-    def _enter_with_cid(self):
-        workspace = real_enter(self)
-        (workspace.path / ".container.cid").write_text(
-            "abcd1234efgh5678ijkl9012mnop3456qrst7890uvwx1234yzab",
-            encoding="utf-8",
+    async def _docker_create(*command, **kwargs):
+        # Model the trusted Docker client acknowledging creation. Workload files
+        # cannot provide ownership evidence for another container.
+        cid_path = Path(
+            next(arg.split("=", 1)[1] for arg in command if arg.startswith("--cidfile="))
         )
-        return workspace
+        assert cid_path.parent.stat().st_mode & 0o777 == 0o700
+        assert not cid_path.exists()
+        cid_path.write_text(owned_cid, encoding="ascii")
+        return _Proc()
 
-    monkeypatch.setattr(EphemeralWorkspace, "__enter__", _enter_with_cid)
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", _docker_create)
     req = IsolatedExecutionRequest(
         action_id="act-cid",
         organization_id="org-cid",
@@ -2188,4 +2206,4 @@ async def test_container_execute_reads_cidfile_for_cleanup(monkeypatch: pytest.M
     )
     outcome = await backend.execute(req)
     assert outcome.violation is None
-    assert removed and "abcd1234efgh5678ijkl9012mnop3456qrst7890uvwx1234yzab" in removed[0]
+    assert removed and owned_cid in removed[0]

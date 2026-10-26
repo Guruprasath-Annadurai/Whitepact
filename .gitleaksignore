@@ -17,3 +17,21 @@ a7ac0faca984f77eee0c367e71116ad34fa5d366:DEPLOYMENT.md:curl-auth-header:80
 a7ac0faca984f77eee0c367e71116ad34fa5d366:DEPLOYMENT.md:generic-api-key:77
 # Historical plan document: git commit id misclassified as generic-api-key (not a credential).
 b0be15f389eab5df6c650d5ac7e65d8b8fbfcbcc:docs/superpowers/plans/2026-09-17-phase7a-runtime-foundations.md:generic-api-key:17
+# Negative test fixture: unsigned none-algorithm JWT for step-up forgery rejection test
+e41455af285c0d2e4575a26e76307c4172eeca73:tests/test_step_up_forged_proofs_http.py:jwt:122
+
+# M13 independent review: exact historical false positives only. See
+# docs/engineering/m13-absolute-convergence/M13_COMPLIANCE_DISPOSITION_REGISTER.md.
+# H5 constructor-only synthetic test credential; no network call or issued authority.
+fef386131b320c84cfce88358e5b11f7bc6d9e77:tests/test_h5_developer_onboarding_acceptance.py:generic-api-key:51
+fef386131b320c84cfce88358e5b11f7bc6d9e77:tests/test_h5_developer_onboarding_acceptance.py:generic-api-key:56
+6318439bff2a446ed942dc6d913e03f0333b5788:tests/test_h5_developer_onboarding_acceptance.py:generic-api-key:51
+6318439bff2a446ed942dc6d913e03f0333b5788:tests/test_h5_developer_onboarding_acceptance.py:generic-api-key:56
+# WebAuthn placeholder JSON, prose inventory, synthetic redaction fixture,
+# Python type annotation, and deterministic public demo entity identifiers.
+39619c4b46dac5d6e69c9e00ce887c2ed9641cfc:docs/security/m13s4/WHITEPACT_M13S4_SECURITY_API_CONTRACT.md:generic-api-key:83
+adc6359883047861bd13a981b94c6c185d9f7d50:docs/m11/WHITEPACT_M11_CANONICAL_PRODUCT_INVENTORY.md:generic-api-key:45
+923aa031805bea2fb44654554638b2be07a13ddd:tests/test_security_alert_triage.py:generic-api-key:30
+3dc209352032fc48110645935717ab7bff673f8b:src/responsibleai/governance/evidence_publication.py:generic-api-key:138
+06bce5641e34e4e9980cef16a5c04445356928a9:tests/fixtures/global_directory/demo_catalog.json:generic-api-key:183
+656213fcaf3fa435dc63f14b2b5a95de7cc0807b:src/responsibleai/global_directory/fixtures/demo_catalog.json:generic-api-key:55

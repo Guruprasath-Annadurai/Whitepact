@@ -1,0 +1,421 @@
+name: M13-I1 Independent Integration Review
+
+on:
+  pull_request:
+    paths:
+      - 'docs/engineering/m13-apex/**'
+      - 'scripts/engineering/m13_apex_*'
+      - 'tests/test_m13_apex_*'
+      - 'tests/conftest.py'
+      - 'tests/test_runtime_resilience_adversarial.py'
+      - 'src/responsibleai/db/execution_nonce_repository.py'
+      - 'src/responsibleai/isolation/in_flight.py'
+      - 'src/responsibleai/isolation/container_backend.py'
+      - 'src/responsibleai/enterprise/security/router.py'
+      - 'src/responsibleai/enterprise/security/webauthn.py'
+      - 'tests/test_webauthn_registration_presence.py'
+      - 'tests/test_m13_virtual_authenticator.py'
+      - 'tests/test_m13_pg16_test_runner.py'
+      - 'tests/js/m13-virtual-authenticator.mjs'
+      - 'scripts/engineering/m13_pg16_test_runner.py'
+      - 'src/responsibleai/enterprise/authority/service.py'
+      - 'scripts/engineering/reproducers/test_m13_dual_titan_*.py'
+      - 'tests/test_inflight_liveness_adversarial.py'
+      - 'migrations/versions/0065_bootstrap_require_passkey_stepup.py'
+      - 'scripts/engineering/reproducers/test_m13_corrective_authority.py'
+      - 'tests/js/m13-apex-*'
+      - 'src/responsibleai/trust_fabric/directory.py'
+      - 'src/responsibleai/mcp/tools.py'
+      - 'src/responsibleai/mcp/server.py'
+      - 'pyproject.toml'
+      - 'docs/engineering/m13i3/**'
+      - 'scripts/engineering/m13i3_*'
+      - 'tests/test_m13i3_*'
+      - 'tests/js/m13i3-*'
+      - 'docs/engineering/m13i2/**'
+      - 'scripts/engineering/m13i2_*'
+      - 'tests/test_m13i2_*'
+      - 'web/**'
+      - 'src/responsibleai/dashboard/static/whitepact/**'
+      - 'docs/engineering/m13i1/**'
+      - 'docs/security/m13s4/**'
+      - 'scripts/engineering/m13i1_*'
+      - 'tests/test_crewai_llamaindex_governance_consumers.py'
+      - 'tests/test_wave1_framework_compatibility.py'
+      - '.github/workflows/m13i1-integration.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  virtual-authenticator-component:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.11', '3.12']
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: ${{ matrix.python }}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+      - name: Install isolated browser component dependencies
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: /tmp/m13-component-chromium
+        run: |
+          python -m pip install -r tests/requirements-m11.txt
+          python -m pip install '.[dashboard,postgres,mcp,sso]' alembic
+          npm ci --ignore-scripts --no-audit --no-fund
+          npx playwright install --with-deps chromium
+      - name: Verify genuine browser ceremonies with repository coverage enabled
+        env:
+          PYTHONPATH: src:sdk/python:.
+          PLAYWRIGHT_BROWSERS_PATH: /tmp/m13-component-chromium
+        run: |
+          git rev-parse HEAD 'HEAD^{tree}'
+          node --check tests/js/m13-virtual-authenticator.mjs
+          python -m pytest tests/test_m13_virtual_authenticator.py tests/test_webauthn_registration_presence.py tests/test_m13_pg16_test_runner.py --junitxml=/tmp/m13-browser-component.xml --tb=short -q
+      - name: Preserve component evidence separately from customer acceptance
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: m13-browser-component-${{ matrix.python }}-${{ github.sha }}
+          path: |
+            /tmp/m13-browser-component.xml
+            coverage.json
+          if-no-files-found: error
+  independent-security:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.11', '3.12']
+    services:
+      postgres:
+        image: postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685
+        env:
+          POSTGRES_USER: wp
+          POSTGRES_PASSWORD: wp
+          POSTGRES_DB: postgres
+        ports: ['55432:5432']
+        options: >-
+          --health-cmd "pg_isready -U wp" --health-interval 5s
+          --health-timeout 5s --health-retries 12
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: ${{ matrix.python }}
+      - run: |
+          python -m pip install -r tests/requirements-m11.txt
+          python -m pip install '.[dashboard,postgres,mcp,sso]' alembic
+          python -m pip install 'langgraph==1.2.14'
+      - name: Record exact candidate and preserved reproducers
+        env:
+          CANDIDATE: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          git rev-parse HEAD 'HEAD^{tree}' HEAD^@
+          python scripts/engineering/m13p4_security_acceptance.py --repo "$GITHUB_WORKSPACE" --candidate "$CANDIDATE"
+      - name: Independently execute original assertion suites
+        env:
+          PYTHONPATH: src:.
+          WHITEPACT_QUALIFICATION_SKIP_LOG: /tmp/m13i1-core-skips.json
+        run: |
+          python -m pytest tests/independent_m13r2 tests/test_m13r3_security_regression.py tests/test_m12fs_root_hardening.py -o addopts='' --tb=short -ra
+          python -c 'import json; r=json.load(open("/tmp/m13i1-core-skips.json")); assert r["exit_status"] == 0 and r["skip_count"] == 0, r'
+      - name: Revocation and egress regression scope
+        if: ${{ !cancelled() }}
+        env:
+          PYTHONPATH: src:.
+          WHITEPACT_QUALIFICATION_SKIP_LOG: /tmp/m13i1-extended-skips.json
+        run: |
+          python -m pytest tests/test_m13s_security_regression.py tests/test_revocation_kernel.py tests/test_delegation_revocation_verification.py tests/test_in_flight_revocation.py tests/test_dns_egress_security.py tests/test_isolation_egress_boundary.py tests/test_runtime_resilience_adversarial.py tests/test_inflight_liveness_adversarial.py -o addopts='' --tb=short -ra
+          python -c 'import json; r=json.load(open("/tmp/m13i1-extended-skips.json")); assert r["exit_status"] == 0 and r["skip_count"] == 0, r'
+      - name: Mandatory passkey downgrade restriction and supported rollback
+        if: ${{ !cancelled() }}
+        env:
+          PYTHONPATH: src:.
+          WHITEPACT_QUALIFICATION_SKIP_LOG: /tmp/m13apex-migration-skips.json
+        run: |
+          python -m pytest tests/test_m13_apex_migration_guard.py -o addopts='' --tb=short -ra
+          python -c 'import json; r=json.load(open("/tmp/m13apex-migration-skips.json")); assert r["exit_status"] == 0 and r["skip_count"] == 0, r'
+      - name: Mandatory root email and persisted owner denial boundaries
+        if: ${{ !cancelled() }}
+        env:
+          PYTHONPATH: src:.
+          WHITEPACT_QUALIFICATION_SKIP_LOG: /tmp/m13apex-root-email-skips.json
+        run: |
+          python -m pytest -p tests.conftest scripts/engineering/reproducers/test_m13_corrective_authority.py scripts/engineering/reproducers/test_m13_dual_titan_root.py -k 'unverified or completion' -o addopts='' --tb=short -ra
+          python -c 'import json; r=json.load(open("/tmp/m13apex-root-email-skips.json")); assert r["exit_status"] == 0 and r["skip_count"] == 0, r'
+      - name: WebAuthn product origin binding and unchanged identity security
+        if: ${{ !cancelled() }}
+        env:
+          PYTHONPATH: src:.
+          WHITEPACT_QUALIFICATION_SKIP_LOG: /tmp/m13apex-origin-skips.json
+        run: |
+          python -m pytest tests/test_m13_apex_origin.py tests/test_enterprise_layer2_identity_security.py tests/test_enterprise_security_branch_campaign.py tests/test_enterprise_security_branch_campaign_batch2.py -o addopts='' --tb=short -ra
+          python -c 'import json; r=json.load(open("/tmp/m13apex-origin-skips.json")); assert r["exit_status"] == 0 and r["skip_count"] == 0, r'
+
+  independent-mcp:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.11', '3.12']
+    services:
+      postgres:
+        image: postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685
+        env:
+          POSTGRES_USER: wp
+          POSTGRES_PASSWORD: wp
+          POSTGRES_DB: postgres
+        ports: ['55432:5432']
+        options: >-
+          --health-cmd "pg_isready -U wp" --health-interval 5s
+          --health-timeout 5s --health-retries 12
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: ${{ matrix.python }}
+      - run: |
+          python -m pip install -r tests/requirements-m11.txt
+          python -m pip install '.[dashboard,postgres,mcp,sso]' alembic
+          python -m pip install 'langgraph==1.2.14'
+      - name: Record exact candidate and preserved reproducers
+        env:
+          CANDIDATE: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          git rev-parse HEAD 'HEAD^{tree}' HEAD^@ > /tmp/mcp-source.txt
+          python scripts/engineering/m13p4_security_acceptance.py --repo "$GITHUB_WORKSPACE" --candidate "$CANDIDATE"
+      - name: Full MCP transport and session-binding regression
+        if: ${{ !cancelled() }}
+        env:
+          PYTHONPATH: src:.
+          WHITEPACT_QUALIFICATION_SKIP_LOG: /tmp/m13apex-mcp-skips.json
+        run: |
+          python -m pytest tests/test_mcp*.py tests/test_m13p4_mcp_lifecycle.py tests/test_m13_apex_sse_binding.py -o addopts='' --tb=short -ra
+          python -c 'import json; r=json.load(open("/tmp/m13apex-mcp-skips.json")); assert r["exit_status"] == 0 and r["skip_count"] == 0, r'
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: ${{ always() }}
+        with:
+          name: mcp-qualification-${{ matrix.python }}-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            /tmp/mcp-source.txt
+            /tmp/m13apex-mcp-skips.json
+          if-no-files-found: error
+
+  persona-sandbox-protocol:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.11', '3.12']
+    services:
+      postgres:
+        image: postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685
+        env:
+          POSTGRES_USER: wp
+          POSTGRES_PASSWORD: wp
+          POSTGRES_DB: postgres
+        ports: ['55432:5432']
+        options: >-
+          --health-cmd "pg_isready -U wp" --health-interval 5s
+          --health-timeout 5s --health-retries 12
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: ${{ matrix.python }}
+      - run: |
+          python -m pip install -r tests/requirements-m11.txt
+          python -m pip install '.[dashboard,postgres,mcp,sso]' alembic
+          python -m pip install 'langgraph==1.2.14'
+      - name: Record exact candidate and preserved reproducers
+        env:
+          CANDIDATE: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          git rev-parse HEAD 'HEAD^{tree}' HEAD^@ > /tmp/persona-source.txt
+          python scripts/engineering/m13p4_security_acceptance.py --repo "$GITHUB_WORKSPACE" --candidate "$CANDIDATE"
+      - name: Isolated Persona synthetic protocol and HMAC denial regressions
+        if: ${{ !cancelled() }}
+        env:
+          PYTHONPATH: src:sdk/python:.
+          WHITEPACT_TEST_PG_ADMIN_URL: postgresql://wp:wp@127.0.0.1:55432/postgres
+          WHITEPACT_QUALIFICATION_SKIP_LOG: /tmp/m13-persona-skips.json
+        run: |
+          python scripts/engineering/m13_pg16_test_runner.py tests/test_stage3_persona_sandbox.py tests/test_enterprise_layer1_remediation.py::test_webhook_forged_modified_replay_stale_wrong_binding tests/test_enterprise_layer1_remediation.py::test_webhook_secret_production_preflight tests/test_enterprise_saas_layer1.py::test_forged_replay_and_cross_tenant_verification_callbacks --junitxml=/tmp/m13-persona.xml
+          python -c 'import json; r=json.load(open("/tmp/m13-persona-skips.json")); assert r["exit_status"] == 0 and r["skip_count"] == 0, r'
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: ${{ always() }}
+        with:
+          name: persona-synthetic-protocol-${{ matrix.python }}-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            /tmp/m13-persona.xml
+            /tmp/m13-persona-skips.json
+            /tmp/persona-source.txt
+          if-no-files-found: error
+
+  real-customer-journey:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685
+        env:
+          POSTGRES_USER: wp
+          POSTGRES_PASSWORD: wp
+          POSTGRES_DB: postgres
+        ports: ['55432:5432']
+        options: >-
+          --health-cmd "pg_isready -U wp" --health-interval 5s
+          --health-timeout 5s --health-retries 12
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.11'
+      - run: |
+          python -m pip install -r tests/requirements-m11.txt
+          python -m pip install '.[dashboard,postgres,mcp]' alembic
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+      - name: Install real Chromium ceremony runtime
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: /tmp/whitepact-m13i3-chromium
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npx playwright install --with-deps chromium
+          node --check tests/js/m13i3-real-webauthn.mjs
+      - name: Actual browser registration and assertion component; full customer gate remains separate
+        env:
+          PYTHONPATH: src:.
+          WHITEPACT_ENV: development
+          PLAYWRIGHT_BROWSERS_PATH: /tmp/whitepact-m13i3-chromium
+        run: |
+          ruff check scripts/engineering/m13i2_customer_journey.py tests/test_m13i2_customer_journey.py
+          ruff format --check scripts/engineering/m13i2_customer_journey.py tests/test_m13i2_customer_journey.py
+          ruff check scripts/engineering/m13i3_browser_journey.py tests/test_m13i3_browser_evidence.py
+          ruff format --check scripts/engineering/m13i3_browser_journey.py tests/test_m13i3_browser_evidence.py
+          python -m pytest tests/test_m13i2_customer_journey.py tests/test_m13i3_browser_evidence.py tests/test_m13i3_provisioning_context.py -o addopts='' --tb=short -ra
+          python scripts/engineering/m13i3_browser_journey.py --authorized-disposable-bootstrap --webauthn-component --report /tmp/m13i3-browser-evidence.json
+      - name: Attempt preserved APEX 25-stage customer journey independently of legacy gate
+        if: ${{ !cancelled() }}
+        env:
+          PYTHONPATH: src:.
+          WHITEPACT_ENV: development
+          PLAYWRIGHT_BROWSERS_PATH: /tmp/whitepact-m13i3-chromium
+        run: |
+          python -m pytest tests/test_m13_apex_journey_evidence.py -o addopts='' --tb=short -ra
+          python scripts/engineering/m13_apex_customer_journey.py --authorized-disposable-bootstrap --report /tmp/m13apex-customer-evidence.json
+      - name: Preserve redacted actual browser evidence even when blocked
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: m13i3-actual-browser-evidence
+          path: |
+            /tmp/m13i3-browser-evidence.json
+            /tmp/m13apex-customer-evidence.json
+          if-no-files-found: error
+
+  native-container-scope:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.11'
+      - name: Prepare existing Linux runner for actual container probes
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y acl
+          docker info
+          python -m pip install -r tests/requirements-m11.txt
+          python -m pip install '.[dashboard,postgres,mcp]' alembic
+          docker build -f Dockerfile.isolation -t whitepact-isolated-runtime:m13i1 .
+      - name: Execute actual kernel and container ownership scope without skips
+        env:
+          PYTHONPATH: src:.
+          WHITEPACT_REQUIRE_DOCKER_ISOLATION: '1'
+          WHITEPACT_ISOLATION_IMAGE: whitepact-isolated-runtime:m13i1
+          WHITEPACT_QUALIFICATION_SKIP_LOG: /tmp/m13i1-linux-skips.json
+        run: |
+          python -m pytest tests/test_docker_ownership_regression.py tests/test_runtime_isolation_docker.py tests/test_container_isolation_contract.py -o addopts='' --tb=short -ra
+          python -c 'import json; r=json.load(open("/tmp/m13i1-linux-skips.json")); assert r["exit_status"] == 0 and r["skip_count"] == 0, r'
+
+  inherited-policy-gates:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.11'
+      - run: python -m pip install ruff==0.17.0
+      - name: Existing OpenSSF source and trust controls
+        run: |
+          python scripts/check_pinned_actions.py
+          python scripts/manage_license_headers.py --check
+          python scripts/check_trust_regressions.py
+      - name: Preserve full inherited lint gate without exclusions
+        run: ruff check src/ tests/ sdk/python/
+
+  introduced-dco:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Require signoffs on introduced non-merge commits
+        env:
+          # Preserve the inherited security checkpoint gate across stacked product PRs.
+          DCO_BASE: '5291cc6d4e750c6ec5ec0688f8bfc9e3b72a8558'
+        run: |
+          set -euo pipefail
+          missing=0
+          for sha in $(git rev-list --no-merges "$DCO_BASE..HEAD"); do
+            if ! git log -1 --format=%B "$sha" | grep -qE '^Signed-off-by: .+ <.+@.+>$'; then
+              echo "::error::Commit $sha lacks Signed-off-by; author/owner disposition required."
+              missing=1
+            fi
+          done
+          exit "$missing"
+
+# No deployment or privileged customer activation. Failed policy jobs remain gates.

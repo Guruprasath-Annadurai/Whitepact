@@ -7,15 +7,12 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import shutil
 import subprocess
 import sys
 import tempfile
-import time
 import urllib.request
 from pathlib import Path
-from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 ART = Path("/opt/cursor/artifacts/v131_95_phase0b")
@@ -61,7 +58,7 @@ def openapi_diff() -> str:
         timeout=180,
         env={**os.environ, "WHITEPACT_LOG_LEVEL": "ERROR"},
     )
-    old = _run(
+    _old = _run(
         ["git", "archive", "--format=tar", "v1.3.0-rc-final", "src/responsibleai/dashboard/app.py"],
         timeout=60,
     )

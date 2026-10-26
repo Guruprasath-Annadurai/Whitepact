@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 import json
-from collections import Counter, defaultdict
+from collections import Counter
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -69,7 +69,7 @@ def main() -> None:
     md = [
         "# Final container security closure (Phase 0C)\n\n",
         "## BEFORE (`responsibleai:phase0c-candidate`)\n\n",
-        f"| Severity | Count |\n|---|---:|\n",
+        "| Severity | Count |\n|---|---:|\n",
     ]
     for s in ("CRITICAL", "HIGH", "MEDIUM"):
         md.append(f"| {s} | {bc.get(s, 0)} |\n")

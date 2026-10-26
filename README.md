@@ -11,7 +11,15 @@
   <a href="https://www.bestpractices.dev/projects/14112"><img src="https://www.bestpractices.dev/projects/14112/baseline" alt="OpenSSF Baseline"/></a>
 </p>
 
-<p align="center"><strong>WhitePact — an independent runtime authority, governance, and assurance layer for autonomous systems: a five-way governance decision engine (ALLOW / ALLOW_WITH_REDACTION / REQUIRE_APPROVAL / DENY / QUARANTINE), trust scoring, bias detection, guardrails, hallucination detection, compliance mapping (NIST AI RMF / EU AI Act / ISO 42001), cost intelligence, drift monitoring, a public Trust Index / leaderboard / AI Incident Database, and an MCP server (30 tools, 20 resources) with LangChain, LangGraph, and Google ADK trust-gate integrations.</strong></p>
+<p align="center"><strong>WhitePact — Independent runtime authorization and enforcement for AI agents.</strong></p>
+
+The open-source core includes policy decisions, approval workflows, evidence records,
+SDKs and MCP interfaces. Advisory trust scores and compliance mappings are not
+security certifications. Hosted and enterprise subscriptions are planned offerings;
+their presence in console code does not establish service availability.
+
+**M13 remains open. GLOBAL PRODUCTION NO-GO.** The full customer authority chain
+is not independently qualified. See [Forge qualification and blockers](docs/engineering/m13-forge/EXECUTIVE_VERDICT.md).
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────┐
@@ -51,31 +59,35 @@ and a live dashboard — that covers the full governance lifecycle:
 | Problem | Module | Output |
 |---|---|---|
 | Should this agent action be allowed, redacted, held for approval, denied, or quarantined? | `WhitePactRuntimeGateway` (governance core) | A five-way `GovernanceDecision`, deterministic, no LLM call in the decision path |
-| Is this model trustworthy? | `TrustScoreEngine` | 0–100 score, A–F grade, risk level |
-| Does it comply with regulations? | `ComplianceEngine` | NIST AI RMF, EU AI Act tier, ISO 42001 |
+| Is this model trustworthy? | `TrustScoreEngine` (Experimental) | Heuristic 0–100 score, A–F grade, risk assessment (advisory signal, not security certification) |
+| Does it comply with regulations? | `ComplianceEngine` | NIST AI RMF, EU AI Act tier, ISO 42001 heuristic mapping |
 | Is it exposing PII? | `GuardrailsEngine` | Block / redact with audit log |
-| Is it hallucinating? | `HallucinationDetector` | Risk score, unsupported claims |
+| Is it hallucinating? | `HallucinationDetector` (Experimental) | Risk score, unsupported claims heuristic |
 | Can it be attacked? | `RedTeamSimulator` | 10 vectors, CVE IDs, safe-refusal rate |
 | How much is it costing? | `CostTracker` + `ModelRouter` | Per-model USD, routing to cheapest viable model |
 | Is it getting worse over time? | `TrustDriftMonitor` | 7/30-day trend, severity alerts |
 | Is it biased? | `BiasBuster` | 6 demographic probes, CI gate |
 | Is this data labeled privately? | `PrivacyLabel` | Federated DP labels, never leaves device |
-| Is this media real? | `DeepfakeDetector` | Ensemble confidence, method detected |
+| Is this media real? | `DeepfakeDetector` (Experimental) | Heuristic ensemble signal (validated=False, no forensic accuracy claim) |
 | Can I trust a third-party MCP server before connecting to it? | `SupplyChainScanner` | VERIFIED_FACT / INFERRED_SIGNAL / UNKNOWN verdicts — typosquat, description-content, known-incident checks |
-| Is there a tamper-evident record of every governance decision? | `EvidenceRepository` | Hash-chained `EvidenceRecord`, per-org, `verify_chain()` |
+| Is there a tamper-evident record of every governance decision? | `EvidenceRepository` | Hash-chained `EvidenceRecord`, per-org, `verify_chain()` (local DB, no external immutable ledger) |
 | Does a risky action get a human in the loop? | `ApprovalRepository` | Race-safe `PENDING → APPROVED/DENIED` workflow |
 | How does this model rank against others, independently? | `Public Leaderboard` | Cross-model trust ranking from actually calling each model's API, not self-reported |
-| Can I cite and verify a trust score anywhere? | `Trust Index` | Free self-assessed or human-reviewed certified passport, verifiable at `/verify/{id}`, embeddable badge |
+| Can I cite and verify a trust score anywhere? | `Trust Index` | Self-assessed or reviewed trust passport (advisory claim, not an external compliance certificate) |
 | Has this AI system failed publicly before? | `AI Incident Database` | Crowd-reported, moderator-reviewed, hash-chained public registry |
 | Should my agent trust this third-party tool before calling it? | `rai_check_trust` + LangChain/LangGraph/ADK integrations | Free lookup, plus a real block/pause gate in-agent |
-| Can any MCP client govern every AI call? | `MCP Server` | 30 production governance tools over stdio, Streamable HTTP, or legacy HTTP+SSE |
+| How do MCP clients access governance tools? | `MCP Server` | 30 production tools (plus four development-only read-only authority tools on governed hosted connections) via hosted Streamable HTTP (governed execution); local stdio transport is advisory and ungoverned by design |
 
 ---
 
 ## Install
 
 ```bash
-# Governance platform + REST API
+# FastStart V1: lightweight core governance CLI demonstration (warm ~0.4s; cold install network-bounded)
+pip install rai-governance-platform
+whitepact faststart
+
+# Full governance platform + REST API dashboard
 pip install "rai-governance-platform[dashboard]"
 
 # With PostgreSQL support
@@ -99,7 +111,28 @@ unless PyPI documents that distribution).
 
 ---
 
-## 30-second quickstart
+## WhitePact FastStart V1 (Local Doctrine Demonstration)
+
+Demonstrate WhitePact's deterministic policy evaluation and canonical evidence hashing locally without external database or server dependencies:
+
+```bash
+# 1. Install core distribution
+pip install rai-governance-platform
+
+# 2. Run local governance doctrine verification
+whitepact faststart
+```
+
+Demonstrates the core deterministic doctrine:
+`ALLOW -> DENY -> REQUIRE_APPROVAL -> SYNTHETIC_APPROVAL -> AUTHORITY_REMOVAL -> VERIFY_EVIDENCE`
+with canonical SHA-256 evidence chain verification.
+
+> [!NOTE]
+> FastStart V1 is a lightweight local demonstration of deterministic gateway policy evaluation and evidence hashing. Step 4 is a synthetic approval demonstration without human participants or isolated container dispatch. Passing isolated integration regressions does not qualify a real customer's root authorization, consent, delegation, execution or revocation journey. Those mandatory acceptance gates remain open.
+
+---
+
+## 30-second quickstart (Full Dashboard)
 
 ```bash
 # Start the governance dashboard
@@ -142,15 +175,80 @@ Open `http://localhost:8765` for the live dashboard and
 architecture contract) is a deterministic runtime authority sitting in front
 of agent tool calls:
 
-```python
-from responsibleai.governance import WhitePactRuntimeGateway, ActionRequest, AuthorityContext
+Runs exactly as written after `pip install "rai-governance-platform[dashboard]"` (the
+evidence store needs the `dashboard` extra; the decision engine alone needs only the base
+install). It is the file `examples/00_quickstart.py`, and CI executes it on every change:
 
+```python
+import asyncio
+
+from responsibleai.db.engine import create_engine, organizations
+from responsibleai.db.evidence_repository import EvidenceRepository
+from responsibleai.governance import ActionRequest, AuthorityContext, WhitePactRuntimeGateway
+from responsibleai.governance.evidence import build_evidence_record
+from responsibleai.governance.models import AgentContext, IdentityContext
+
+TOOL = "mcp:tool:rai_scan"
 gateway = WhitePactRuntimeGateway()
-result = gateway.evaluate(
-    action=ActionRequest(tool_name="rai_scan", arguments={"text": "..."}),
-    authority=AuthorityContext(org_id="acme", agent_id="agent-1"),
+agent = AgentContext(
+    identity=IdentityContext(identity_id="agent-1", kind="agent", org_id="acme"),
+    organization_id="acme",
+    agent_id="agent-1",
 )
-print(result.decision)  # GovernanceDecision.ALLOW | ALLOW_WITH_REDACTION | REQUIRE_APPROVAL | DENY | QUARANTINE
+
+
+def evaluate(arguments, *, granted=(TOOL,), require_approval=(), violations=0):
+    """Ask the gateway for a decision. Authority comes from a human (`delegated_by`)."""
+    action = ActionRequest(agent=agent, action_type=TOOL, target="rai_scan", arguments=arguments)
+    authority = AuthorityContext(
+        delegated_by="alice@acme.com",
+        granted_action_types=frozenset(granted),
+        require_approval_for=frozenset(require_approval),
+    )
+    result = gateway.evaluate(action, authority, recent_violation_count=violations)
+    return action, authority, result
+
+
+cases = {
+    "ALLOW": evaluate({"text": "hello"}),
+    "DENY (no delegated authority)": evaluate({"text": "hello"}, granted=()),
+    "REQUIRE_APPROVAL": evaluate({"text": "hello"}, require_approval=(TOOL,)),
+    "ALLOW_WITH_REDACTION": evaluate({"text": "Contact jane@example.com, SSN 123-45-6789"}),
+    "QUARANTINE (repeated denials)": evaluate({"text": "hello"}, violations=5),
+}
+for label, (_, _, result) in cases.items():
+    print(f"{label:32} -> {result.decision.value}")
+
+
+async def record_evidence() -> None:
+    """Every decision becomes a per-organization, hash-chained evidence record."""
+    engine = create_engine(":memory:")
+    await engine.init()
+    async with engine.raw.begin() as conn:
+        await conn.execute(
+            organizations.insert().values(
+                id="acme", name="Acme", slug="acme", created_at="2026-01-01T00:00:00Z"
+            )
+        )
+    repo = EvidenceRepository(engine)
+    for action, authority, result in cases.values():
+        await repo.record(build_evidence_record(action, agent, authority, result))
+    print("evidence chain intact:", await repo.verify_chain("acme"))
+    await engine.close()
+
+
+asyncio.run(record_evidence())
+```
+
+Expected output (deterministic):
+
+```text
+ALLOW                            -> ALLOW
+DENY (no delegated authority)    -> DENY
+REQUIRE_APPROVAL                 -> REQUIRE_APPROVAL
+ALLOW_WITH_REDACTION             -> ALLOW_WITH_REDACTION
+QUARANTINE (repeated denials)    -> QUARANTINE
+evidence chain intact: True
 ```
 
 - **Risk tiering** (`governance/risk.py`) — every MCP tool is classified
@@ -192,19 +290,17 @@ python examples/08_whitepact_enterprise_scenario.py
 
 ---
 
-## MCP Server — govern every AI call from Claude Code, Claude Desktop, or any MCP client
+## MCP Server — Runtime Tool Governance (Hosted Streamable HTTP) & Local Tool Exploration (stdio)
 
-The MCP (Model Context Protocol) server exposes WhitePact as **30 tools and
-20 resources** (10 canonical resource URIs, dual-advertised under both
-`whitepact://` and `rai://` schemes — see `MIGRATION_WHITEPACT_V2.md`) to any
-MCP-compatible client — Claude Code, Claude Desktop, Cursor, Windsurf, or your
-own agent runtime. Three transports are supported: stdio, Streamable HTTP
-(`/mcp`, current MCP spec), and legacy HTTP+SSE (`/sse` + `/messages/`, kept
-for older clients). When a team's client points at this server, every AI
-interaction is automatically governed — five-way governance decisions, trust
-scoring, guardrails, compliance checks (NIST AI RMF / EU AI Act / ISO 42001),
-bias evaluation, drift detection, cost tracking, and hash-chained audit
-evidence run on any call without code changes.
+The MCP (Model Context Protocol) server exposes WhitePact governance tools to MCP-compatible clients — Claude Code, Claude Desktop, Cursor, Windsurf, or custom agent runtimes.
+
+> [!IMPORTANT]
+> **MCP Transport and Enforcement Scope**:
+> - **Hosted Streamable HTTP (`/mcp`)**: Enforced runtime governance path. Tool dispatches are mediated by `InternalToolExecutor`, which enforces single-use `ExecutionAuthorization` permits, tenant isolation, and default Linux container isolation.
+> - **Local Community stdio (`whitepact-mcp` CLI)**: **Ungoverned by design** (see `docs/launch/LOCAL_STDIO_MCP_SCOPE.md`). The stdio transport executes tool handlers in-process for developer evaluation without OS-level sandboxing, tenant boundary enforcement, or cryptographic authorization tokens. Do not use local stdio as an enterprise security boundary.
+
+Three transports are supported: stdio (evaluation only), Streamable HTTP (`/mcp`, current MCP spec), and legacy HTTP+SSE (`/sse` + `/messages/`, kept for older clients).
+
 
 ### Setup
 
@@ -320,7 +416,7 @@ aspirational, all verified live:
   `io.github.Guruprasath-Annadurai/whitepact`, confirmed queryable at
   [registry.modelcontextprotocol.io](https://registry.modelcontextprotocol.io).
   Advertises both the PyPI/stdio package (`whitepact-mcp`, self-hosted,
-  free, unrestricted) and a `remotes` entry pointing at the hosted
+  MIT-licensed and advisory, not an independent enforcement boundary) and a `remotes` entry pointing at the hosted
   Streamable HTTP and SSE transports (`whitepact-mcp-http.onrender.com`)
   — a one-click remote connector, not just an installable package.
 - **Antigravity CLI plugin** — `plugins/whitepact/` at the repository
@@ -363,6 +459,8 @@ against the hosted endpoint.
 ### Trust scoring
 
 ```python
+from pathlib import Path
+
 from responsibleai import TrustScoreEngine, PassportGenerator
 
 engine = TrustScoreEngine()
@@ -378,8 +476,14 @@ passport = PassportGenerator().generate(
     compliance_summary={"overall": 80.5},
 )
 print(passport.passport_id)
-passport.export_html("passport.html")
+Path("passport.html").write_text(passport.to_html())
 ```
+
+> **What this score is.** `TrustScoreEngine` is a weighted average of the six dimension
+> values *you pass in*. It does not measure fairness, privacy, security, robustness,
+> compliance or authenticity, so it is not independent verification of an agent's
+> trustworthiness. The `authenticity` input is experimental: no deepfake detector in this
+> repository has a labelled evaluation (see `privacylabel/deepfake/detector.py`).
 
 ### Guardrails — block PII before it reaches a log
 
@@ -390,8 +494,8 @@ guardrails = GuardrailsEngine()
 result = guardrails.scan("Customer SSN is 123-45-6789, email: alice@company.com")
 
 print(result.is_blocked)      # True
-print(result.pii_count)       # 2
-print(result.redacted_text)   # "Customer SSN is [SSN], email: [EMAIL]"
+print(len(result.pii_findings))  # 2
+print(result.redacted_text)   # "Customer SSN is [REDACTED], email: [REDACTED]"
 ```
 
 ### Hallucination detection
@@ -410,6 +514,12 @@ result = detector.analyze(
 print(f"Risk: {result.hallucination_risk:.2f}  Level: {result.risk_level}")
 ```
 
+> **What this measures.** Three heuristic signals: TF-IDF agreement between the candidate
+> responses, hedging-phrase regexes, and regexes for specific-looking claims with no
+> attribution. It does **not** extract claims, retrieve evidence, verify sources or check
+> facts, so a confident wrong answer can score low risk. Treat it as a triage signal, not as
+> verified factual correctness.
+
 ### Compliance — NIST AI RMF, EU AI Act, ISO 42001
 
 ```python
@@ -422,7 +532,7 @@ report = engine.evaluate(
     compliance_maturity=0.90, use_case="credit_scoring",
 )
 print(f"Score: {report.compliance_score * 100:.1f}%")
-print(f"EU AI Act tier: {report.eu_ai_act_tier.value}")  # high_risk
+print(f"EU AI Act tier: {report.eu_ai_act_tier.value}")  # HIGH
 ```
 
 ### Red team simulation
@@ -431,12 +541,20 @@ print(f"EU AI Act tier: {report.eu_ai_act_tier.value}")  # high_risk
 from responsibleai import RedTeamSimulator
 
 simulator = RedTeamSimulator()
-report = simulator.run_all()
 
-print(f"Security score: {report.security_score:.1f}/100")
-print(f"Vulnerabilities: {len(report.vulnerabilities)}")
+
+def my_model(prompt: str) -> str:
+    """Replace with a call to the model under test."""
+    return "I can't help with that request."
+
+
+responses = {a["name"]: my_model(a["payload"]) for a in simulator.get_attack_payloads()}
+report = simulator.analyze_responses("my-model", "my-provider", responses)
+
+print(f"Security score: {report.security_score * 100:.1f}/100")  # 100.0/100 for this model
+print(f"Vulnerabilities: {len(report.vulnerabilities)}")         # 0
 for v in report.critical_vulnerabilities:
-    print(f"  [{v['cwe_id']}] {v['name']}")
+    print(f"  [{v.vector.cwe_id}] {v.vector.name}")
 ```
 
 ### Cost intelligence
@@ -467,12 +585,12 @@ from responsibleai import TrustScoreEngine, TrustDriftMonitor
 monitor = TrustDriftMonitor(db_path=":memory:", alert_threshold=5.0)
 engine = TrustScoreEngine()
 
-for fairness in [0.90, 0.88, 0.85, 0.72]:
+for fairness in [0.90, 0.88, 0.85, 0.30]:
     score = engine.compute(fairness=fairness, privacy=0.85, security=0.80,
                            robustness=0.80, compliance=0.85, authenticity=0.85)
     alert = monitor.record("gpt-4o", "openai", score)
     if alert:
-        print(f"Drift alert! {alert.severity}: {alert.delta:.1f} pt drop")
+        print(f"Drift alert! {alert.severity}: {abs(alert.delta):.1f} pt drop")  # high: 11.0 pt drop
 ```
 
 ---

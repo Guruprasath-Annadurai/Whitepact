@@ -46,8 +46,12 @@ def upgrade() -> None:
         sa.Column("approval_id", sa.String(36), nullable=True),
         sa.UniqueConstraint("org_id", "revision_num", name="uq_pol_rev_org_num"),
     )
-    op.create_index("idx_pol_rev_org_num", "governance_policy_revisions", ["org_id", "revision_num"])
-    op.create_index("idx_pol_rev_digest", "governance_policy_revisions", ["org_id", "content_digest"])
+    op.create_index(
+        "idx_pol_rev_org_num", "governance_policy_revisions", ["org_id", "revision_num"]
+    )
+    op.create_index(
+        "idx_pol_rev_digest", "governance_policy_revisions", ["org_id", "content_digest"]
+    )
 
     # 2. governance_policy_activations
     op.create_table(
@@ -72,7 +76,9 @@ def upgrade() -> None:
         sa.Column("previous_activation_id", sa.String(36), nullable=True),
         sa.Column("is_active", sa.Boolean(), nullable=False, server_default=sa.true()),
     )
-    op.create_index("idx_pol_act_org_active", "governance_policy_activations", ["org_id", "is_active"])
+    op.create_index(
+        "idx_pol_act_org_active", "governance_policy_activations", ["org_id", "is_active"]
+    )
 
     # 3. data_retention_policies
     op.create_table(

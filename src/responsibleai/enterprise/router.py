@@ -132,6 +132,7 @@ async def _web_actor(request: Request) -> Actor:
         role=principal.role,
         membership_status="ACTIVE",
         request_id=_request_id(request),
+        session_id=principal.session_id,
     )
 
 
@@ -161,6 +162,8 @@ async def create_workspace(request: Request, body: CreateWorkspaceBody) -> Any:
             slug=body.slug,
             kind=body.kind,
             request_id=actor.request_id,
+            session_token=request.cookies.get("wp_session", ""),
+            csrf=request.headers.get("X-WP-CSRF", ""),
         )
         return {"organization": _public_org(org)}
     except EnterpriseError as exc:

@@ -1,0 +1,114 @@
+name: SDK Integration Review
+
+on:
+  push:
+    branches:
+      - codex/whitepact-sdk-integration-review
+      - codex/whitepact-sdk-live-journey
+      - codex/whitepact-real-approval-journey
+      - codex/whitepact-v2-acceptance
+      - codex/whitepact-go-governance-sdk
+      - codex/whitepact-enterprise-product-completion
+  pull_request:
+    paths:
+      - 'sdk/**'
+      - 'tests/test_sdk*.py'
+      - 'tests/test_developer_sdk_live_api.py'
+      - 'tests/test_customer_real_approval_journey.py'
+      - 'tests/test_go_governance_live_api.py'
+      - 'tests/fixtures/governance_sdk_contract.py'
+      - 'docs/sdk/**'
+      - '.github/workflows/sdk-integration.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  sdk:
+    name: SDK Python ${{ matrix.python }} and TypeScript
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.11', '3.12']
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: ${{ matrix.python }}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+      - name: Install isolated SDK test and build tooling
+        run: python -m pip install -r sdk/python/requirements-test.txt
+      - name: SDK static checks
+        run: |
+          ruff check sdk/python/rai_client tests/test_sdk*.py
+          ruff format --check sdk/python/rai_client tests/test_sdk*.py
+          git diff --check
+      - name: Complete Python SDK unit, contract and negative tests
+        env:
+          PYTHONPATH: src:.
+        run: python -m pytest tests/test_sdk*.py tests/test_evaluation_benchmark_safety.py -q --no-cov
+      - name: Python SDK wheel and source distribution
+        run: python -m build sdk/python --no-isolation --outdir sdk-dist
+      - name: Complete TypeScript SDK build and negative tests
+        run: |
+          npm --prefix sdk/typescript ci --ignore-scripts --no-audit --no-fund
+          npm --prefix sdk/typescript test
+      - name: TypeScript SDK package contents
+        working-directory: sdk/typescript
+        run: npm pack --dry-run
+
+  live-api:
+    name: Real local SDK API Python ${{ matrix.python }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.11', '3.12']
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: wp
+          POSTGRES_PASSWORD: wp
+          POSTGRES_DB: postgres
+        ports: ['55432:5432']
+        options: >-
+          --health-cmd "pg_isready -U wp"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: ${{ matrix.python }}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+      - name: Install local API and test dependencies
+        run: |
+          python -m pip install -r sdk/python/requirements-test.txt
+          python -m pip install '.[dashboard,postgres,mcp]' alembic
+          npm --prefix sdk/typescript ci --ignore-scripts --no-audit --no-fund
+          npm --prefix sdk/typescript run build
+      - name: Real authenticated TCP PostgreSQL journey
+        env:
+          PYTHONPATH: src:.
+        run: >-
+          python -m pytest tests/test_developer_sdk_live_api.py
+          tests/test_customer_real_approval_journey.py
+          tests/test_go_governance_live_api.py -q --no-cov
+
+# This focused workflow supplements, never replaces, full-platform CI and release gates.
+# No repository secrets, package publication, mutation of live services or write token needed.

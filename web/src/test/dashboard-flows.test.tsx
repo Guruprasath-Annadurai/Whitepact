@@ -49,10 +49,10 @@ describe("dashboard and onboarding", () => {
     );
     render(<MemoryRouter initialEntries={["/dashboard"]}><Routes><Route path="/dashboard" element={<DashboardShell />}><Route index element={<div>Overview content</div>} /></Route></Routes></MemoryRouter>);
     expect(await screen.findByText("Overview content")).toBeInTheDocument();
-    for (const label of ["Overview", "API Keys", "Approvals", "Evidence", "Security", "Organization", "Members", "Billing"]) {
+    for (const label of ["Overview", "Agents", "API Keys", "Approvals", "Evidence", "Security", "Organization", "Members", "Billing"]) {
       expect(screen.getByRole("link", { name: label })).toBeInTheDocument();
     }
-    for (const hidden of ["Agents", "Policies", "Usage", "MCP", "Settings"]) {
+    for (const hidden of ["Policies", "Usage", "MCP", "Settings"]) {
       expect(screen.queryByRole("link", { name: hidden })).not.toBeInTheDocument();
     }
   });
@@ -252,7 +252,7 @@ describe("dashboard and onboarding", () => {
   it("surfaces missing evidence detail without inventing an attestation", async () => {
     vi.spyOn(window, "fetch").mockResolvedValue(new Response(JSON.stringify({ detail: "Evidence record not found." }), { status: 404 }));
     render(<MemoryRouter initialEntries={["/dashboard/evidence?evidence=missing"]}><EvidenceContractPanel records={[]} /></MemoryRouter>);
-    expect(await screen.findByRole("alert")).toHaveTextContent("Request failed (404)");
+    expect(await screen.findByText("Evidence record not found or unavailable to this session.")).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Evidence attestation" })).not.toBeInTheDocument();
   });
 
@@ -275,6 +275,9 @@ describe("dashboard and onboarding", () => {
     await user.click(screen.getByRole("button", { name: "Confirm approved" }));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/v1/web/approvals/appr-1/resolve", expect.objectContaining({ method: "POST" })));
     expect(fetchMock).toHaveBeenCalledWith("/api/v1/web/approvals/appr-1/execute", expect.objectContaining({ method: "POST" }));
+    expect(await screen.findByRole("heading", { name: "Execution succeeded" })).toBeInTheDocument();
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(6));
+    expect(screen.getByRole("heading", { name: "Execution succeeded" })).toBeInTheDocument();
   });
 
   it("denies pending requests through the resolve endpoint without executing", async () => {
@@ -331,7 +334,7 @@ describe("dashboard and onboarding", () => {
     const user=userEvent.setup(); const fetchMock=vi.spyOn(window,"fetch").mockResolvedValueOnce(new Response(JSON.stringify({items:[{approval_id:"appr-net",action_type:"tool.call",target:"tool",status:"PENDING"}],source:"approval_repository"}),{status:200})).mockResolvedValueOnce(new Response(JSON.stringify(approvalDetail({approval_id:"appr-net",action_type:"tool.call",target:"tool"})),{status:200})).mockRejectedValueOnce(new TypeError("Network unavailable"));
     const Parent=()=> <Outlet context={session}/>; render(<MemoryRouter initialEntries={["/dashboard/approvals"]}><Routes><Route element={<Parent/>}><Route path="/dashboard/:domain" element={<DomainPage/>}/></Route></Routes></MemoryRouter>);
     await user.click(await screen.findByRole("button",{name:"Approve"})); await user.click(screen.getByRole("button",{name:"Confirm approved"}));
-    expect(await screen.findByRole("heading", { name: "Request could not be completed" })).toBeInTheDocument(); expect(screen.getByText("Network unavailable")).toBeInTheDocument(); expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(await screen.findByRole("heading", { name: "Approval outcome is uncertain" })).toBeInTheDocument(); expect(screen.getByText(/No execution request was sent/i)).toBeInTheDocument(); expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
   it("collects onboarding data through all three steps", async () => {

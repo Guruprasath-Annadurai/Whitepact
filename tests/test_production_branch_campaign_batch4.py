@@ -332,14 +332,17 @@ async def test_container_execute_rejects_non_none_network_policy() -> None:
             await backend.execute(req)
 
 
-def test_remove_containers_tolerates_inspect_errors(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_remove_containers_rejects_unconfirmed_inspect_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     backend = DockerContainerBackend(docker_cmd="docker")
 
     def boom(*_a, **_k):
         raise OSError("inspect failed")
 
     monkeypatch.setattr("responsibleai.isolation.container_backend.subprocess.run", boom)
-    backend._remove_containers(["wp_iso_missing"], stable_seconds=0, wait_seconds=0.1)
+    with pytest.raises(RuntimeError, match="containment unconfirmed"):
+        backend._remove_containers(["wp_iso_missing"], stable_seconds=0, wait_seconds=0.1)
 
 
 # ── web_identity_repository deny paths ───────────────────────────────────────
