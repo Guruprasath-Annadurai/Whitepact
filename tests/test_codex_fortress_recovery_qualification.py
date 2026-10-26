@@ -1,12 +1,13 @@
 # Copyright (c) 2026 Guruprasath Annadurai
 # SPDX-License-Identifier: MIT
-"""Codex-only missing Fortress objectives; honest RED cases remain executable.
+"""Codex Fortress objectives under founder-approved nonproduction signed recovery.
 
 No production recovery implementation or internal authorization context is
-changed. Disposable signing identities and a component initial READY baseline
-are qualification fixtures, not production enrollment/bootstrap evidence.
+changed. Genuine signed disposable installation and operator identities are
+nonproduction qualification fixtures, not production enrollment evidence.
 """
 
+import base64
 import hashlib
 import json
 import os
@@ -15,6 +16,7 @@ from dataclasses import replace
 from datetime import UTC, datetime
 
 import pytest
+from scripts.engineering import m13_floor_repair_poc as floor_repair
 from sqlalchemy import insert, text
 from sqlalchemy.exc import IntegrityError
 
@@ -112,6 +114,19 @@ async def test_active_floor_is_reconciled_after_real_postgres_restore(
     established = provider.get_state(tenant)
     provider.record_state(replace(established, security_epoch=7, revocation_floor=7, digest=""))
     assert (await epochs.current(tenant)).epoch == 7
+    # Retain independent, signed evidence before Store A is rolled back.
+    floor_repair.initialize(profile)
+    witness = await floor_repair.witness(engine, provider, profile_path=profile, tenant=tenant)
+    floor_repair.retain_witness(
+        profile,
+        witness,
+        {
+            name: base64.b64encode(
+                key.sign(floor_repair.ANCHOR_DOMAIN + floor_repair._bytes(witness))
+            ).decode()
+            for name, key in keys.items()
+        },
+    )
     await fence_restore_incident(engine, provider, profile)
     url = engine.raw.url.render_as_string(hide_password=False)
     await engine.close()
@@ -134,14 +149,30 @@ async def test_active_floor_is_reconciled_after_real_postgres_restore(
                 ("authoritative_floor", "7"),
             ]
         )
-        try:
-            manifest = await prepare_offline_recovery(restored, current_b, profile_path=profile)
-        except RecoveryAuthorizationError as exc:
-            assert await no_effect_counts(restored) == before
-            assert not restored_gate.is_admitted()
-            assert (await RevocationEpochRepository(restored).current(tenant)).epoch == 3
-            request.node.user_properties.append(("blocked_at_prepare", str(exc)))
-            raise
+        with pytest.raises(RecoveryAuthorizationError, match="completion evidence") as denied:
+            await prepare_offline_recovery(restored, current_b, profile_path=profile)
+        assert await no_effect_counts(restored) == before
+        assert not restored_gate.is_admitted()
+        assert (await RevocationEpochRepository(restored).current(tenant)).epoch == 3
+        request.node.user_properties.append(("pre_repair_denial", str(denied.value)))
+        plan = await floor_repair.prepare(restored, current_b, profile_path=profile, tenant=tenant)
+        result = await floor_repair.execute(
+            restored,
+            current_b,
+            profile_path=profile,
+            plan=plan,
+            signatures={
+                name: base64.b64encode(key.sign(plan.canonical_bytes())).decode()
+                for name, key in keys.items()
+            },
+        )
+        assert result == {"state": "FLOOR_ADVANCED", "epoch": 7, "ready": False}
+        assert not restored_gate.is_admitted()
+        assert current_b.get_state(tenant).generation_id == established.generation_id
+        assert current_b.get_state(tenant).revocation_floor == 7
+        assert (await RevocationEpochRepository(restored).current(tenant)).epoch == 7
+        assert await no_effect_counts(restored) == before
+        manifest = await prepare_offline_recovery(restored, current_b, profile_path=profile)
         report = await execute_offline_recovery(
             restored,
             current_b,
@@ -266,6 +297,12 @@ async def test_late_unconfirmed_containment_never_restores_admission(
 async def test_approval_fk_survives_real_backup_restore_and_signed_recovery(
     qualified_target, tmp_path, request
 ):
+    report = await approval_fk_restore_scenario(qualified_target, tmp_path, request)
+    assert report.status == "RECONCILED"
+
+
+async def approval_fk_restore_scenario(qualified_target, tmp_path, request, *, minimum_floor=None):
+    """Shared real restore transport; every original FK/evidence assertion remains active."""
     engine, provider, gate, profile, keys, tenant = qualified_target
     now = datetime.now(UTC)
     async with engine.raw.begin() as connection:
@@ -347,6 +384,17 @@ async def test_approval_fk_survives_real_backup_restore_and_signed_recovery(
         raise
     tombstone = provider.get_state(tenant)
     assert tombstone.state == LifecycleState.TOMBSTONED
+    if minimum_floor is not None:
+        provider.record_state(
+            replace(
+                tombstone,
+                security_epoch=max(tombstone.security_epoch, minimum_floor),
+                revocation_floor=max(tombstone.revocation_floor, minimum_floor),
+                digest="",
+            )
+        )
+        tombstone = provider.get_state(tenant)
+        assert tombstone.revocation_floor >= minimum_floor
     await fence_restore_incident(engine, provider, profile)
     url = engine.raw.url.render_as_string(hide_password=False)
     await engine.close()
@@ -390,6 +438,11 @@ async def test_approval_fk_survives_real_backup_restore_and_signed_recovery(
             signatures=sign(manifest, keys),
         )
         assert report.status == "RECONCILED"
+        assert restored_gate.is_admitted()
+        assert current_b.get_state(tenant) == tombstone
+        # Authorization stays permanently consumed; completion is a distinct
+        # operation phase, not a reusable authorization receipt.
+        assert recovery_receipt(profile, manifest.request_id) == (("CONSUMED",), ("COMPLETE",))
         async with restored.raw.connect() as connection:
             assert (
                 await connection.scalar(
@@ -416,5 +469,6 @@ async def test_approval_fk_survives_real_backup_restore_and_signed_recovery(
             with pytest.raises(ProvisioningAuthorizationError):
                 await verify_tenant_completion_evidence(connection, tenant, 1, current_b)
         assert await no_effect_counts(restored) == before
+        return report
     finally:
         await restored.close()
