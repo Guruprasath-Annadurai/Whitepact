@@ -231,8 +231,8 @@ The security file set was the I1 `independent-security` pytest modules:
 `test_enterprise_layer2_identity_security.py`,
 `test_enterprise_security_branch_campaign.py`,
 `test_enterprise_security_branch_campaign_batch2.py`.
-Python 3.11 was not installed here. Hosted 3.11 and 3.12 jobs are the
-cross-version record and are not claimed from this machine.
+Python 3.11 was not installed here. Hosted 3.11 and 3.12 results for
+`bdf3ec6f05604436d4a84b4b0500927bc2dcde92` are in the Hosted CI section.
 
 `tests/test_p0_tenant_admission.py` still cannot create organizations in this
 environment because `create_org` requires a verified session and CSRF. Those
@@ -258,15 +258,46 @@ customer path still stops until an authorized identity provider writes
 - A real sign-off by Techezz Infos `<Techezzinfos@gmail.com>` for
   `39619c4b46dac5d6e69c9e00ce887c2ed9641cfc`, or an owner-published exact-SHA
   exception in both DCO checks. Neither is in this branch.
-- Hosted confirmation of the I1, Sovereign, and product workflows on the tip
-  of this branch. `introduced-dco` and `real-customer-journey` are expected
-  to remain red for the two reasons above. That expected red is not a
-  qualification.
-- Python 3.11 execution remains a hosted CI property.
+- Hosted I1, Sovereign, and product workflows have now completed on
+  `bdf3ec6f05604436d4a84b4b0500927bc2dcde92`. Security, MCP, Persona,
+  authenticator, native container, Sovereign, and product jobs passed on the
+  supported Python versions. `introduced-dco` and `real-customer-journey`
+  remain red for the two reasons above. That red status is the current gate,
+  not a qualification.
 
 ## Hosted CI
 
-Not yet terminal for `51ddfec39af6ece852bdc21b68795b2285dac720` or the
-documentation tip that names it. `introduced-dco` and `real-customer-journey`
-are expected to stay red. A green security or Sovereign job does not make
-this verdict PASS. The terminal workflow names are appended when CI finishes.
+Recorded for documentation tip `bdf3ec6f05604436d4a84b4b0500927bc2dcde92`,
+tree `c6a0cd38bf9de0e2b39d3e17351fd114ed202604`, clean checkout. Workflows
+started 26 Oct 2026, 12:26 PM IST. A green security or Sovereign job does not
+make this verdict PASS.
+
+I1 run `40282734655` concluded failure at 26 Oct 2026, 12:41 PM IST:
+https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/40282734655
+
+| Job | Result |
+|---|---|
+| `introduced-dco` `121439397274` | FAIL in 6s. The only unsigned commit is `39619c4b46dac5d6e69c9e00ce887c2ed9641cfc`. Error logged 26 Oct 2026, 12:26 PM IST |
+| `real-customer-journey` `121439397155` | FAIL in 2m24s, exit 2. `POST /api/web/api-keys` returned 403 at 26 Oct 2026, 12:28 PM IST. Receipt: acceptance `BLOCKED`, stop `judgment`, 17 PASS / 1 BLOCKED / 7 NOT_EXECUTED / 0 FAIL, `IDENTITY_VERIFICATION_REQUIRED`, `development_prototype` false, `authority_seeded` false. Pytest evidence, including the revocation-denial cases, completed before that exit |
+| `independent-security` 3.11 | PASS, 7m56s |
+| `independent-security` 3.12 | PASS, 9m4s |
+| `independent-mcp` 3.11 / 3.12 | PASS, 13m58s / 15m21s |
+| `persona-sandbox-protocol` 3.11 / 3.12 | PASS, 3m23s / 2m36s |
+| `virtual-authenticator-component` 3.11 / 3.12 | PASS, 1m32s / 1m53s |
+| `native-container-scope` | PASS, 1m46s |
+| `inherited-policy-gates` | PASS, 11s |
+
+Sovereign run `40282734671` passed at 26 Oct 2026, 12:36 PM IST on Python 3.11
+(8m57s) and 3.12 (9m53s), which locks the default journey at 17 / 1 / 7 and
+the separate development prototype at 25 / 25.
+https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/40282734671
+
+Product run `40282734678` passed at 26 Oct 2026, 12:31 PM IST: console 58s,
+contracts 3.11 5m3s, contracts 3.12 3m16s.
+https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/40282734678
+
+The hosted browser component on the same I1 job is `component_acceptance`
+PASS with production `GLOBAL PRODUCTION NO-GO`. That component is not the
+25-stage customer acceptance. A later commit that only inserts this section
+does not change the executable tree of `51ddfec39af6ece852bdc21b68795b2285dac720`.
+The same two jobs are expected to stay red on that documentation commit.
