@@ -51,7 +51,10 @@ permissions:
 jobs:
   virtual-authenticator-component:
     runs-on: ubuntu-24.04
-    timeout-minutes: 12
+    # Cold `playwright install --with-deps` apt work has taken 12m22s on
+    # ubuntu-24.04 and cancelled the ceremony before any assertion. The cap
+    # stays finite. A hung install or ceremony still fails the job.
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
@@ -74,7 +77,11 @@ jobs:
           python -m pip install -r tests/requirements-m11.txt
           python -m pip install '.[dashboard,postgres,mcp,sso]' alembic
           npm ci --ignore-scripts --no-audit --no-fund
-          npx playwright install --with-deps chromium
+          echo "browser-install-start $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          # Bound only the apt/browser download. A stall fails this step and
+          # does not start, skip, or pass the ceremonies below.
+          timeout 18m npx playwright install --with-deps chromium
+          echo "browser-install-end $(date -u +%Y-%m-%dT%H:%M:%SZ)"
       - name: Verify genuine browser ceremonies with repository coverage enabled
         env:
           PYTHONPATH: src:sdk/python:.
@@ -281,7 +288,11 @@ jobs:
 
   real-customer-journey:
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    # The 15-minute cap expired while apt was still installing Chromium
+    # libraries, then cancelled the runner as the identity-blocked journey
+    # exited 2. The journey command is unchanged and still fails the job
+    # unless acceptance is PASS.
+    timeout-minutes: 25
     services:
       postgres:
         image: postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685
@@ -312,7 +323,9 @@ jobs:
           PLAYWRIGHT_BROWSERS_PATH: /tmp/whitepact-m13i3-chromium
         run: |
           npm ci --ignore-scripts --no-audit --no-fund
-          npx playwright install --with-deps chromium
+          echo "browser-install-start $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          timeout 18m npx playwright install --with-deps chromium
+          echo "browser-install-end $(date -u +%Y-%m-%dT%H:%M:%SZ)"
           node --check tests/js/m13i3-real-webauthn.mjs
       - name: Actual browser registration and assertion component; full customer gate remains separate
         env:
