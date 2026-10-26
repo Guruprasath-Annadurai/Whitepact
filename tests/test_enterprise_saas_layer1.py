@@ -55,20 +55,9 @@ def _actor(user_id: str, org_id: str, role: Role) -> Actor:
 
 
 async def _verify_human(engine, user_id: str, event_id: str) -> None:
-    provider = HmacVerificationProvider("test-webhook-secret")
-    verification = VerificationService(engine, provider)
-    payload, sig, ts = await _signed_event(
-        provider,
-        {
-            "event_id": event_id,
-            "subject_id": user_id,
-            "outcome": "VERIFIED",
-            "assurance_level": "government_id",
-        },
-    )
-    await verification.apply_provider_event(
-        payload=payload, signature=sig, timestamp=ts, expected_user_id=user_id
-    )
+    from tests.identity_contract import verify_human_reference
+
+    await verify_human_reference(engine, user_id, event_id=event_id)
 
 
 async def _signed_event(
@@ -331,10 +320,9 @@ async def test_org_production_requires_verified_org_and_verified_issuer(engine) 
     provider = HmacVerificationProvider("test-webhook-secret")
     verification = VerificationService(engine, provider)
 
-    payload, sig, ts = await _signed_event(
-        provider, {"event_id": "evt-owner", "subject_id": owner, "outcome": "VERIFIED"}
-    )
-    await verification.apply_provider_event(payload=payload, signature=sig, timestamp=ts)
+    from tests.identity_contract import verify_human_reference, verify_org_reference
+
+    await verify_human_reference(engine, owner, event_id="evt-owner")
 
     with pytest.raises(EnterpriseError) as need_org:
         await iam.create_api_key(
@@ -347,19 +335,12 @@ async def test_org_production_requires_verified_org_and_verified_issuer(engine) 
         )
     assert need_org.value.code == ORGANIZATION_VERIFICATION_REQUIRED
 
-    payload, sig, ts = await _signed_event(
-        provider,
-        {
-            "event_id": "evt-org",
-            "kind": "organization",
-            "org_id": org["id"],
-            "outcome": "VERIFIED",
-            "accountable_owner_user_id": owner,
-            "legal_name": "Corp Inc",
-        },
-    )
-    await verification.apply_provider_event(
-        payload=payload, signature=sig, timestamp=ts, expected_org_id=org["id"]
+    await verify_org_reference(
+        engine,
+        org["id"],
+        owner,
+        event_id="evt-org",
+        legal_name="Corp Inc",
     )
 
     with pytest.raises(EnterpriseError) as admin_unverified:
@@ -373,10 +354,7 @@ async def test_org_production_requires_verified_org_and_verified_issuer(engine) 
         )
     assert admin_unverified.value.code == IDENTITY_VERIFICATION_REQUIRED
 
-    payload, sig, ts = await _signed_event(
-        provider, {"event_id": "evt-admin", "subject_id": admin, "outcome": "VERIFIED"}
-    )
-    await verification.apply_provider_event(payload=payload, signature=sig, timestamp=ts)
+    await verify_human_reference(engine, admin, event_id="evt-admin")
     rec, secret = await iam.create_api_key(
         admin_actor,
         org["id"],
@@ -394,9 +372,20 @@ async def test_forged_replay_and_cross_tenant_verification_callbacks(engine) -> 
     web = WebIdentityRepository(engine)
     user = await _user(web, "idv@example.com")
     other = await _user(web, "other@example.com")
+    from tests.identity_contract import enable_reference_contract
+
+    enable_reference_contract()
     provider = HmacVerificationProvider("test-webhook-secret")
     verification = VerificationService(engine, provider)
-    body = {"event_id": "evt-forge", "subject_id": user, "outcome": "VERIFIED"}
+    started = await verification.start_human_verification(user)
+    body = {
+        "event_id": "evt-forge",
+        "event_type": "identity.verification",
+        "subject_id": user,
+        "reference_id": started["session_id"],
+        "outcome": "VERIFIED",
+        "assurance_level": "government_id",
+    }
     payload, sig, ts = await _signed_event(provider, body)
     with pytest.raises(EnterpriseError) as forged:
         await verification.apply_provider_event(payload=payload, signature="deadbeef", timestamp=ts)

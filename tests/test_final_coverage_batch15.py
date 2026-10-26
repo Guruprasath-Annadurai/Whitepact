@@ -238,20 +238,9 @@ async def _user(engine: DatabaseEngine, email: str = "human@example.com") -> str
 
 
 async def _verify_human(engine: DatabaseEngine, user_id: str) -> None:
-    provider = HmacVerificationProvider("batch15-secret")
-    verification = VerificationService(engine, provider)
-    body = {
-        "event_id": f"evt-{uuid.uuid4().hex[:8]}",
-        "subject_id": user_id,
-        "outcome": "VERIFIED",
-        "assurance_level": "government_id",
-    }
-    ts = datetime.now(UTC).isoformat()
-    payload = json.dumps(body, separators=(",", ":")).encode()
-    signature = hmac.new(b"batch15-secret", payload + ts.encode(), hashlib.sha256).hexdigest()
-    await verification.apply_provider_event(
-        payload=payload, signature=signature, timestamp=ts, expected_user_id=user_id
-    )
+    from tests.identity_contract import verify_human_reference
+
+    await verify_human_reference(engine, user_id, secret="batch15-secret")
 
 
 def _actor(user_id: str, org_id: str, role: Role = Role.OWNER) -> Actor:

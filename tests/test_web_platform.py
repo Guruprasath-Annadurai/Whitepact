@@ -209,18 +209,10 @@ async def test_csrf_onboarding_and_one_time_key_lifecycle(web_client):
                 select(web_users.c.id).where(web_users.c.email == "grace@example.com")
             )
         ).scalar_one()
-    provider = HmacVerificationProvider("test-webhook-secret")
-    verification = VerificationService(app_mod._db_engine, provider)
-    timestamp = datetime.now(UTC).isoformat()
-    payload = json.dumps(
-        {"event_id": "evt-web-idv", "subject_id": user_id, "outcome": "VERIFIED"},
-        separators=(",", ":"),
-    ).encode()
-    signature = hmac.new(
-        b"test-webhook-secret", payload + timestamp.encode(), hashlib.sha256
-    ).hexdigest()
-    await verification.apply_provider_event(
-        payload=payload, signature=signature, timestamp=timestamp, expected_user_id=user_id
+    from tests.identity_contract import verify_human_reference
+
+    await verify_human_reference(
+        app_mod._db_engine, user_id, event_id="evt-web-idv"
     )
 
     created = await web_client.post(

@@ -147,6 +147,12 @@ class CredentialIssuancePolicy:
         human_status = human["status"]
         if human_status == "SUSPENDED":
             return denied(VERIFICATION_SUSPENDED, "Identity verification is suspended.", env.type)
+        if human_status == "EXPIRED":
+            return denied(
+                IDENTITY_VERIFICATION_REQUIRED,
+                "Identity verification has expired.",
+                env.type,
+            )
         if human_status == "REVIEW_REQUIRED":
             return denied(
                 VERIFICATION_REVIEW_REQUIRED, "Identity verification is under review.", env.type
