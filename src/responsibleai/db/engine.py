@@ -2398,6 +2398,11 @@ identity_verifications = Table(
     ),
     Index("idx_identity_verifications_user", "user_id"),
     Index("idx_identity_verifications_provider_ref", "provider", "provider_reference_id"),
+    UniqueConstraint(
+        "provider",
+        "provider_reference_id",
+        name="uq_identity_verification_provider_session",
+    ),
 )
 
 organization_verifications = Table(

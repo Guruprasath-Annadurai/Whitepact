@@ -317,8 +317,6 @@ async def test_org_production_requires_verified_org_and_verified_issuer(engine) 
     await iam.accept_invitation(token=token, user_id=admin)
     admin_actor = _actor(admin, org["id"], Role.ADMIN)
     envs = {e["type"]: e for e in await iam.list_environments(owner_actor, org["id"])}
-    provider = HmacVerificationProvider("test-webhook-secret")
-    verification = VerificationService(engine, provider)
 
     from tests.identity_contract import verify_human_reference, verify_org_reference
 

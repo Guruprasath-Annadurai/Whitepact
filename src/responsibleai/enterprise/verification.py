@@ -8,6 +8,7 @@ Raw identity documents are not stored. Provider references are preferred.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import hmac
 import json
@@ -39,6 +40,7 @@ from responsibleai.enterprise.errors import (
     VERIFICATION_CONFLICT,
     VERIFICATION_SESSION_REQUIRED,
     VERIFICATION_SESSION_UNKNOWN,
+    VERIFICATION_SUSPENDED,
     VERIFICATION_TRANSITION_DENIED,
     EnterpriseError,
     forbidden,
@@ -175,6 +177,8 @@ def effective_human_status(user: Any, row: Any) -> str:
         return "SUSPENDED"
     if row is None:
         status = getattr(user, "verification_status", None) or "UNVERIFIED"
+        if status == "IDENTITY_VERIFIED":
+            return "UNVERIFIED"
         if user is not None and user.email_verified_at and status == "UNVERIFIED":
             return "BASIC_VERIFIED"
         return status
@@ -280,10 +284,36 @@ class VerificationService:
     async def start_human_verification(
         self, user_id: str, *, request_id: str | None = None
     ) -> dict[str, Any]:
-        session = self._provider.start_session(subject_id=user_id, return_url=None)
+        async with self._engine.raw.connect() as conn:
+            user = (
+                await conn.execute(select(web_users).where(web_users.c.id == user_id))
+            ).fetchone()
+        if user is None:
+            raise forbidden(FORBIDDEN, "User not found.")
+        if user.verification_status == "SUSPENDED":
+            raise forbidden(
+                VERIFICATION_SUSPENDED,
+                "A suspended identity cannot open a new verification session.",
+            )
+        session = await asyncio.to_thread(
+            self._provider.start_session, subject_id=user_id, return_url=None
+        )
         now = _iso()
         rec_id = str(uuid.uuid4())
         async with self._engine.raw.begin() as conn:
+            duplicate = (
+                await conn.execute(
+                    select(identity_verifications.c.id).where(
+                        identity_verifications.c.provider == self._provider.name,
+                        identity_verifications.c.provider_reference_id == session["session_id"],
+                    )
+                )
+            ).fetchone()
+            if duplicate is not None:
+                raise forbidden(
+                    VERIFICATION_CONFLICT,
+                    "Provider session reference is already in use.",
+                )
             await conn.execute(
                 insert(identity_verifications).values(
                     id=rec_id,
@@ -386,9 +416,7 @@ class VerificationService:
                 )
             event_type = str(event.get("event_type") or "")
             if event_type not in ACCEPTED_EVENT_TYPES:
-                raise forbidden(
-                    PROVIDER_SIGNATURE_INVALID, "Provider event type is not accepted."
-                )
+                raise forbidden(PROVIDER_SIGNATURE_INVALID, "Provider event type is not accepted.")
             reference_id = str(event.get("reference_id") or "")
             if not reference_id:
                 raise forbidden(
@@ -461,6 +489,18 @@ class VerificationService:
                 CROSS_TENANT,
                 "Provider subject does not match the verification session.",
             )
+        account = (
+            await conn.execute(select(web_users).where(web_users.c.id == user_id))
+        ).fetchone()
+        if (
+            account is not None
+            and account.verification_status == "SUSPENDED"
+            and status == "IDENTITY_VERIFIED"
+        ):
+            raise forbidden(
+                VERIFICATION_TRANSITION_DENIED,
+                "Suspended identity cannot be restored by a provider callback.",
+            )
         if event.get("org_id"):
             member = (
                 await conn.execute(
@@ -526,9 +566,7 @@ class VerificationService:
             )
         )
         if changed.rowcount != 1:
-            raise forbidden(
-                VERIFICATION_CONFLICT, "Verification session changed concurrently."
-            )
+            raise forbidden(VERIFICATION_CONFLICT, "Verification session changed concurrently.")
         user_status = status if status != "BASIC_VERIFIED" else "BASIC_VERIFIED"
         if status == "IDENTITY_VERIFIED":
             user_status = "IDENTITY_VERIFIED"
@@ -631,7 +669,10 @@ class VerificationService:
                         .order_by(identity_verifications.c.updated_at.desc())
                     )
                 ).fetchone()
-            if owner is None or effective_human_status(owner_user, owner_row) != "IDENTITY_VERIFIED":
+            if (
+                owner is None
+                or effective_human_status(owner_user, owner_row) != "IDENTITY_VERIFIED"
+            ):
                 raise forbidden(
                     FORBIDDEN,
                     "Organization verification requires an individually verified accountable owner.",
@@ -711,17 +752,19 @@ class VerificationService:
                 if org.owner_user_id
                 else {"status": "UNVERIFIED"}
             )
-            mapped = {
-                "IDENTITY_VERIFIED": "ORGANIZATION_VERIFIED",
-                "BASIC_VERIFIED": "UNVERIFIED",
-            }.get(human.get("status", "UNVERIFIED"), "UNVERIFIED")
+            human_status = human.get("status", "UNVERIFIED")
+            if human_status == "IDENTITY_VERIFIED":
+                effective = "ORGANIZATION_VERIFIED"
+            elif human_status == "SUSPENDED":
+                effective = "SUSPENDED"
+            else:
+                effective = "UNVERIFIED"
             return {
                 "org_id": org_id,
                 "workspace_kind": kind,
-                "status": mapped
-                if mapped != "UNVERIFIED"
-                else (row.status if row else "UNVERIFIED"),
-                "individual_status": human.get("status"),
+                "status": effective,
+                "stored_status": row.status if row else None,
+                "individual_status": human_status,
             }
         return {
             "org_id": org_id,
@@ -737,7 +780,9 @@ class VerificationService:
     async def start_org_verification(
         self, org_id: str, *, actor_user_id: str, request_id: str | None = None
     ) -> dict[str, Any]:
-        session = self._provider.start_session(subject_id=org_id, return_url=None)
+        session = await asyncio.to_thread(
+            self._provider.start_session, subject_id=org_id, return_url=None
+        )
         now = _iso()
         rec_id = str(uuid.uuid4())
         async with self._engine.raw.begin() as conn:

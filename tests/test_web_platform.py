@@ -4,11 +4,8 @@
 
 from __future__ import annotations
 
-import hashlib
-import hmac
 import json
 import os
-from datetime import UTC, datetime
 from html.parser import HTMLParser
 from urllib.parse import parse_qs, urlparse
 from uuid import uuid4
@@ -201,7 +198,6 @@ async def test_csrf_onboarding_and_one_time_key_lifecycle(web_client):
 
     from responsibleai.dashboard import app as app_mod
     from responsibleai.db.engine import web_users
-    from responsibleai.enterprise.verification import HmacVerificationProvider, VerificationService
 
     async with app_mod._db_engine.raw.connect() as conn:
         user_id = (
@@ -211,9 +207,7 @@ async def test_csrf_onboarding_and_one_time_key_lifecycle(web_client):
         ).scalar_one()
     from tests.identity_contract import verify_human_reference
 
-    await verify_human_reference(
-        app_mod._db_engine, user_id, event_id="evt-web-idv"
-    )
+    await verify_human_reference(app_mod._db_engine, user_id, event_id="evt-web-idv")
 
     created = await web_client.post(
         "/api/v1/web/api-keys",

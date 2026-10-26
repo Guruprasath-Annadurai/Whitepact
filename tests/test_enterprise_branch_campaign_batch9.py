@@ -5,12 +5,9 @@ Layer 2 preflight, and WebAuthn ceremony validation failures."""
 
 from __future__ import annotations
 
-import hashlib
-import hmac
-import json
 import time
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import cbor2
@@ -68,7 +65,6 @@ from responsibleai.enterprise.security.webauthn import (
     verify_registration,
 )
 from responsibleai.enterprise.service import Actor, EnterpriseIAM
-from responsibleai.enterprise.verification import HmacVerificationProvider, VerificationService
 from responsibleai.rbac.models import Role
 from tests.webauthn_fakes import assertion_blob, client_data, registration_blob
 

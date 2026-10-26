@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import uuid
 from datetime import UTC, datetime, timedelta
 
@@ -22,6 +23,7 @@ from responsibleai.db.engine import (
     enterprise_environments,
     identity_verifications,
     org_api_keys,
+    organization_verifications,
     organizations,
     web_memberships,
     web_users,
@@ -322,6 +324,11 @@ async def test_http_provider_binds_provider_issued_session(monkeypatch) -> None:
             length = int(self.headers.get("Content-Length", "0"))
             raw = self.rfile.read(length)
             claim = json.loads(raw)
+            if self.headers.get("Authorization") == "Bearer redirect":
+                self.send_response(302)
+                self.send_header("Location", "http://127.0.0.1/elsewhere")
+                self.end_headers()
+                return
             assert claim["subject_id"] == "user-1"
             assert self.headers.get("Authorization") == "Bearer token-1"
             body = json.dumps(
@@ -349,12 +356,26 @@ async def test_http_provider_binds_provider_issued_session(monkeypatch) -> None:
         monkeypatch.setenv("WHITEPACT_IDENTITY_PROVIDER_WEBHOOK_SECRET", "webhook-secret")
         monkeypatch.setenv("WHITEPACT_IDENTITY_PROVIDER_ALLOW_INSECURE", "1")
         provider = HttpCallbackIdentityProvider.from_env()
-        session = provider.start_session(subject_id="user-1", return_url="https://app.example/return")
+        session = provider.start_session(
+            subject_id="user-1", return_url="https://app.example/return"
+        )
         assert session["session_id"] == "prov_sess_1"
         assert session["provider"] == "example-vendor"
         assert session["subject_id"] == "user-1"
+        redirected = HttpCallbackIdentityProvider(
+            name="example-vendor",
+            base_url=f"http://127.0.0.1:{server.server_address[1]}",
+            api_token="redirect",
+            webhook_secret="webhook-secret",
+            allow_insecure=True,
+            timeout_seconds=1,
+        )
+        with pytest.raises(EnterpriseError) as redirect_error:
+            redirected.start_session(subject_id="user-1", return_url=None)
+        assert redirect_error.value.code == "PROVIDER_NOT_ENROLLED"
     finally:
         server.shutdown()
+        thread.join(timeout=2)
 
 
 @pytest.mark.asyncio
@@ -384,7 +405,158 @@ async def test_concurrent_duplicate_event_is_replay(engine) -> None:
     stored = await service.get_human_status(user_id)
     assert stored["status"] == "IDENTITY_VERIFIED"
     async with engine.raw.connect() as conn:
-        user = (
-            await conn.execute(select(web_users).where(web_users.c.id == user_id))
-        ).fetchone()
+        user = (await conn.execute(select(web_users).where(web_users.c.id == user_id))).fetchone()
     assert user.verification_status == "IDENTITY_VERIFIED"
+
+
+@pytest.mark.asyncio
+async def test_concurrent_callback_on_postgresql() -> None:
+    """Duplicate provider events under real PostgreSQL transactions."""
+    from tests.pg_test_url import isolated_pg_url
+
+    generator = isolated_pg_url("m13id")
+    url = await generator.__anext__()
+    db = create_engine(url)
+    try:
+        await db.init()
+        enable_reference_contract()
+        user_id = await _user(db, "pg-concurrent@example.com")
+        service, session_id = await _session(db, user_id)
+        body = _event(user_id, session_id)
+        payload, signature, timestamp = sign_identity_event(body)
+
+        async def once():
+            try:
+                return await service.apply_provider_event(
+                    payload=payload, signature=signature, timestamp=timestamp
+                )
+            except EnterpriseError as exc:
+                return exc
+
+        first, second = await asyncio.gather(once(), once())
+        errors = [item for item in (first, second) if isinstance(item, EnterpriseError)]
+        assert len(errors) == 1
+        assert errors[0].code == "PROVIDER_REPLAY"
+        assert (await service.get_human_status(user_id))["status"] == "IDENTITY_VERIFIED"
+    finally:
+        await db.close()
+        await generator.aclose()
+
+
+@pytest.mark.asyncio
+async def test_column_identity_without_provenance_cannot_issue(engine) -> None:
+    user_id = await _user(engine, "column-only@example.com")
+    async with engine.raw.begin() as conn:
+        await conn.execute(
+            update(web_users)
+            .where(web_users.c.id == user_id)
+            .values(verification_status="IDENTITY_VERIFIED")
+        )
+    service = _service(engine)
+    assert (await service.get_human_status(user_id))["status"] != "IDENTITY_VERIFIED"
+    org_id, env_id = await _development_org(engine, user_id)
+    decision = await CredentialIssuancePolicy(engine, service).evaluate(
+        principal_user_id=user_id,
+        organization_id=org_id,
+        environment_id=env_id,
+        requested_scopes=("usage:read",),
+    )
+    assert decision.allowed is False
+    assert decision.reason_code == "IDENTITY_VERIFICATION_REQUIRED"
+
+
+@pytest.mark.asyncio
+async def test_suspended_identity_cannot_be_restored_by_a_new_session(engine) -> None:
+    enable_reference_contract()
+    user_id = await _user(engine, "suspended-restore@example.com")
+    service, session_id = await _session(engine, user_id)
+    await _apply(service, _event(user_id, session_id))
+    await service.suspend_human(user_id)
+    with pytest.raises(EnterpriseError) as started:
+        await service.start_human_verification(user_id)
+    assert started.value.code == "VERIFICATION_SUSPENDED"
+    async with engine.raw.begin() as conn:
+        await conn.execute(
+            insert(identity_verifications).values(
+                id=str(uuid.uuid4()),
+                user_id=user_id,
+                status="REVIEW_REQUIRED",
+                provider="hmac-reference",
+                provider_reference_id="sess_after_suspend",
+                created_at=datetime.now(UTC).isoformat(),
+                updated_at=datetime.now(UTC).isoformat(),
+            )
+        )
+    with pytest.raises(EnterpriseError) as restored:
+        await _apply(service, _event(user_id, "sess_after_suspend"))
+    assert restored.value.code == "VERIFICATION_TRANSITION_DENIED"
+    assert (await service.get_human_status(user_id))["status"] == "SUSPENDED"
+
+
+@pytest.mark.asyncio
+async def test_expired_individual_does_not_inherit_old_org_verification(engine) -> None:
+    enable_reference_contract()
+    user_id = await _user(engine, "individual-expire@example.com")
+    service, session_id = await _session(engine, user_id)
+    await _apply(service, _event(user_id, session_id))
+    past = (datetime.now(UTC) - timedelta(days=1)).isoformat()
+    now = datetime.now(UTC).isoformat()
+    org_id = str(uuid.uuid4())
+    async with engine.raw.begin() as conn:
+        await conn.execute(
+            update(identity_verifications)
+            .where(identity_verifications.c.user_id == user_id)
+            .values(expires_at=past)
+        )
+        await conn.execute(
+            insert(organizations).values(
+                id=org_id,
+                name="Solo",
+                slug=f"solo-{uuid.uuid4().hex[:8]}",
+                monthly_budget_usd=0,
+                created_at=now,
+                plan="FREE",
+                governance_status="ACTIVE",
+                workspace_kind="INDIVIDUAL",
+                owner_user_id=user_id,
+            )
+        )
+        await conn.execute(
+            insert(organization_verifications).values(
+                id=str(uuid.uuid4()),
+                org_id=org_id,
+                status="ORGANIZATION_VERIFIED",
+                provider="hmac-reference",
+                created_at=now,
+                updated_at=now,
+            )
+        )
+    status = await service.get_org_status(org_id)
+    assert status["status"] != "ORGANIZATION_VERIFIED"
+    assert status["individual_status"] == "EXPIRED"
+
+
+@pytest.mark.asyncio
+async def test_removing_approved_assurance_invalidates_issuance(engine) -> None:
+    enable_reference_contract()
+    user_id = await _user(engine, "policy-drop@example.com")
+    service, session_id = await _session(engine, user_id)
+    await _apply(service, _event(user_id, session_id))
+    org_id, env_id = await _development_org(engine, user_id)
+    policy = CredentialIssuancePolicy(engine, service)
+    allowed = await policy.evaluate(
+        principal_user_id=user_id,
+        organization_id=org_id,
+        environment_id=env_id,
+        requested_scopes=("usage:read",),
+    )
+    assert allowed.allowed is True
+    os.environ.pop("WHITEPACT_IDENTITY_APPROVED_ASSURANCE_LEVELS", None)
+    denied = await policy.evaluate(
+        principal_user_id=user_id,
+        organization_id=org_id,
+        environment_id=env_id,
+        requested_scopes=("usage:read",),
+    )
+    assert denied.allowed is False
+    assert denied.reason_code == "IDENTITY_VERIFICATION_REQUIRED"
