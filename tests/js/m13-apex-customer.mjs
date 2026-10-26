@@ -4,6 +4,7 @@
 import assert from "node:assert/strict";
 import { createHash, generateKeyPairSync, sign } from "node:crypto";
 import { chromium } from "playwright";
+import { qualifyRevocationDenial } from "./revocation-denial.mjs";
 
 let input = "";
 for await (const chunk of process.stdin) input += chunk;
@@ -215,7 +216,6 @@ try {
       assert.equal(evidence.action_type, intent.name);
       assert.ok(evidence.request_fingerprint && evidence.arguments_fingerprint);
       mark(current, "PASS", { evidence_id: evidence.evidence_id, local_chain_status: verified.status, independently_witnessed: false });
-      const before = expect(await call("/api/web/evidence?limit=100"), 200);
       current = "revocation";
       const disabled = expect(await call(`${authority}/agents/${agent.agent_id}/disable`, "POST", { reason: "Actual customer authority revocation" }), 200);
       assert.equal(disabled.status, "DISABLED");
@@ -226,17 +226,23 @@ try {
       assert.equal(persisted.lifecycle_state, "DISABLED");
       assert.equal(persisted.has_active_delegation, false);
       mark(current, "PASS", { agent_id: agent.agent_id, lifecycle_state: persisted.lifecycle_state, revoked_delegations: disabled.revoked_delegations, revocation_epoch: disabled.revocation_epoch });
+      const priorEvidence = expect(await call("/api/web/evidence?limit=100"), 200);
+      const priorEvidenceIds = priorEvidence.evidence.map(item => item.evidence_id);
       current = "post_revocation_execution_attempt";
       const denied = await call("/api/governance/tools/call", "POST", { name: intent.name, arguments: intent.arguments, purpose: intent.purpose, agent_id: agent.agent_id }, credential.api_key);
-      assert.notEqual(denied.value?.error, undefined);
-      assert.notEqual(denied.value?.approval_id, approvalId);
-      assert.ok(denied.status === 404 || denied.value?.error === "governance_denied" || denied.value?.proceed !== true);
-      mark(current, "PASS", { http_status: denied.status, error: denied.value?.error ?? "agent_not_active" });
+      const laterEvidence = expect(await call("/api/web/evidence?limit=100"), 200);
+      const denial = qualifyRevocationDenial(denied, { priorEvidenceIds, laterEvidenceIds: laterEvidence.evidence.map(item => item.evidence_id) });
+      if (!denial.qualified) {
+        mark(current, "FAIL", { http_status: denied.status, error: denied.value?.error, reason: denial.reason });
+        stop = current;
+        throw new Error("Customer contract boundary");
+      }
+      mark(current, "PASS", { http_status: denied.status, error: denied.value.error, reason: denial.reason, evidence_unchanged: true });
       current = "post_revocation_denial";
       const replay = await call(`/api/web/approvals/${approvalId}/execute`, "POST");
       assert.equal(replay.status, 409);
       const after = expect(await call("/api/web/evidence?limit=100"), 200);
-      assert.deepEqual(after.evidence.map(item => item.evidence_id), before.evidence.map(item => item.evidence_id));
+      assert.deepEqual(after.evidence.map(item => item.evidence_id), priorEvidenceIds);
       mark(current, "PASS", { http_status: denied.status, approval_replay_status: replay.status, evidence_unchanged: true });
     }
   }

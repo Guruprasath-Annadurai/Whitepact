@@ -1128,7 +1128,10 @@ class WebIdentityRepository:
         """Provision a directory binding. Authentication must not call this.
 
         Callers are administrative tests and explicit provisioning. A signed
-        claim that arrives without a row created here is denied.
+        claim that arrives without a row created here is denied. A new
+        directory user is BASIC_VERIFIED mailbox/IdP proof, not the legal
+        identity assurance required for reusable API credentials. Rebinding
+        an existing account does not change ``verification_status``.
         """
         if not issuer or not subject:
             raise ValueError("SSO issuer and subject are required")
@@ -1151,7 +1154,7 @@ class WebIdentityRepository:
                         password_hash=hash_password(secrets.token_urlsafe(32)),
                         email_verified_at=_iso(now),
                         disabled=0,
-                        verification_status="IDENTITY_VERIFIED",
+                        verification_status="BASIC_VERIFIED",
                         created_at=_iso(now),
                         updated_at=_iso(now),
                     )
