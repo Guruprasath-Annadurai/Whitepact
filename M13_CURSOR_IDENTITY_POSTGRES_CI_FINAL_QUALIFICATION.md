@@ -1,6 +1,6 @@
 # M13 identity PostgreSQL and CI qualification
 
-Baseline: `d9f80ebf06ee18cdf282987d8ed185b76a14ed82` on PR #235.
+Qualified implementation: `ae979efa289725a9aa84af84b2b8d8ba02f8c4e5` on PR #235, continued from `d9f80ebf06ee18cdf282987d8ed185b76a14ed82`.
 
 Hosted I1 run still in progress when inspected: https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/40384692097 (head `d9f80ebf`). Job `inherited-policy-gates` (`121789743972`) had already failed. Job `real-customer-journey` (`121789744084`) had already failed. Job `introduced-dco` (`121789744102`) had already failed. Logs were not downloadable while the run was still in progress. The 14 Ruff errors were reproduced locally with `ruff check src/ tests/ sdk/python/` and match that job's command (`ruff==0.17.0` in `.github/workflows/m13i1-integration.yml`).
 
