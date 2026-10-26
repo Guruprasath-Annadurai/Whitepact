@@ -120,6 +120,8 @@ jobs:
           python -m pip install -r tests/requirements-m11.txt
           python -m pip install '.[dashboard,postgres,mcp]' alembic
           docker build -f Dockerfile.isolation -t whitepact-isolated-runtime:absolute .
+      - name: Verify real Docker availability before qualification
+        run: python scripts/engineering/m13_docker_qualification_probe.py --phase before --output /tmp/native-docker-before.json
       - name: Actual Docker execution, cancellation and failure containment
         env:
           PYTHONPATH: src:.
@@ -128,3 +130,15 @@ jobs:
         run: |
           python -m pytest tests/test_m13_absolute_native_runtime.py tests/test_docker_ownership_regression.py tests/test_runtime_isolation_docker.py tests/test_container_isolation_contract.py -o addopts='' --junitxml=/tmp/native.xml --tb=short -ra
           python -c 'import xml.etree.ElementTree as E; r=E.parse("/tmp/native.xml"); assert not list(r.iter("skipped")) and not list(r.iter("failure")) and not list(r.iter("error"))'
+      - name: Retain real Docker availability after qualification
+        if: always()
+        run: python scripts/engineering/m13_docker_qualification_probe.py --phase after --baseline /tmp/native-docker-before.json --output /tmp/native-docker-after.json
+      - name: Retain native Docker qualification receipts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: native-runtime-${{ matrix.python }}-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            /tmp/native.xml
+            /tmp/native-docker-before.json
+            /tmp/native-docker-after.json
