@@ -6,6 +6,10 @@ No public route or canonical IDENTITY_VERIFIED write is installed. A sandbox
 approval remains SANDBOX_SIMULATED and cannot authorize reusable credentials.
 Real provider qualification requires operator-enrolled sandbox access; injected
 HTTP transports are always identified as synthetic protocol evidence.
+
+The nonproduction credential decision records whether an enrolled sandbox
+receipt could later be considered outside production. It never mints credential
+material, never writes IDENTITY_VERIFIED, and never accepts synthetic evidence.
 """
 
 from __future__ import annotations
@@ -32,8 +36,13 @@ from responsibleai.db.web_identity_repository import WebIdentityRepository
 from responsibleai.environment import is_production
 
 AUDIENCE = "whitepact:persona-sandbox-integration:v1"
+ISSUER_TRUST = "persona-sandbox-development-issuer:v1"
 API = "https://api.withpersona.com"
 VERSION = "2026-09-29"
+_POLICY_VERSION = re.compile(r"[a-z0-9][a-z0-9.-]{2,63}")
+_INQUIRY_ID = re.compile(r"inq_[A-Za-z0-9]+")
+_PROVIDER_ENVIRONMENT = re.compile(r"env_[A-Za-z0-9]+")
+_DATABASE_IDENTITY = re.compile(r"[0-9a-f]{64}")
 
 
 class PersonaSandboxRefusedError(ValueError):
@@ -343,6 +352,7 @@ class PersonaSandboxAdapter:
             "database_identity": self.policy.database_identity,
             "policy_version": self.policy.policy_version,
             "audience": self.policy.audience,
+            "issuer_trust": ISSUER_TRUST,
             "canonical_issuance_allowed": False,
             "duplicate": duplicate,
             "evidence_mode": "SYNTHETIC_PROTOCOL_FIXTURE"
@@ -444,3 +454,92 @@ class PersonaSandboxAdapter:
                 "SELECT * FROM inquiries WHERE inquiry=?", (identifier,)
             ).fetchone()
         return self._receipt(result)
+
+
+@dataclass(frozen=True)
+class SandboxNonproductionCredentialDecision:
+    """A sandbox receipt is not a credential and is never valid in production."""
+
+    disposition: str
+    reason: str
+    target_environment: str
+    policy_version: str = ""
+    audience: str = ""
+    issuer_trust: str = ""
+    production_valid: bool = False
+    canonical_identity_written: bool = False
+    credential_material: None = None
+
+    def __post_init__(self):
+        if (
+            self.production_valid
+            or self.canonical_identity_written
+            or self.credential_material is not None
+            or self.disposition not in {"DENIED", "WITHHELD_PENDING_ENROLLED_PROVIDER"}
+        ):
+            raise PersonaSandboxRefusedError("Sandbox credential invariants violated")
+
+
+def _denied(
+    reason: str, target: str, policy_version: str = ""
+) -> SandboxNonproductionCredentialDecision:
+    return SandboxNonproductionCredentialDecision(
+        "DENIED", reason, target, policy_version, AUDIENCE, ISSUER_TRUST
+    )
+
+
+def evaluate_sandbox_nonproduction_credential(
+    receipt, *, target_environment: str, enrolled_policy_version: str
+) -> SandboxNonproductionCredentialDecision:
+    """Decide whether enrolled sandbox evidence is even eligible to wait.
+
+    WITHHELD_PENDING_ENROLLED_PROVIDER is not issuance, not IDENTITY_VERIFIED,
+    and not authority to call a credential API. Synthetic fixtures, staging,
+    and production are denied. This function has no database or network effect.
+    """
+    target = target_environment if type(target_environment) is str else ""
+    enrolled = enrolled_policy_version if type(enrolled_policy_version) is str else ""
+    if target == "PRODUCTION" or is_production() or os.environ.get("WHITEPACT_ENV") == "production":
+        return _denied("SANDBOX_CREDENTIAL_INVALID_FOR_PRODUCTION", target, enrolled)
+    if os.environ.get("WHITEPACT_ENV") != "development" or target != "DEVELOPMENT":
+        return _denied("SANDBOX_CREDENTIAL_INVALID_OUTSIDE_DEVELOPMENT", target, enrolled)
+    if (
+        type(receipt) is not dict
+        or receipt.get("provenance") != "SANDBOX_SIMULATED"
+        or receipt.get("canonical_issuance_allowed") is not False
+        or receipt.get("provider") != "persona-sandbox"
+        or receipt.get("audience") != AUDIENCE
+        or receipt.get("issuer_trust") != ISSUER_TRUST
+    ):
+        return _denied("SANDBOX_RECEIPT_IS_NOT_CANONICAL_IDENTITY", target, enrolled)
+    policy_version = receipt.get("policy_version")
+    if policy_version != enrolled or not _POLICY_VERSION.fullmatch(enrolled):
+        return _denied("SANDBOX_POLICY_VERSION_MISMATCH", target, enrolled)
+    environment = receipt.get("provider_environment_id")
+    database = receipt.get("database_identity")
+    inquiry = receipt.get("inquiry_id")
+    if (
+        type(environment) is not str
+        or _PROVIDER_ENVIRONMENT.fullmatch(environment) is None
+        or "production" in environment.casefold()
+        or type(database) is not str
+        or _DATABASE_IDENTITY.fullmatch(database) is None
+        or type(inquiry) is not str
+        or _INQUIRY_ID.fullmatch(inquiry) is None
+        or not receipt.get("customer_id")
+        or not receipt.get("tenant_id")
+        or not receipt.get("deployment_id")
+    ):
+        return _denied("SANDBOX_ISSUER_TRUST_MISMATCH", target, enrolled)
+    if receipt.get("evidence_mode") != "PROVIDER_NETWORK":
+        return _denied("SYNTHETIC_EVIDENCE_IS_NOT_ISSUER_TRUST", target, enrolled)
+    if receipt.get("outcome") != "SANDBOX_APPROVED":
+        return _denied("SANDBOX_APPROVAL_REQUIRED_BEFORE_WITHHOLD", target, enrolled)
+    return SandboxNonproductionCredentialDecision(
+        "WITHHELD_PENDING_ENROLLED_PROVIDER",
+        "ENROLLED_PROVIDER_RECONCILIATION_REQUIRED",
+        target,
+        enrolled,
+        AUDIENCE,
+        ISSUER_TRUST,
+    )

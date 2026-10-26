@@ -1354,6 +1354,7 @@ class GovernedToolCallRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=200)
     arguments: dict[str, Any] = Field(default_factory=dict)
     purpose: str = Field(..., min_length=1, max_length=2000)
+    agent_id: str | None = Field(default=None, pattern=r"^agent_[0-9a-f]{12}$")
 
 
 class ApprovalResolveRequest(BaseModel):
@@ -5661,6 +5662,18 @@ async def governance_call_tool(
         raise HTTPException(
             400, "Governed tool calls require an org-scoped API key, not a legacy flat key."
         )
+    if req.agent_id:
+        from responsibleai.governance.agent_admission import admit_registered_agent
+
+        async with _ready(_db_engine).raw.connect() as connection:
+            try:
+                _auth = await admit_registered_agent(connection, _auth, req.agent_id)
+            except LookupError as exc:
+                raise HTTPException(
+                    404, "Agent is not an active principal in this organization."
+                ) from exc
+            except ValueError as exc:
+                raise HTTPException(400, "Organization-scoped agent admission refused.") from exc
     from responsibleai.governance.synthetic_counter import SyntheticAcknowledgementLostError
     from responsibleai.mcp.tools import TOOL_DEFS
 

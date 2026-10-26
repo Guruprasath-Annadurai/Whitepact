@@ -2,6 +2,9 @@
 # SPDX-License-Identifier: MIT
 """Receipt integrity tests; these are not customer journey acceptance."""
 
+import subprocess
+from pathlib import Path
+
 import pytest
 from scripts.engineering.m13_apex_customer_journey import PHASES, validate_evidence
 
@@ -52,6 +55,18 @@ def test_root_initiation_can_precede_consent_persistence_without_claiming_root_s
         if stage["phase"] in {"legitimate_identity_qualification", "root_initiation"}:
             stage["status"] = "PASS"
     validate_evidence(evidence)
+
+
+def test_revocation_denial_rejects_false_pass_responses():
+    """Component refusal contract. A passing result is not customer acceptance."""
+    script = Path(__file__).resolve().parents[0] / "js" / "revocation-denial.test.mjs"
+    completed = subprocess.run(
+        ["node", "--test", str(script)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert completed.returncode == 0, completed.stdout + completed.stderr
 
 
 def test_root_activation_requires_persisted_consent():
