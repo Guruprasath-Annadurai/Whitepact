@@ -39,8 +39,10 @@ from responsibleai.data_governance.operator_recovery_control import (
 from responsibleai.data_governance.tenant_admission import verify_tenant_completion_evidence
 from responsibleai.isolation.in_flight import InFlightExecutionRegistry
 
-PLAN_DOMAIN = b"WHITEPACT-M13-NONPRODUCTION-FLOOR-REPAIR-V1\0"
-ANCHOR_DOMAIN = b"WHITEPACT-M13-NONPRODUCTION-FLOOR-WITNESS-V1\0"
+# V2 adds verified installation-publication identity to witness and plan
+# evidence. V1 signatures/receipts must fail closed, never be reinterpreted.
+PLAN_DOMAIN = b"WHITEPACT-M13-NONPRODUCTION-FLOOR-REPAIR-V2\0"
+ANCHOR_DOMAIN = b"WHITEPACT-M13-NONPRODUCTION-FLOOR-WITNESS-V2\0"
 
 
 def _bytes(value):
@@ -81,9 +83,65 @@ def initialize(profile_path):
         )
 
 
+def _installation_evidence(provider, profile):
+    """Verify retained installation signatures/receipts, not lifecycle alone.
+
+    This only reads the existing isolated publication boundary. It cannot
+    establish installation authority, repair a receipt or publish readiness.
+    """
+    from scripts.engineering.m13_bootstrap_authorization import BootstrapRefusedError, _profile
+    from scripts.engineering.m13_bootstrap_publication import (
+        publication_profile,
+        verify_isolated_bootstrap_binding,
+    )
+
+    try:
+        if verify_isolated_bootstrap_binding(provider) is not True:
+            raise ValueError("Existing verified installation required")
+        with sqlite3.connect(f"file:{provider.path}?mode=ro", uri=True) as connection:
+            binding = connection.execute(
+                "SELECT profile_path,digest FROM bootstrap_installation_binding WHERE id=1"
+            ).fetchone()
+        publication = publication_profile(binding[0])
+        authorization = _profile(publication["authorization_profile"])
+        if (
+            authorization["deployment_id"] != profile.deployment_id
+            or authorization["environment"] != profile.environment
+        ):
+            raise ValueError("Installation deployment mismatch")
+        registry = Path(authorization["registry"])
+        identity = registry.stat()
+        evidence = {
+            "installation_id": authorization["installation_id"],
+            "deployment_id": authorization["deployment_id"],
+            "environment": authorization["environment"],
+            "postgres_identity": authorization["postgres_identity"],
+            "store_b_identity": authorization["store_b_identity"],
+            "publication_manifest_digest": binding[1],
+            "publication_profile_digest": _digest(publication),
+            "authorization_profile_digest": _digest(authorization),
+            "external_registry_identity": _digest(
+                [str(registry), identity.st_dev, identity.st_ino]
+            ),
+        }
+        if verify_isolated_bootstrap_binding(provider) is not True:
+            raise ValueError("Installation verification changed")
+        return evidence
+    except (BootstrapRefusedError, OSError, sqlite3.Error, ValueError, KeyError, TypeError) as exc:
+        raise RecoveryAuthorizationError(
+            "Verified installation publication evidence required for floor repair"
+        ) from exc
+
+
 async def witness(engine, provider, *, profile_path, tenant):
     """Read verified pre-rollback evidence; callers independently sign the result."""
     profile = OperatorProfile.load(Path(profile_path))
+    installation = _installation_evidence(provider, profile)
+    from responsibleai.data_governance.tenant_controller import postgres_identity
+
+    async with engine.raw.connect() as connection:
+        if await postgres_identity(connection) != installation["postgres_identity"]:
+            raise RecoveryAuthorizationError("Floor witness installation target mismatch")
     evidence = await collect_recovery_evidence(engine, provider, profile)
     store = _store_b_snapshot(provider)
     lifecycle = provider.get_state(tenant)
@@ -92,6 +150,7 @@ async def witness(engine, provider, *, profile_path, tenant):
     return {
         "purpose": "NONPRODUCTION_PRE_ROLLBACK_FLOOR_WITNESS",
         "profile": profile.digest,
+        "installation": installation,
         "tenant": tenant,
         "generation": lifecycle.generation_id,
         "store_identity": store["identity"],
@@ -189,6 +248,9 @@ async def _evidence(connection, engine, provider, profile, tenant, request_id=No
     ).one()
     if _digest(list(identity)) != profile.postgres_identity:
         raise RecoveryAuthorizationError("PostgreSQL target mismatch")
+    installation = _installation_evidence(provider, profile)
+    if installation["postgres_identity"] != _digest({"postgres": list(identity)}):
+        raise RecoveryAuthorizationError("Floor repair installation target mismatch")
     snapshots, tenants = await _pg_snapshots(connection)
     store = _store_b_snapshot(provider)
     if store["state"] not in {"FAILED", "RESTORE_PENDING"}:
@@ -217,6 +279,7 @@ async def _evidence(connection, engine, provider, profile, tenant, request_id=No
     if hashlib.sha256(encoded).hexdigest() != anchor_digest or any(
         (
             anchor["profile"] != profile.digest,
+            anchor.get("installation") != installation,
             anchor["tenant"] != tenant,
             anchor["store_identity"] != store["identity"],
             anchor["lifecycle"] != _digest(store["lifecycle"]),
@@ -291,6 +354,7 @@ async def _evidence(connection, engine, provider, profile, tenant, request_id=No
     ):
         raise RecoveryAuthorizationError("Unknown workload blocks floor repair")
     return {
+        "installation": installation,
         "epoch": epoch,
         "target": target,
         "generation": record.generation_id,
@@ -347,6 +411,23 @@ async def _checkpoint(phase):
     """Observable crash boundary; tests may interrupt, never grant authority."""
 
 
+def _check_current_authority(
+    profile, plan, payload, signatures, *, provider=None, installation=None
+):
+    """Reverify after waits and before completion; never restore readiness."""
+    current = OperatorProfile.load(profile.path)
+    if current.digest != profile.digest:
+        raise RecoveryAuthorizationError("Operator trust changed during floor repair")
+    _verify(current, payload, signatures)
+    if (
+        plan.profile_digest != current.digest
+        or not plan.created_at <= int(time.time()) < plan.expires_at
+    ):
+        raise RecoveryAuthorizationError("Stale or wrong-target floor approval")
+    if installation is not None and _installation_evidence(provider, current) != installation:
+        raise RecoveryAuthorizationError("Signed installation publication evidence changed")
+
+
 async def execute(engine, provider, *, profile_path, plan, signatures):
     profile = OperatorProfile.load(Path(profile_path))
     if type(plan) is not FloorPlan:
@@ -369,12 +450,7 @@ async def execute(engine, provider, *, profile_path, plan, signatures):
             raise RecoveryAuthorizationError("Floor approval already consumed") from exc
         await _checkpoint("CONSUMED")
         try:
-            _verify(profile, payload, signatures)
-            if (
-                plan.profile_digest != profile.digest
-                or not plan.created_at <= int(time.time()) < plan.expires_at
-            ):
-                raise RecoveryAuthorizationError("Stale or wrong-target floor approval")
+            _check_current_authority(profile, plan, payload, signatures)
             async with engine.raw.begin() as connection:
                 await _lock_authority_tables(connection)
                 store_lock = sqlite3.connect(str(provider.path), timeout=1)
@@ -399,6 +475,15 @@ async def execute(engine, provider, *, profile_path, plan, signatures):
                         plan.readiness_epoch,
                     ):
                         raise RecoveryAuthorizationError("Exact floor binding mismatch")
+                    installation = evidence["installation"]
+                    _check_current_authority(
+                        profile,
+                        plan,
+                        payload,
+                        signatures,
+                        provider=provider,
+                        installation=installation,
+                    )
                     changed = await connection.execute(
                         text(
                             "UPDATE governance_revocation_epochs SET epoch=:target WHERE organization_id=:id "
@@ -420,6 +505,14 @@ async def execute(engine, provider, *, profile_path, plan, signatures):
             # Existing strict R1 PREPARE checks must now succeed independently;
             # this read-only proof neither runs recovery nor publishes READY.
             evidence = await collect_recovery_evidence(engine, provider, profile)
+            _check_current_authority(
+                profile,
+                plan,
+                payload,
+                signatures,
+                provider=provider,
+                installation=installation,
+            )
             with _ledger(profile)._connect() as ledger:
                 ledger.execute(
                     "UPDATE floor_attempts SET state='COMPLETE',final_digest=? WHERE request_id=?",
