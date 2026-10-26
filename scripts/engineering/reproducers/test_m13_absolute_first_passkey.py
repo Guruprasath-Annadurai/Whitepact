@@ -4,25 +4,24 @@
 
 import asyncio
 import uuid
-from contextlib import AsyncExitStack, aclosing
 
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ec import SECP256R1, generate_private_key
 from sqlalchemy import func, select, update
-from tests.pg_test_url import isolated_pg_url
+from tests.protected_component_tenant import component_controller
 from tests.webauthn_fakes import registration_blob
 
+from responsibleai.data_governance.tenant_client import TenantCreationDeniedError
 from responsibleai.db.engine import (
     auth_replay_records,
-    create_engine,
     governance_root_authority_records,
     organizations,
     passkey_credentials,
+    tenant_provisioning_records,
     web_memberships,
     web_sessions,
     web_users,
 )
-from responsibleai.db.migrate import _find_alembic_ini, _migration_env, _run_alembic
 from responsibleai.db.web_identity_repository import WebIdentityRepository
 from responsibleai.enterprise.errors import EnterpriseError
 from responsibleai.enterprise.security.policy import SensitiveAction
@@ -30,32 +29,32 @@ from responsibleai.enterprise.security.service import IdentitySecurityService
 from responsibleai.enterprise.security.webauthn import b64url_decode
 from responsibleai.enterprise.service import EnterpriseIAM
 
+# The protected controller refuses a non-PostgreSQL engine. Historical assertion
+# bodies below are unchanged and run on disposable PostgreSQL 16 only.
 
-@pytest.fixture(params=["sqlite", "postgres"])
-async def first_enrollment(request):
-    async with AsyncExitStack() as stack:
-        database = ":memory:"
-        if request.param == "postgres":
-            databases = await stack.enter_async_context(
-                aclosing(isolated_pg_url("wp_absolute_enroll"))
-            )
-            database = await anext(databases)
-            ini = _find_alembic_ini()
-            assert ini is not None
-            await _run_alembic(ini, _migration_env(database), "upgrade", "head")
-        engine = create_engine(database)
-        if request.param == "sqlite":
-            await engine.init()
+
+@pytest.fixture(params=["postgres"])
+async def first_enrollment(request, tmp_path, monkeypatch):
+    assert request.param == "postgres"
+    async with component_controller(tmp_path, monkeypatch, "wp_abs_enroll") as controller:
+        engine = controller.engine
         identities = WebIdentityRepository(engine)
-        user, token = await identities.register(
+        user, verification = await identities.register(
             "First owner", f"first-{uuid.uuid4().hex}@example.com", "Local-Strong-42!"
         )
-        assert await identities.verify_email(token)
+        assert await identities.verify_email(verification)
+        # The creator session exists before any organization or membership.
+        creator_token, csrf = await identities.create_session(user)
+        async with engine.raw.connect() as conn:
+            assert await conn.scalar(select(func.count()).select_from(organizations)) == 0
+            assert await conn.scalar(select(func.count()).select_from(web_memberships)) == 0
         org = await EnterpriseIAM(engine).create_workspace(
             actor_user_id=user,
             name="First enrollment",
             slug=f"first-{uuid.uuid4().hex}",
             kind="ORGANIZATION",
+            session_token=creator_token,
+            csrf=csrf,
         )
         org_id = org["id"] if isinstance(org, dict) else org.id
         service = IdentitySecurityService(engine, origin="http://localhost", rp_id="localhost")
@@ -72,10 +71,7 @@ async def first_enrollment(request):
             private_key=key,
         )
         grant = await service.issue_step_up(session, SensitiveAction.ADD_PASSKEY, org_id=org_id)
-        try:
-            yield engine, service, user, org_id, session, client, authenticator, grant
-        finally:
-            await engine.close()
+        yield engine, service, user, org_id, session, client, authenticator, grant
 
 
 async def enroll(context):
@@ -218,3 +214,104 @@ async def test_concurrent_initial_enrollment_has_one_winner(first_enrollment, mo
             )
             == 1
         )
+
+
+@pytest.fixture
+async def creator_gate(tmp_path, monkeypatch):
+    """Verified account and pre-organization session. No membership is inserted."""
+    async with component_controller(tmp_path, monkeypatch, "wp_abs_deny") as controller:
+        engine = controller.engine
+        identities = WebIdentityRepository(engine)
+        user, verification = await identities.register(
+            "Creator gate", f"gate-{uuid.uuid4().hex}@example.com", "Local-Strong-42!"
+        )
+        assert await identities.verify_email(verification)
+        token, csrf = await identities.create_session(user)
+        yield engine, identities, user, token, csrf
+
+
+async def _assert_no_tenant(engine) -> None:
+    async with engine.raw.connect() as conn:
+        assert await conn.scalar(select(func.count()).select_from(organizations)) == 0
+        assert await conn.scalar(select(func.count()).select_from(web_memberships)) == 0
+        assert await conn.scalar(select(func.count()).select_from(tenant_provisioning_records)) == 0
+
+
+async def _deny_workspace(engine, user, token, csrf, match):
+    with pytest.raises(TenantCreationDeniedError, match=match):
+        await EnterpriseIAM(engine).create_workspace(
+            actor_user_id=user,
+            name="Denied enrollment",
+            slug=f"deny-{uuid.uuid4().hex}",
+            kind="ORGANIZATION",
+            session_token=token,
+            csrf=csrf,
+        )
+    await _assert_no_tenant(engine)
+
+
+@pytest.mark.asyncio
+async def test_missing_creator_session_is_denied(creator_gate):
+    engine, _, user, _, _ = creator_gate
+    await _deny_workspace(engine, user, "", "", "creator mismatch")
+
+
+@pytest.mark.asyncio
+async def test_invalid_creator_session_is_denied(creator_gate):
+    engine, _, user, _, csrf = creator_gate
+    await _deny_workspace(engine, user, "not-a-creator-session", csrf, "creator mismatch")
+
+
+@pytest.mark.asyncio
+async def test_expired_creator_session_is_denied(creator_gate):
+    engine, _, user, token, csrf = creator_gate
+    async with engine.raw.begin() as conn:
+        await conn.execute(
+            update(web_sessions)
+            .where(web_sessions.c.token_hash.is_not(None))
+            .values(expires_at="2000-01-01T00:00:00+00:00")
+        )
+    await _deny_workspace(engine, user, token, csrf, "creator mismatch")
+
+
+@pytest.mark.asyncio
+async def test_mismatched_creator_session_is_denied(creator_gate):
+    engine, identities, user, _, _ = creator_gate
+    other, verification = await identities.register(
+        "Other creator", f"other-{uuid.uuid4().hex}@example.com", "Local-Strong-42!"
+    )
+    assert await identities.verify_email(verification)
+    other_token, other_csrf = await identities.create_session(other)
+    await _deny_workspace(engine, user, other_token, other_csrf, "creator mismatch")
+
+
+@pytest.mark.asyncio
+async def test_missing_creator_csrf_is_denied(creator_gate):
+    engine, _, user, token, _ = creator_gate
+    await _deny_workspace(engine, user, token, "", "Verified session and CSRF are required")
+
+
+@pytest.mark.asyncio
+async def test_invalid_creator_csrf_is_denied(creator_gate):
+    engine, _, user, token, _ = creator_gate
+    await _deny_workspace(engine, user, token, "not-the-csrf", "authorization was rejected")
+
+
+@pytest.mark.asyncio
+async def test_expired_creator_csrf_is_denied(creator_gate):
+    """CSRF has no independent lifetime; an idle-expired session retires its CSRF."""
+    engine, _, user, token, csrf = creator_gate
+    async with engine.raw.begin() as conn:
+        await conn.execute(
+            update(web_sessions)
+            .where(web_sessions.c.token_hash.is_not(None))
+            .values(inactivity_expires_at="2000-01-01T00:00:00+00:00")
+        )
+    await _deny_workspace(engine, user, token, csrf, "creator mismatch")
+
+
+@pytest.mark.asyncio
+async def test_mismatched_creator_csrf_is_denied(creator_gate):
+    engine, identities, user, token, _ = creator_gate
+    _, other_csrf = await identities.create_session(user)
+    await _deny_workspace(engine, user, token, other_csrf, "authorization was rejected")
