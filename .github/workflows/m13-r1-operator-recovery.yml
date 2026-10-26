@@ -67,6 +67,11 @@ jobs:
           ruff format --check src/responsibleai/data_governance/provisioning_manifest.py src/responsibleai/data_governance/tenant_*.py tests/stage3_controller_helpers.py tests/test_stage3_*.py migrations/versions/0067_tenant_provisioning.py scripts/engineering/m13_bootstrap_preflight.py
           mypy scripts/engineering/m13_bootstrap_preflight.py
           mypy src/responsibleai/data_governance/provisioning_manifest.py src/responsibleai/data_governance/tenant_admission.py src/responsibleai/data_governance/tenant_client.py src/responsibleai/data_governance/tenant_controller.py src/responsibleai/data_governance/tenant_controller_server.py
+      - name: Verify real Docker availability before qualification
+        run: |
+          ruff check scripts/engineering/m13_docker_qualification_probe.py tests/test_stage3_docker_qualification_probe.py
+          ruff format --check scripts/engineering/m13_docker_qualification_probe.py tests/test_stage3_docker_qualification_probe.py
+          python scripts/engineering/m13_docker_qualification_probe.py --phase before --output /tmp/r1-docker-before.json
       - name: Real stores, native Docker and process-crash matrix
         run: |
           python -m pytest tests/test_operator_recovery_authorization.py tests/test_operator_recovery_ledger.py tests/test_operator_recovery_direct_calls.py tests/test_operator_recovery_postgres.py tests/test_operator_recovery_crash.py tests/test_operator_recovery_startup.py tests/test_stage3_*.py tests/test_m13_referenced_approval_deletion.py tests/test_codex_fortress_recovery_qualification.py tests/test_combined_deletion_containment.py tests/test_final_deletion_*.py tests/test_final_floor_repair_poc.py -o addopts='' --junitxml=/tmp/r1-recovery.xml --tb=short -ra
@@ -76,6 +81,9 @@ jobs:
         run: |
           python -m pytest tests/test_restore_reconciliation.py tests/test_restore_admission_chokepoint.py tests/test_h4_backup_recovery_adversarial.py tests/test_m13_final_production_restore.py tests/test_m13_approved_reproducer_provenance.py tests/test_m13_absolute_durable_intent.py tests/test_m13_absolute_runtime_inventory.py tests/test_tenant_deletion.py tests/test_erasure.py -o addopts='' --junitxml=/tmp/r1-neighbors.xml --tb=short -ra
           python -c 'import xml.etree.ElementTree as E; r=E.parse("/tmp/r1-neighbors.xml"); assert not list(r.iter("skipped")) and not list(r.iter("failure")) and not list(r.iter("error"))'
+      - name: Retain real Docker availability after qualification
+        if: always()
+        run: python scripts/engineering/m13_docker_qualification_probe.py --phase after --baseline /tmp/r1-docker-before.json --output /tmp/r1-docker-after.json
       - name: Retain exact-source receipts
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -85,3 +93,5 @@ jobs:
             /tmp/r1-source.txt
             /tmp/r1-recovery.xml
             /tmp/r1-neighbors.xml
+            /tmp/r1-docker-before.json
+            /tmp/r1-docker-after.json
