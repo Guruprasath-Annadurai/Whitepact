@@ -13,9 +13,11 @@ Branch: `cursor/m13-i1-customer-closure-0f76`.
 Review base: `codex/m13-secure-antigravity-integration` (PR #232).
 Codex-owned R1 and Fortress recovery code was not modified.
 
-The executable correction and this report land in the commits named in the
-pull request after push. Hosted I1, Sovereign, and product workflows are the
-3.11 and 3.12 record. This environment has Python 3.12.3 only.
+Executable correction: `51ddfec39af6ece852bdc21b68795b2285dac720`.
+Correction tree: `fa6c1508189eb7a7a4404fba9af42b750ea16532`.
+The executable files are in that commit. This documentation commit names that
+SHA and does not change `src/` or `tests/`. Hosted I1, Sovereign, and product
+workflows run on the branch tip. This environment has Python 3.12.3 only.
 
 ## Before
 
@@ -264,5 +266,7 @@ customer path still stops until an authorized identity provider writes
 
 ## Hosted CI
 
-Pending on the pushed tip. This section is replaced only with the terminal
-workflow result. A green security job does not make the verdict PASS.
+Not yet terminal for `51ddfec39af6ece852bdc21b68795b2285dac720` or the
+documentation tip that names it. `introduced-dco` and `real-customer-journey`
+are expected to stay red. A green security or Sovereign job does not make
+this verdict PASS. The terminal workflow names are appended when CI finishes.
