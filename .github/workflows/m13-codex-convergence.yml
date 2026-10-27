@@ -1,0 +1,70 @@
+name: M13 Codex Cross-System Contract Qualification
+
+on:
+  pull_request:
+    paths:
+      - 'src/responsibleai/mcp/authority_tools.py'
+      - 'tests/test_codex_m13_*.py'
+      - '.github/workflows/m13-codex-convergence.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contracts:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.11', '3.12']
+    services:
+      postgres:
+        image: postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685
+        env:
+          POSTGRES_USER: wp
+          POSTGRES_PASSWORD: wp
+          POSTGRES_DB: postgres
+        ports: ['55432:5432']
+        options: >-
+          --health-cmd "pg_isready -U wp" --health-interval 5s
+          --health-timeout 5s --health-retries 12
+    env:
+      PYTHONPATH: src:sdk/python:.
+      WHITEPACT_TEST_PG_ADMIN_URL: postgresql://wp:wp@127.0.0.1:55432/postgres
+      WHITEPACT_ALLOW_UNISOLATED_EXECUTION: ''
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install qualification dependencies
+        run: |
+          python -m pip install -r tests/requirements-m11.txt
+          python -m pip install '.[dashboard,postgres,mcp,sso]' ruff==0.17.0
+          git rev-parse HEAD 'HEAD^{tree}' 'HEAD^' > /tmp/convergence-source.txt
+      - name: Preserve static and historical requirements
+        run: |
+          ruff check src/responsibleai/mcp/authority_tools.py tests/test_codex_m13_*.py
+          ruff format --check src/responsibleai/mcp/authority_tools.py tests/test_codex_m13_*.py
+          python scripts/engineering/m13_approved_formatting.py
+          python scripts/check_pinned_actions.py
+          python scripts/manage_license_headers.py --check
+      - name: Real PostgreSQL and MCP contracts
+        run: |
+          python scripts/engineering/m13_pg16_test_runner.py tests/test_m13_identity_session_schema.py tests/test_m13_runtime_schema_compatibility.py tests/test_codex_m13_schema_index_contract.py tests/test_codex_m13_mcp_argument_boundary.py tests/test_mcp_wave1_compatibility.py::test_real_stdio_discovery_ping_and_unknown_tool tests/test_mcp_wave1_compatibility.py::test_real_enterprise_stdio_process_refuses_before_protocol --junitxml=/tmp/convergence.xml --cov-report=json:/tmp/convergence-coverage.json --cov-report=term --tb=short -ra
+          python -c 'import xml.etree.ElementTree as E; r=E.parse("/tmp/convergence.xml"); assert not list(r.iter("skipped")) and not list(r.iter("failure")) and not list(r.iter("error"))'
+      - name: Retain actual source and outcomes
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: codex-convergence-${{ matrix.python }}-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            /tmp/convergence-source.txt
+            /tmp/convergence.xml
+            /tmp/convergence-coverage.json

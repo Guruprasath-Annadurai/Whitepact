@@ -12,6 +12,7 @@ from uuid import uuid4
 
 import pytest
 from sqlalchemy import insert, text
+from sqlalchemy.exc import IntegrityError
 
 from responsibleai.db.engine import create_engine, identity_verifications
 from responsibleai.db.identity_session_uniqueness import IDENTITY_SESSION_INDEX
@@ -83,5 +84,56 @@ async def test_named_but_ineffective_session_index_cannot_qualify_startup(fault)
                 assert refused, (
                     "Startup accepted duplicate provider sessions behind an ineffective named index"
                 )
+            finally:
+                await engine.close()
+
+
+@pytest.mark.asyncio
+async def test_missing_index_is_rebuilt_at_0067_and_duplicate_insert_is_atomic():
+    async with aclosing(isolated_pg_url("codex_index_repair")) as databases:
+        async for url in databases:
+            await _run_alembic(_find_alembic_ini(), _migration_env(url), "upgrade", "head")
+            engine = create_engine(url)
+            try:
+                user, _ = await WebIdentityRepository(engine).register(
+                    "Disposable subject", "repair@example.test", "Isolated-Contract-Only-42!"
+                )
+                now = datetime.now(UTC).isoformat()
+                row = dict(
+                    id=str(uuid4()),
+                    user_id=user,
+                    status="REVIEW_REQUIRED",
+                    provider="hmac-reference",
+                    provider_reference_id="retained-session",
+                    created_at=now,
+                    updated_at=now,
+                )
+                async with engine.raw.begin() as connection:
+                    await connection.execute(text(f"DROP INDEX {IDENTITY_SESSION_INDEX}"))
+                    await connection.execute(insert(identity_verifications).values(**row))
+                await assert_runtime_schema_compatible(engine)
+                with pytest.raises(IntegrityError):
+                    async with engine.raw.begin() as connection:
+                        await connection.execute(
+                            insert(identity_verifications).values(**(row | {"id": str(uuid4())}))
+                        )
+                async with engine.raw.connect() as connection:
+                    assert (
+                        await connection.scalar(text("SELECT version_num FROM alembic_version"))
+                        == "0067"
+                    )
+                    stored = (
+                        await connection.execute(
+                            text(
+                                "SELECT id,provider,provider_reference_id,status FROM identity_verifications"
+                            )
+                        )
+                    ).one()
+                    assert tuple(stored) == (
+                        row["id"],
+                        "hmac-reference",
+                        "retained-session",
+                        "REVIEW_REQUIRED",
+                    )
             finally:
                 await engine.close()
