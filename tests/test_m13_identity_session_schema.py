@@ -15,6 +15,7 @@ from responsibleai.db.engine import create_engine, identity_verifications
 from responsibleai.db.identity_session_uniqueness import (
     IDENTITY_SESSION_INDEX,
     IdentitySessionConflictError,
+    IdentitySessionIndexInvalidError,
     ensure_identity_session_uniqueness,
 )
 from responsibleai.db.migrate import _find_alembic_ini, _migration_env, _run_alembic
@@ -47,6 +48,7 @@ async def test_upgrade_head_stays_0067_and_installs_unique_sessions() -> None:
                     )
                 assert versions == ["0067"]
                 assert await _index_present(engine)
+                await assert_runtime_schema_compatible(engine)
                 await assert_runtime_schema_compatible(engine)
             finally:
                 await engine.raw.dispose()
@@ -94,5 +96,45 @@ async def test_duplicate_provider_sessions_block_the_index_and_remain() -> None:
                         text("SELECT count(*) FROM identity_verifications")
                     )
                 assert count_after == 2
+            finally:
+                await engine.raw.dispose()
+
+
+@pytest.mark.asyncio
+async def test_incompatible_named_index_is_left_in_place_and_startup_rolls_back() -> None:
+    async with aclosing(isolated_pg_url("m13badidx")) as databases:
+        async for database in databases:
+            await _run_alembic(_find_alembic_ini(), _migration_env(database), "upgrade", "head")
+            engine = create_engine(database)
+            try:
+                async with engine.raw.begin() as connection:
+                    await connection.execute(text(f"DROP INDEX {IDENTITY_SESSION_INDEX}"))
+                    await connection.execute(
+                        text(
+                            f"CREATE INDEX {IDENTITY_SESSION_INDEX} "
+                            "ON identity_verifications (provider)"
+                        )
+                    )
+                with pytest.raises(IdentitySessionIndexInvalidError):
+                    await ensure_identity_session_uniqueness(engine)
+                async with engine.raw.connect() as connection:
+                    definition = await connection.scalar(
+                        text("SELECT indexdef FROM pg_indexes WHERE indexname=:name"),
+                        {"name": IDENTITY_SESSION_INDEX},
+                    )
+                    version = await connection.scalar(
+                        text("SELECT version_num FROM alembic_version")
+                    )
+                assert definition.startswith("CREATE INDEX")
+                assert "UNIQUE" not in definition
+                assert version == "0067"
+                with pytest.raises(RuntimeError, match="uniqueness"):
+                    await assert_runtime_schema_compatible(engine)
+                async with engine.raw.connect() as connection:
+                    still = await connection.scalar(
+                        text("SELECT indexdef FROM pg_indexes WHERE indexname=:name"),
+                        {"name": IDENTITY_SESSION_INDEX},
+                    )
+                assert still == definition
             finally:
                 await engine.raw.dispose()
