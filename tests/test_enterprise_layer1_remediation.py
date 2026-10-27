@@ -79,14 +79,9 @@ async def _signed_event(
 
 
 async def _verify(engine, user_id: str, event_id: str) -> None:
-    provider = HmacVerificationProvider("test-webhook-secret")
-    verification = VerificationService(engine, provider)
-    payload, sig, ts = await _signed_event(
-        {"event_id": event_id, "subject_id": user_id, "outcome": "VERIFIED"}
-    )
-    await verification.apply_provider_event(
-        payload=payload, signature=sig, timestamp=ts, expected_user_id=user_id
-    )
+    from tests.identity_contract import verify_human_reference
+
+    await verify_human_reference(engine, user_id, event_id=event_id)
 
 
 @pytest.mark.asyncio
@@ -462,9 +457,20 @@ async def test_webhook_forged_modified_replay_stale_wrong_binding(engine) -> Non
     web = WebIdentityRepository(engine)
     user = await _register(web, "wh@example.com", verify_email=True)
     other = await _register(web, "wh2@example.com", verify_email=True)
+    from tests.identity_contract import enable_reference_contract
+
+    enable_reference_contract()
     provider = HmacVerificationProvider("test-webhook-secret")
     verification = VerificationService(engine, provider)
-    body = {"event_id": "evt-wh-1", "subject_id": user, "outcome": "VERIFIED"}
+    started = await verification.start_human_verification(user)
+    body = {
+        "event_id": "evt-wh-1",
+        "event_type": "identity.verification",
+        "subject_id": user,
+        "reference_id": started["session_id"],
+        "outcome": "VERIFIED",
+        "assurance_level": "government_id",
+    }
     payload, sig, ts = await _signed_event(body)
     with pytest.raises(EnterpriseError) as forged:
         await verification.apply_provider_event(payload=payload, signature="00" * 32, timestamp=ts)

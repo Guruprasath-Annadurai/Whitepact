@@ -137,6 +137,21 @@ async def _run_alembic(ini_path: Path, env: dict[str, str], *args: str) -> None:
             f"alembic {' '.join(args)} failed (exit {proc.returncode}):\n"
             f"{stderr.decode(errors='replace')}\n{stdout.decode(errors='replace')}"
         )
+    if args and args[0] == "upgrade":
+        url = env.get("RAI_DATABASE_URL") or env.get("RAI_DB_PATH")
+        if url:
+            from responsibleai.db.identity_session_uniqueness import (
+                IdentitySessionConflictError,
+                ensure_identity_session_uniqueness,
+            )
+
+            repaired = _create_db_engine(url)
+            try:
+                await ensure_identity_session_uniqueness(repaired)
+            except IdentitySessionConflictError as exc:
+                raise MigrationError(str(exc)) from exc
+            finally:
+                await repaired.raw.dispose()
 
 
 async def run_migrations_or_raise(effective_db_url: str) -> None:

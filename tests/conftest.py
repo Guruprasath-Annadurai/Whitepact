@@ -21,6 +21,29 @@ os.environ.setdefault("WHITEPACT_ALLOW_UNISOLATED_EXECUTION", "1")
 os.environ.setdefault("RAI_AUTH_ENABLED", "false")
 os.environ.setdefault("WHITEPACT_AUTH_ENABLED", "false")
 
+_IDENTITY_CONTRACT_KEYS = (
+    "WHITEPACT_IDENTITY_REFERENCE_CONTRACT",
+    "WHITEPACT_IDENTITY_APPROVED_PROVIDERS",
+    "WHITEPACT_IDENTITY_APPROVED_ASSURANCE_LEVELS",
+    "WHITEPACT_IDENTITY_PROVIDER",
+    "WHITEPACT_IDENTITY_PROVIDER_NAME",
+    "WHITEPACT_IDENTITY_PROVIDER_BASE_URL",
+    "WHITEPACT_IDENTITY_PROVIDER_API_TOKEN",
+    "WHITEPACT_IDENTITY_PROVIDER_WEBHOOK_SECRET",
+    "WHITEPACT_IDENTITY_PROVIDER_ALLOW_INSECURE",
+)
+
+
+@pytest.fixture(autouse=True)
+def _restore_identity_policy_env():
+    saved = {key: os.environ.get(key) for key in _IDENTITY_CONTRACT_KEYS}
+    yield
+    for key, value in saved.items():
+        if value is None:
+            os.environ.pop(key, None)
+        else:
+            os.environ[key] = value
+
 from biasbuster.providers.base import (  # noqa: E402
     BaseProvider,
     CompletionRequest,

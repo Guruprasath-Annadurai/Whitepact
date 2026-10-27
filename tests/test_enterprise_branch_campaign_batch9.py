@@ -5,12 +5,9 @@ Layer 2 preflight, and WebAuthn ceremony validation failures."""
 
 from __future__ import annotations
 
-import hashlib
-import hmac
-import json
 import time
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import cbor2
@@ -68,7 +65,6 @@ from responsibleai.enterprise.security.webauthn import (
     verify_registration,
 )
 from responsibleai.enterprise.service import Actor, EnterpriseIAM
-from responsibleai.enterprise.verification import HmacVerificationProvider, VerificationService
 from responsibleai.rbac.models import Role
 from tests.webauthn_fakes import assertion_blob, client_data, registration_blob
 
@@ -132,20 +128,9 @@ async def _org(engine, owner_id: str) -> str:
 
 
 async def _verify_human(engine, user_id: str) -> None:
-    provider = HmacVerificationProvider("test-webhook-secret")
-    verification = VerificationService(engine, provider)
-    body = {
-        "event_id": f"evt-{uuid.uuid4().hex[:8]}",
-        "subject_id": user_id,
-        "outcome": "VERIFIED",
-        "assurance_level": "government_id",
-    }
-    ts = datetime.now(UTC).isoformat()
-    payload = json.dumps(body, separators=(",", ":")).encode()
-    signature = hmac.new(b"test-webhook-secret", payload + ts.encode(), hashlib.sha256).hexdigest()
-    await verification.apply_provider_event(
-        payload=payload, signature=signature, timestamp=ts, expected_user_id=user_id
-    )
+    from tests.identity_contract import verify_human_reference
+
+    await verify_human_reference(engine, user_id)
 
 
 async def _issue_dev_key(iam: EnterpriseIAM, actor: Actor, org_id: str) -> tuple[dict, str]:

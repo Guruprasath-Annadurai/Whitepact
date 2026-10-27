@@ -5,6 +5,9 @@
 from sqlalchemy import text
 
 from responsibleai.db.engine import DatabaseEngine
+from responsibleai.db.identity_session_uniqueness import (
+    ensure_identity_session_uniqueness,
+)
 
 # Review this alongside every security-bearing migration. Do not silently accept
 # newer schema semantics merely because existing ORM queries still work.
@@ -30,3 +33,9 @@ async def assert_runtime_schema_compatible(engine: DatabaseEngine) -> None:
         ) from exc
     if versions != SUPPORTED_POSTGRES_REVISIONS:
         raise RuntimeError("Startup refused: incompatible PostgreSQL schema revision")
+    try:
+        await ensure_identity_session_uniqueness(engine)
+    except Exception as exc:
+        raise RuntimeError(
+            "Startup refused: identity provider session uniqueness is not in force"
+        ) from exc

@@ -213,9 +213,24 @@ async def _quorum_approve_and_execute(
 
 
 async def _apply_idv(client: AsyncClient, user_id: str, event_id: str) -> None:
+    from tests.identity_contract import enable_reference_contract
+
+    enable_reference_contract()
+    started = await client.post(
+        "/api/enterprise/identity/verification/start",
+        headers={"X-WP-CSRF": client.cookies.get("wp_csrf", "")},
+    )
+    assert started.status_code == 200, started.text
     timestamp = datetime.now(UTC).isoformat()
     payload = json.dumps(
-        {"event_id": event_id, "subject_id": user_id, "outcome": "VERIFIED"},
+        {
+            "event_id": event_id,
+            "event_type": "identity.verification",
+            "subject_id": user_id,
+            "reference_id": started.json()["session_id"],
+            "outcome": "VERIFIED",
+            "assurance_level": "government_id",
+        },
         separators=(",", ":"),
     ).encode()
     response = await client.post(

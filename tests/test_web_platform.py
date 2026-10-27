@@ -4,11 +4,8 @@
 
 from __future__ import annotations
 
-import hashlib
-import hmac
 import json
 import os
-from datetime import UTC, datetime
 from html.parser import HTMLParser
 from urllib.parse import parse_qs, urlparse
 from uuid import uuid4
@@ -201,7 +198,6 @@ async def test_csrf_onboarding_and_one_time_key_lifecycle(web_client):
 
     from responsibleai.dashboard import app as app_mod
     from responsibleai.db.engine import web_users
-    from responsibleai.enterprise.verification import HmacVerificationProvider, VerificationService
 
     async with app_mod._db_engine.raw.connect() as conn:
         user_id = (
@@ -209,19 +205,9 @@ async def test_csrf_onboarding_and_one_time_key_lifecycle(web_client):
                 select(web_users.c.id).where(web_users.c.email == "grace@example.com")
             )
         ).scalar_one()
-    provider = HmacVerificationProvider("test-webhook-secret")
-    verification = VerificationService(app_mod._db_engine, provider)
-    timestamp = datetime.now(UTC).isoformat()
-    payload = json.dumps(
-        {"event_id": "evt-web-idv", "subject_id": user_id, "outcome": "VERIFIED"},
-        separators=(",", ":"),
-    ).encode()
-    signature = hmac.new(
-        b"test-webhook-secret", payload + timestamp.encode(), hashlib.sha256
-    ).hexdigest()
-    await verification.apply_provider_event(
-        payload=payload, signature=signature, timestamp=timestamp, expected_user_id=user_id
-    )
+    from tests.identity_contract import verify_human_reference
+
+    await verify_human_reference(app_mod._db_engine, user_id, event_id="evt-web-idv")
 
     created = await web_client.post(
         "/api/v1/web/api-keys",

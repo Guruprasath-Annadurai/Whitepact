@@ -256,9 +256,24 @@ async def test_two_http_replicas_share_durable_security_state(
                     user_id = session.json()["user"]["id"]
                     import datetime as dt
 
+                    from tests.identity_contract import enable_reference_contract
+
+                    enable_reference_contract()
+                    started = a.post(
+                        "/api/enterprise/identity/verification/start",
+                        headers={"X-WP-CSRF": csrf},
+                    )
+                    assert started.status_code == 200, started.text
                     ts = dt.datetime.now(dt.UTC).isoformat()
                     payload = json.dumps(
-                        {"event_id": "evt-repl", "subject_id": user_id, "outcome": "VERIFIED"},
+                        {
+                            "event_id": "evt-repl",
+                            "event_type": "identity.verification",
+                            "subject_id": user_id,
+                            "reference_id": started.json()["session_id"],
+                            "outcome": "VERIFIED",
+                            "assurance_level": "government_id",
+                        },
                         separators=(",", ":"),
                     ).encode()
                     from responsibleai.enterprise.preflight import DEV_IDENTITY_WEBHOOK_SECRET
