@@ -56,6 +56,7 @@ jobs:
           python scripts/check_pinned_actions.py
           python scripts/manage_license_headers.py --check
       - name: Real PostgreSQL and MCP contracts
+        if: ${{ !cancelled() }}
         run: |
           python scripts/engineering/m13_pg16_test_runner.py tests/test_m13_identity_session_schema.py tests/test_m13_runtime_schema_compatibility.py tests/test_codex_m13_schema_index_contract.py tests/test_codex_m13_mcp_argument_boundary.py tests/test_mcp_wave1_compatibility.py::test_real_stdio_discovery_ping_and_unknown_tool tests/test_mcp_wave1_compatibility.py::test_real_enterprise_stdio_process_refuses_before_protocol --junitxml=/tmp/convergence.xml --cov-report=json:/tmp/convergence-coverage.json --cov-report=term --tb=short -ra
           python -c 'import xml.etree.ElementTree as E; r=E.parse("/tmp/convergence.xml"); assert not list(r.iter("skipped")) and not list(r.iter("failure")) and not list(r.iter("error"))'
