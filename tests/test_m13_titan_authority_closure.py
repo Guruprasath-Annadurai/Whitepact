@@ -27,7 +27,6 @@ from sqlalchemy import insert
 
 from responsibleai.db.engine import (
     authority_step_up_challenges,
-    create_engine,
     trust_fabric_principals,
     web_memberships,
 )
@@ -53,10 +52,22 @@ from responsibleai.enterprise.authority.service import (
     compute_canonical_operation_digest,
 )
 from responsibleai.enterprise.errors import CROSS_TENANT, EnterpriseError
-from responsibleai.enterprise.service import Actor, EnterpriseIAM
+from responsibleai.enterprise.service import Actor
 from responsibleai.rbac.models import Role
 from tests.m13_owner_qualification import qualify_owner, root_completion_assertion
 from tests.pg_test_url import isolated_pg_url
+from tests.protected_component_tenant import (
+    authorized_workspace,
+    authorized_workspace_then_revoke_email_verification,
+    bind_component_controller_scope,
+    create_controlled_engine,
+)
+
+
+@pytest.fixture(autouse=True)
+async def _component_controller_scope(tmp_path, monkeypatch):
+    async with bind_component_controller_scope(tmp_path, monkeypatch):
+        yield
 
 
 def _b64url(data: bytes) -> str:
@@ -77,21 +88,22 @@ async def test_full_consequential_authority_chain():
         ini = _find_alembic_ini()
         assert ini is not None
         await _run_alembic(ini, _migration_env(url), "upgrade", "head")
-        engine = create_engine(url)
+        engine = await create_controlled_engine(url)
 
         web_repo = WebIdentityRepository(engine)
-        iam = EnterpriseIAM(engine)
         svc = CustomerAuthorityService(engine)
         nonce_repo = ExecutionNonceRepository(engine)
 
         suffix = uuid.uuid4().hex[:8]
 
         # 1. Unverified user fails identity assurance
-        unverified_id, _ = await web_repo.register(
+        unverified_id, unverified_token = await web_repo.register(
             "Unverified Owner", f"unverified.{suffix}@example.com", "Password123!@#"
         )
-        unverified_org = await iam.create_workspace(
-            actor_user_id=unverified_id,
+        unverified_org = await authorized_workspace_then_revoke_email_verification(
+            engine,
+            unverified_id,
+            unverified_token,
             name=f"Unverified Org {suffix}",
             slug=f"unverified-org-{suffix}",
             kind="ORGANIZATION",
@@ -122,8 +134,9 @@ async def test_full_consequential_authority_chain():
         )
         assert await web_repo.verify_email(verify_token) is True
 
-        org = await iam.create_workspace(
-            actor_user_id=owner_id,
+        org = await authorized_workspace(
+            engine,
+            owner_id,
             name=f"Titan Authority Org {suffix}",
             slug=f"titan-auth-{suffix}",
             kind="ORGANIZATION",
@@ -372,10 +385,9 @@ async def test_multi_admin_quorum_recovery_adversarial():
         ini = _find_alembic_ini()
         assert ini is not None
         await _run_alembic(ini, _migration_env(url), "upgrade", "head")
-        engine = create_engine(url)
+        engine = await create_controlled_engine(url)
 
         web_repo = WebIdentityRepository(engine)
-        iam = EnterpriseIAM(engine)
         svc = CustomerAuthorityService(engine)
 
         suffix = uuid.uuid4().hex[:8]
@@ -389,8 +401,9 @@ async def test_multi_admin_quorum_recovery_adversarial():
             await web_repo.verify_email(tok)
             users.append(uid)
 
-        org = await iam.create_workspace(
-            actor_user_id=users[0],
+        org = await authorized_workspace(
+            engine,
+            users[0],
             name=f"Quorum Org {suffix}",
             slug=f"quorum-org-{suffix}",
             kind="ORGANIZATION",
@@ -575,10 +588,9 @@ async def test_cross_tenant_and_privilege_escalation_containment():
         ini = _find_alembic_ini()
         assert ini is not None
         await _run_alembic(ini, _migration_env(url), "upgrade", "head")
-        engine = create_engine(url)
+        engine = await create_controlled_engine(url)
 
         web_repo = WebIdentityRepository(engine)
-        iam = EnterpriseIAM(engine)
         svc = CustomerAuthorityService(engine)
 
         suffix = uuid.uuid4().hex[:8]
@@ -588,8 +600,8 @@ async def test_cross_tenant_and_privilege_escalation_containment():
             "Owner A", f"owner_a.{suffix}@example.com", "Password123!@#"
         )
         await web_repo.verify_email(tok_a)
-        org_a = await iam.create_workspace(
-            actor_user_id=u_a, name=f"Org A {suffix}", slug=f"org-a-{suffix}", kind="ORGANIZATION"
+        org_a = await authorized_workspace(
+            engine, u_a, name=f"Org A {suffix}", slug=f"org-a-{suffix}", kind="ORGANIZATION"
         )
         org_a_id = org_a["id"] if isinstance(org_a, dict) else org_a.id
 
@@ -598,8 +610,8 @@ async def test_cross_tenant_and_privilege_escalation_containment():
             "Owner B", f"owner_b.{suffix}@example.com", "Password123!@#"
         )
         await web_repo.verify_email(tok_b)
-        org_b = await iam.create_workspace(
-            actor_user_id=u_b, name=f"Org B {suffix}", slug=f"org-b-{suffix}", kind="ORGANIZATION"
+        org_b = await authorized_workspace(
+            engine, u_b, name=f"Org B {suffix}", slug=f"org-b-{suffix}", kind="ORGANIZATION"
         )
         org_b_id = org_b["id"] if isinstance(org_b, dict) else org_b.id
 
