@@ -2,22 +2,38 @@
 # SPDX-License-Identifier: MIT
 """Real PostgreSQL structural restore tests; fixture data is NOT a customer journey."""
 
+from dataclasses import replace
 from datetime import UTC, datetime
 
 import pytest
+from scripts.engineering import m13_floor_repair_poc as floor_repair
 from sqlalchemy import insert, text
+from tests.test_codex_fortress_recovery_qualification import (
+    approval_fk_restore_scenario,
+    no_effect_counts,
+    recovery_receipt,
+)
+from tests.test_codex_fortress_recovery_qualification import (
+    qualified_target as qualified_target,
+)
+from tests.test_codex_fortress_recovery_qualification import (
+    real_recovery as real_recovery,
+)
+from tests.test_final_floor_repair_poc import floor_target as floor_target
+from tests.test_final_floor_repair_poc import signatures
+from tests.test_operator_recovery_postgres import sign
 from tests.test_stage3_controller_postgres import isolated_controller_context
 
 from responsibleai.data_governance.backup_defense import (
-    InMemoryLifecycleStateProvider,
     LifecycleState,
-    LifecycleStateRecord,
+    RestoreReadinessState,
     RestoreReconciliationEngine,
     RestoreReconciliationError,
 )
-from responsibleai.db.engine import (
-    governance_approvals,
-    runtime_execution_requests,
+from responsibleai.data_governance.deletion_orchestrator import TenantDeletionOrchestrator
+from responsibleai.data_governance.operator_recovery_control import (
+    execute_offline_recovery,
+    prepare_offline_recovery,
 )
 from responsibleai.db.revocation_epoch_repository import RevocationEpochRepository
 from responsibleai.isolation import in_flight as tracking
@@ -78,57 +94,92 @@ async def restored(tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_store_b_floor_fences_canonical_governance_epoch(restored):
-    restored, tenant, generation = restored
+@pytest.mark.parametrize("real_recovery", ["freshness"], indirect=True)
+async def test_store_b_floor_fences_canonical_governance_epoch(floor_target):
+    restored, provider, gate, profile, keys, tenant = floor_target
     epochs = RevocationEpochRepository(restored)
-    await epochs.bump(tenant)
-    await epochs.bump(tenant)
-    provider = InMemoryLifecycleStateProvider()
-    provider.record_state(
-        LifecycleStateRecord(
-            tenant_id=tenant,
-            generation_id=generation,
-            state=LifecycleState.ACTIVE,
-            effective_at=datetime.now(UTC).isoformat(),
-            security_epoch=7,
-            revocation_floor=7,
-        )
+    generation = provider.get_state(tenant).generation_id
+    before = await no_effect_counts(restored)
+    assert (await epochs.current(tenant)).epoch == 3
+    plan = await floor_repair.prepare(restored, provider, profile_path=profile, tenant=tenant)
+    result = await floor_repair.execute(
+        restored,
+        provider,
+        profile_path=profile,
+        plan=plan,
+        signatures=signatures(plan.canonical_bytes(), keys),
     )
-    report = await RestoreReconciliationEngine(
-        restored, lifecycle_provider=provider
-    ).reconcile_post_restore("independent-development-test")
+    assert result == {"state": "FLOOR_ADVANCED", "epoch": 7, "ready": False}
+    assert not gate.is_admitted()
+    assert provider.get_state(tenant).generation_id == generation
+    assert provider.get_state(tenant).revocation_floor == 7
+    manifest = await prepare_offline_recovery(restored, provider, profile_path=profile)
+    report = await execute_offline_recovery(
+        restored,
+        provider,
+        gate,
+        profile_path=profile,
+        manifest=manifest,
+        signatures=sign(manifest, keys),
+    )
     assert report.status == "RECONCILED"
     assert (await epochs.current(tenant)).epoch >= 7
+    assert await no_effect_counts(restored) == before
 
 
 @pytest.mark.asyncio
-async def test_tombstone_reconciliation_retains_uncertain_execution(restored):
+@pytest.mark.parametrize("real_recovery", ["freshness"], indirect=True)
+async def test_tombstone_reconciliation_retains_uncertain_execution(qualified_target, monkeypatch):
     """Isolating fixtures must never turn genuine uncertainty into success."""
-    restored, tenant, generation = restored
+    restored, provider, gate, profile, keys, tenant = qualified_target
+    await TenantDeletionOrchestrator(restored, provider).delete_tenant(
+        tenant, deleted_by="disposable-test-controller", reason="historical-containment"
+    )
+    assert provider.get_state(tenant).state == LifecycleState.TOMBSTONED
+    tombstone = provider.get_state(tenant)
+    provider.record_state(replace(tombstone, security_epoch=7, revocation_floor=7, digest=""))
+    assert provider.get_state(tenant).generation_id == tombstone.generation_id
+    assert provider.get_state(tenant).revocation_floor == 7
+    provider.set_readiness_state(RestoreReadinessState.FAILED)
+    manifest = await prepare_offline_recovery(restored, provider, profile_path=profile)
+    approvals = sign(manifest, keys)
+    assert set(approvals) == {"security", "operator"}
+    before = await no_effect_counts(restored)
     registry = tracking.InFlightExecutionRegistry.get_instance()
-    await registry.register(
-        "uncertain-execution",
-        tenant,
-        "component-test",
-        terminate_callback=lambda: False,
-    )
-    provider = InMemoryLifecycleStateProvider()
-    provider.record_state(
-        LifecycleStateRecord(
-            tenant_id=tenant,
-            generation_id=generation,
-            state=LifecycleState.TOMBSTONED,
-            effective_at=datetime.now(UTC).isoformat(),
-            security_epoch=7,
-            revocation_floor=7,
-        )
-    )
+    original = RestoreReconciliationEngine.reconcile_post_restore
+    callbacks = []
+
+    def unconfirmed():
+        callbacks.append("unconfirmed")
+        return False
+
+    async def observe_late_work(self, *args, **kwargs):
+        assert recovery_receipt(profile, manifest.request_id) == (("CONSUMED",), ("CONSUMED",))
+        try:
+            await registry.register(
+                "uncertain-execution", tenant, "component-test", terminate_callback=unconfirmed
+            )
+        except PermissionError:
+            assert callbacks == ["unconfirmed"]
+            assert registry.has_unresolved(tenant)
+        return await original(self, *args, **kwargs)
+
+    monkeypatch.setattr(RestoreReconciliationEngine, "reconcile_post_restore", observe_late_work)
     with pytest.raises(RestoreReconciliationError, match="Containment unconfirmed"):
-        await RestoreReconciliationEngine(
-            restored, lifecycle_provider=provider
-        ).reconcile_post_restore("independent-development-test")
+        await execute_offline_recovery(
+            restored,
+            provider,
+            gate,
+            profile_path=profile,
+            manifest=manifest,
+            signatures=approvals,
+        )
     assert registry.has_unresolved(tenant)
     assert list(tracking._DISTRIBUTED_REGISTRY_DIR.glob("*.json"))
+    assert callbacks == ["unconfirmed"]
+    assert not gate.is_admitted()
+    assert provider.get_readiness_state() == RestoreReadinessState.FAILED
+    assert await no_effect_counts(restored) == before
 
 
 @pytest.mark.asyncio
@@ -162,53 +213,11 @@ async def test_runtime_canonical_fence_ignores_other_scope(restored, tmp_path, m
 
 
 @pytest.mark.asyncio
-async def test_tombstone_reconciliation_handles_real_approval_request_fk(restored):
-    restored, tenant, generation = restored
-    now = datetime.now(UTC)
-    async with restored.raw.begin() as conn:
-        await conn.execute(
-            insert(governance_approvals).values(
-                id="approval",
-                org_id=tenant,
-                action_id="action",
-                action_type="test",
-                target="harmless",
-                reason_codes="[]",
-                status="PENDING",
-                requested_at=now.isoformat(),
-            )
-        )
-        await conn.execute(
-            insert(runtime_execution_requests).values(
-                request_id="request",
-                organization_id=tenant,
-                principal_id="principal",
-                agent_id="agent",
-                identity_id="identity",
-                intent="test",
-                action_type="test",
-                target="harmless",
-                action_digest="0" * 64,
-                canonical_action_payload="{}",
-                approved_arguments={},
-                observed_governance_epoch=0,
-                idempotency_key="request",
-                approval_id="approval",
-                created_at=now,
-            )
-        )
-    provider = InMemoryLifecycleStateProvider()
-    provider.record_state(
-        LifecycleStateRecord(
-            tenant_id=tenant,
-            generation_id=generation,
-            state=LifecycleState.TOMBSTONED,
-            effective_at=now.isoformat(),
-            security_epoch=7,
-            revocation_floor=7,
-        )
+@pytest.mark.parametrize("real_recovery", ["freshness"], indirect=True)
+async def test_tombstone_reconciliation_handles_real_approval_request_fk(
+    qualified_target, tmp_path, request
+):
+    report = await approval_fk_restore_scenario(
+        qualified_target, tmp_path, request, minimum_floor=7
     )
-    report = await RestoreReconciliationEngine(
-        restored, lifecycle_provider=provider
-    ).reconcile_post_restore("independent-development-test")
     assert report.status == "RECONCILED"

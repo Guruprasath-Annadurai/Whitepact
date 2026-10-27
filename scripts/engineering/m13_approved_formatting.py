@@ -77,6 +77,7 @@ class FormattingEvidenceError(ValueError):
 
 
 STAGE3_ENGINE_BLOB = "22d2580db239dcca1fd60646b0cab7e9042fc130"
+IDENTITY_SESSION_ENGINE_BLOB = "9cce74dbcd614facd309557fcc929bb69dcd2f10"
 ENGINE_PATH = "src/responsibleai/db/engine.py"
 STAGE3_SECURITY_FIXTURE_PATH = "tests/test_m13s_security_regression.py"
 STAGE3_SECURITY_FIXTURE_BLOB = "41ca7e4ea8ec0f415b92443970d45abd34b901ea"
@@ -134,6 +135,54 @@ def blob_hash(data: bytes) -> str:
     return hashlib.sha1(
         b"blob " + str(len(data)).encode() + bytes([0]) + data, usedforsecurity=False
     ).hexdigest()
+
+
+def verify_identity_session_schema(repo: Path, before: bytes, candidate: bytes):
+    """Separate CTO-approved five-line successor; old approvals are unchanged."""
+    stage3 = historical_blob(repo, STAGE3_ENGINE_BLOB)
+    verify_stage3_schema(repo, before, stage3)
+    approved = historical_blob(repo, IDENTITY_SESSION_ENGINE_BLOB)
+    if blob_hash(candidate) != IDENTITY_SESSION_ENGINE_BLOB or candidate != approved:
+        raise FormattingEvidenceError("Unknown identity-session schema successor")
+    insertion = (
+        b"    UniqueConstraint(\n"
+        b'        "provider",\n'
+        b'        "provider_reference_id",\n'
+        b'        name="uq_identity_verification_provider_session",\n'
+        b"    ),\n"
+    )
+    anchor = b'    Index("idx_identity_verifications_provider_ref", "provider", "provider_reference_id"),\n'
+    if stage3.count(anchor) != 1 or candidate.count(insertion) != 1:
+        raise FormattingEvidenceError("Unique approved identity insertion required")
+    position = stage3.index(anchor) + len(anchor)
+    if candidate != stage3[:position] + insertion + stage3[position:]:
+        raise FormattingEvidenceError("Identity insertion changes historical source or placement")
+    if candidate[:position] + candidate[position + len(insertion) :] != stage3:
+        raise FormattingEvidenceError("Identity insertion cannot reconstruct Stage 3 bytes")
+    old, new = ast.parse(stage3, type_comments=True), ast.parse(candidate, type_comments=True)
+    tables = [
+        node
+        for node in new.body
+        if isinstance(node, ast.Assign)
+        and len(node.targets) == 1
+        and isinstance(node.targets[0], ast.Name)
+        and node.targets[0].id == "identity_verifications"
+    ]
+    expected = ast.parse(
+        'UniqueConstraint("provider", "provider_reference_id", name="uq_identity_verification_provider_session")',
+        mode="eval",
+    ).body
+    if len(tables) != 1 or not isinstance(tables[0].value, ast.Call):
+        raise FormattingEvidenceError("Exact identity table required")
+    table = tables[0].value
+    matches = [
+        index for index, node in enumerate(table.args) if ast.dump(node) == ast.dump(expected)
+    ]
+    if len(matches) != 1 or matches[0] != len(table.args) - 1:
+        raise FormattingEvidenceError("Exact single identity constraint AST required")
+    del table.args[matches[0]]
+    if ast.dump(new) != ast.dump(old):
+        raise FormattingEvidenceError("Identity successor changes other executable AST")
 
 
 def verify_stage3_security_fixture(repo: Path, before: bytes, candidate: bytes):
@@ -255,7 +304,10 @@ def verify_repository(repo: Path):
         except (OSError, subprocess.SubprocessError) as exc:
             raise FormattingEvidenceError(f"Missing original/candidate evidence: {path}") from exc
         if path == ENGINE_PATH:
-            verify_stage3_schema(repo, before, after)
+            if blob_hash(after) == STAGE3_ENGINE_BLOB:
+                verify_stage3_schema(repo, before, after)
+            else:
+                verify_identity_session_schema(repo, before, after)
         elif path == STAGE3_SECURITY_FIXTURE_PATH:
             verify_stage3_security_fixture(repo, before, after)
         elif path == STAGE3_ROOT_FIXTURE_PATH:
@@ -265,6 +317,8 @@ def verify_repository(repo: Path):
         verified[path] = {"original": expected[0], "revised": expected[1]}
         if path == ENGINE_PATH:
             verified[path]["stage3"] = STAGE3_ENGINE_BLOB
+            if blob_hash(after) == IDENTITY_SESSION_ENGINE_BLOB:
+                verified[path]["identity_session_successor"] = IDENTITY_SESSION_ENGINE_BLOB
         elif path == STAGE3_SECURITY_FIXTURE_PATH:
             verified[path]["stage3_fixture"] = STAGE3_SECURITY_FIXTURE_BLOB
         elif path == STAGE3_ROOT_FIXTURE_PATH:
