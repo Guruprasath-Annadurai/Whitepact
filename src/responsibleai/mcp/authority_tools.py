@@ -397,7 +397,11 @@ def _validate_arguments(name: str, arguments: dict[str, Any]) -> dict[str, Any] 
         if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= MAX_PAGE_SIZE:
             return _error("invalid_arguments", f"limit must be an integer 1-{MAX_PAGE_SIZE}.")
         cursor = arguments.get("cursor", "0")
-        if not isinstance(cursor, str) or not cursor.isdigit() or int(cursor) > MAX_CURSOR:
+        if (
+            not isinstance(cursor, str)
+            or not re.fullmatch(r"[0-9]{1,8}", cursor)
+            or int(cursor) > MAX_CURSOR
+        ):
             return _error("invalid_arguments", "cursor is not valid.")
     elif name == VERIFY_EVIDENCE:
         expected = arguments.get("expected_head_hash")
