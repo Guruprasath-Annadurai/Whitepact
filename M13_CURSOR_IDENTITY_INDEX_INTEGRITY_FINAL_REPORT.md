@@ -1,5 +1,7 @@
 # M13 identity index integrity
 
+Repair SHA: `202db0b24ac5ea15c1d6009df3e0771741b964d8` on `cursor/m13-identity-trust-boundary-099e`. PR https://github.com/Guruprasath-Annadurai/Whitepact/pull/235.
+
 ## Original failure
 
 Codex PR #236, commit `abdcef3d441b58968b9ac5eb05ed0b07b0bb2eea`, hosted run https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/40556236572.
