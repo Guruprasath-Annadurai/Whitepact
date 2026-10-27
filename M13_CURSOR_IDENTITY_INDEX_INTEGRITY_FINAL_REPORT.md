@@ -42,6 +42,17 @@ CPython 3.12.3 and 3.11.11 each ran 23 tests, all passed:
 
 `ruff check` on the changed Python files passed.
 
+## Hosted qualification queued
+
+These runs were queued at 28 Oct 2026, 12:21 AM IST for `a463e8b7`, which contains repair `202db0b24ac5ea15c1d6009df3e0771741b964d8`:
+
+- I1 https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/40563834113
+- Product https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/40563834097
+- Sovereign https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/40563834175
+- Absolute Runtime https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/40563834092
+
+They were still running when this note was written. Absolute Runtime's unit job is still expected to fail on the untouched Codex recovery gate (`Verified offline operator recovery session required`). I1's historical DCO denial and the blocked customer journey (exit 2) are also unchanged.
+
 ## Independent retest
 
 Please re-run `tests/test_codex_m13_schema_index_contract.py` on Python 3.11 and 3.12 against PostgreSQL 16, on the repair SHA below, without changing the assertions. A same-named non-unique, wrong-column, or partial index must still leave both conflicting rows stored and must still refuse startup.
