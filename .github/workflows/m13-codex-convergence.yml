@@ -5,6 +5,8 @@ on:
     paths:
       - 'src/responsibleai/mcp/authority_tools.py'
       - 'tests/test_codex_m13_*.py'
+      - 'scripts/engineering/m13_approved_formatting.py'
+      - 'tests/test_stage3_identity_schema_provenance.py'
       - '.github/workflows/m13-codex-convergence.yml'
   workflow_dispatch:
 
@@ -53,6 +55,7 @@ jobs:
           ruff check src/responsibleai/mcp/authority_tools.py tests/test_codex_m13_*.py
           ruff format --check src/responsibleai/mcp/authority_tools.py tests/test_codex_m13_*.py
           python scripts/engineering/m13_approved_formatting.py
+          python -m pytest -o addopts='' tests/test_stage3_identity_schema_provenance.py tests/test_m13_approved_formatting.py --junitxml=/tmp/provenance.xml --tb=short -ra
           python scripts/check_pinned_actions.py
           python scripts/manage_license_headers.py --check
       - name: Real PostgreSQL and MCP contracts
@@ -67,5 +70,6 @@ jobs:
           name: codex-convergence-${{ matrix.python }}-${{ github.event.pull_request.head.sha || github.sha }}
           path: |
             /tmp/convergence-source.txt
+            /tmp/provenance.xml
             /tmp/convergence.xml
             /tmp/convergence-coverage.json
