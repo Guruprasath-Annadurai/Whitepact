@@ -51,6 +51,15 @@ PostgreSQL 16.15. CPython 3.12.3 and 3.11.11. `WHITEPACT_TEST_PG_ADMIN_URL=postg
 - `ruff check src/ tests/ sdk/python/` passed.
 - Docker is not available in this environment, so the native container workflows were not repeated locally. Hosted sovereign and I1 are the Docker-backed runs for the pushed SHA.
 
+## Hosted verification
+
+Verified on `3369a127945546e388e90a669f4a93600472b1b2`, which contains repair `71113c57c6b2dd63ac525c7cd8949c2a1ee26219` plus the SHA line in this report. Times are 27 Oct 2026, 10:43 PM to 11:07 PM IST.
+
+- Sovereign https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/40548467194 completed success. `development-qualification` passed on Python 3.11 and 3.12. The previous `0067` startup refusal is gone.
+- Product https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/40548467104 completed success, including `contracts (3.11)`. The browser `SystemExit: 3` and teardown cancellation did not recur.
+- I1 https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/40548467038 failed only `introduced-dco` (historical commit `39619c4b` still unsigned) and `real-customer-journey` (exit 2). The browser/provisioning step in that job succeeded. Exit 2 is the unchanged blocked customer journey, not a schema refusal.
+- Absolute Runtime https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/40548466955 still fails `unit` on 3.11 and 3.12 with `RecoveryAuthorizationError: Verified offline operator recovery session required` in `scripts/engineering/reproducers/test_m13_fortress_restore_independent.py`. Native 3.11 and 3.12 passed. Those recovery files were not edited. This is the existing Codex recovery gate, not the schema pin.
+
 ## Antigravity handoff
 
 Review `src/responsibleai/db/identity_session_uniqueness.py`, the post-upgrade call in `src/responsibleai/db/migrate.py`, and the startup call in `src/responsibleai/db/runtime_compatibility.py`. Confirm head is `0067`, the unique index exists after upgrade, duplicate sessions survive a refused index build, and a database stamped `0068` still cannot start. Do not treat a green schema gate as identity-provider enrollment. The canonical customer journey remains blocked until a real approved provider exists. Argon PR #234 was not edited.
