@@ -17,7 +17,6 @@ from sqlalchemy import and_, func, insert, select, update
 from responsibleai.db.engine import (
     authority_recovery_requests,
     authority_step_up_challenges,
-    create_engine,
     governance_root_authority_records,
     organizations,
     trust_fabric_identifiers,
@@ -48,7 +47,7 @@ from responsibleai.enterprise.errors import (
     ORG_SUSPENDED,
     EnterpriseError,
 )
-from responsibleai.enterprise.service import Actor, EnterpriseIAM
+from responsibleai.enterprise.service import Actor
 from responsibleai.rbac.models import GovernanceStatus, Role
 from responsibleai.trust_fabric.directory import normalize_identifier
 from responsibleai.trust_fabric.enums import (
@@ -59,6 +58,18 @@ from responsibleai.trust_fabric.enums import (
 )
 from tests.m13_owner_qualification import qualify_owner, root_completion_assertion
 from tests.pg_test_url import isolated_pg_url
+from tests.protected_component_tenant import (
+    authorized_workspace,
+    authorized_workspace_then_revoke_email_verification,
+    bind_component_controller_scope,
+    create_controlled_engine,
+)
+
+
+@pytest.fixture(autouse=True)
+async def _component_controller_scope(tmp_path, monkeypatch):
+    async with bind_component_controller_scope(tmp_path, monkeypatch):
+        yield
 
 
 def _gen_ed25519():
@@ -78,10 +89,9 @@ async def test_root_bootstrap_disabled_and_suspended_accounts_rejected():
         ini = _find_alembic_ini()
         assert ini is not None
         await _run_alembic(ini, _migration_env(url), "upgrade", "head")
-        engine = create_engine(url)
+        engine = await create_controlled_engine(url)
 
         web_repo = WebIdentityRepository(engine)
-        iam = EnterpriseIAM(engine)
         svc = CustomerAuthorityService(engine)
 
         suffix = uuid.uuid4().hex[:8]
@@ -91,8 +101,9 @@ async def test_root_bootstrap_disabled_and_suspended_accounts_rejected():
             "Disabled Owner", f"disabled.{suffix}@example.com", "Password123!@#"
         )
         await web_repo.verify_email(token)
-        org = await iam.create_workspace(
-            actor_user_id=uid,
+        org = await authorized_workspace(
+            engine,
+            uid,
             name=f"Disabled Org {suffix}",
             slug=f"disabled-org-{suffix}",
             kind="ORGANIZATION",
@@ -161,10 +172,9 @@ async def test_root_bootstrap_revoked_principal_rejected():
         ini = _find_alembic_ini()
         assert ini is not None
         await _run_alembic(ini, _migration_env(url), "upgrade", "head")
-        engine = create_engine(url)
+        engine = await create_controlled_engine(url)
 
         web_repo = WebIdentityRepository(engine)
-        iam = EnterpriseIAM(engine)
         svc = CustomerAuthorityService(engine)
 
         suffix = uuid.uuid4().hex[:8]
@@ -172,8 +182,9 @@ async def test_root_bootstrap_revoked_principal_rejected():
             "Revoked Principal", f"revoked.{suffix}@example.com", "Password123!@#"
         )
         await web_repo.verify_email(token)
-        org = await iam.create_workspace(
-            actor_user_id=uid,
+        org = await authorized_workspace(
+            engine,
+            uid,
             name=f"Revoked Org {suffix}",
             slug=f"revoked-org-{suffix}",
             kind="ORGANIZATION",
@@ -228,10 +239,9 @@ async def test_root_bootstrap_pending_quorum_recovery_blocks_out_of_band_bootstr
         ini = _find_alembic_ini()
         assert ini is not None
         await _run_alembic(ini, _migration_env(url), "upgrade", "head")
-        engine = create_engine(url)
+        engine = await create_controlled_engine(url)
 
         web_repo = WebIdentityRepository(engine)
-        iam = EnterpriseIAM(engine)
         svc = CustomerAuthorityService(engine)
 
         suffix = uuid.uuid4().hex[:8]
@@ -239,8 +249,9 @@ async def test_root_bootstrap_pending_quorum_recovery_blocks_out_of_band_bootstr
             "Recovery Owner", f"recovery.{suffix}@example.com", "Password123!@#"
         )
         await web_repo.verify_email(token)
-        org = await iam.create_workspace(
-            actor_user_id=uid,
+        org = await authorized_workspace(
+            engine,
+            uid,
             name=f"Recovery Org {suffix}",
             slug=f"recovery-org-{suffix}",
             kind="ORGANIZATION",
@@ -307,10 +318,9 @@ async def test_root_bootstrap_webauthn_adversarial_paths():
         ini = _find_alembic_ini()
         assert ini is not None
         await _run_alembic(ini, _migration_env(url), "upgrade", "head")
-        engine = create_engine(url)
+        engine = await create_controlled_engine(url)
 
         web_repo = WebIdentityRepository(engine)
-        iam = EnterpriseIAM(engine)
         svc = CustomerAuthorityService(engine)
 
         suffix = uuid.uuid4().hex[:8]
@@ -318,8 +328,9 @@ async def test_root_bootstrap_webauthn_adversarial_paths():
             "WebAuthn Owner", f"webauthn.{suffix}@example.com", "Password123!@#"
         )
         await web_repo.verify_email(token)
-        org = await iam.create_workspace(
-            actor_user_id=uid,
+        org = await authorized_workspace(
+            engine,
+            uid,
             name=f"WebAuthn Org {suffix}",
             slug=f"webauthn-org-{suffix}",
             kind="ORGANIZATION",
@@ -480,10 +491,9 @@ async def test_root_bootstrap_concurrent_race_serializes_cleanly():
         ini = _find_alembic_ini()
         assert ini is not None
         await _run_alembic(ini, _migration_env(url), "upgrade", "head")
-        engine = create_engine(url)
+        engine = await create_controlled_engine(url)
 
         web_repo = WebIdentityRepository(engine)
-        iam = EnterpriseIAM(engine)
         svc = CustomerAuthorityService(engine)
 
         suffix = uuid.uuid4().hex[:8]
@@ -491,8 +501,9 @@ async def test_root_bootstrap_concurrent_race_serializes_cleanly():
             "Race Owner", f"race.{suffix}@example.com", "Password123!@#"
         )
         await web_repo.verify_email(token)
-        org = await iam.create_workspace(
-            actor_user_id=uid,
+        org = await authorized_workspace(
+            engine,
+            uid,
             name=f"Race Org {suffix}",
             slug=f"race-org-{suffix}",
             kind="ORGANIZATION",
@@ -584,10 +595,9 @@ async def test_root_bootstrap_genuine_unseeded_customer_enrollment_and_bridging(
         ini = _find_alembic_ini()
         assert ini is not None
         await _run_alembic(ini, _migration_env(url), "upgrade", "head")
-        engine = create_engine(url)
+        engine = await create_controlled_engine(url)
 
         web_repo = WebIdentityRepository(engine)
-        iam = EnterpriseIAM(engine)
         svc = CustomerAuthorityService(engine)
 
         suffix = uuid.uuid4().hex[:8]
@@ -596,8 +606,9 @@ async def test_root_bootstrap_genuine_unseeded_customer_enrollment_and_bridging(
         uid, token = await web_repo.register(full_name, email, "Password123!@#")
         await web_repo.verify_email(token)
 
-        org = await iam.create_workspace(
-            actor_user_id=uid,
+        org = await authorized_workspace(
+            engine,
+            uid,
             name=f"Genuine Org {suffix}",
             slug=f"genuine-org-{suffix}",
             kind="ORGANIZATION",
@@ -727,10 +738,9 @@ async def test_root_bootstrap_cross_tenant_isolation_strictly_enforced():
         ini = _find_alembic_ini()
         assert ini is not None
         await _run_alembic(ini, _migration_env(url), "upgrade", "head")
-        engine = create_engine(url)
+        engine = await create_controlled_engine(url)
 
         web_repo = WebIdentityRepository(engine)
-        iam = EnterpriseIAM(engine)
         svc = CustomerAuthorityService(engine)
 
         suffix = uuid.uuid4().hex[:8]
@@ -739,8 +749,9 @@ async def test_root_bootstrap_cross_tenant_isolation_strictly_enforced():
             "Owner A", f"ownera.{suffix}@example.com", "Password123!@#"
         )
         await web_repo.verify_email(token_a)
-        org_a = await iam.create_workspace(
-            actor_user_id=uid_a,
+        org_a = await authorized_workspace(
+            engine,
+            uid_a,
             name=f"Org A {suffix}",
             slug=f"org-a-{suffix}",
             kind="ORGANIZATION",
@@ -752,8 +763,9 @@ async def test_root_bootstrap_cross_tenant_isolation_strictly_enforced():
             "Owner B", f"ownerb.{suffix}@example.com", "Password123!@#"
         )
         await web_repo.verify_email(token_b)
-        org_b = await iam.create_workspace(
-            actor_user_id=uid_b,
+        org_b = await authorized_workspace(
+            engine,
+            uid_b,
             name=f"Org B {suffix}",
             slug=f"org-b-{suffix}",
             kind="ORGANIZATION",
@@ -798,10 +810,9 @@ async def test_root_bootstrap_identifier_collision_fails_closed():
         ini = _find_alembic_ini()
         assert ini is not None
         await _run_alembic(ini, _migration_env(url), "upgrade", "head")
-        engine = create_engine(url)
+        engine = await create_controlled_engine(url)
 
         web_repo = WebIdentityRepository(engine)
-        iam = EnterpriseIAM(engine)
         svc = CustomerAuthorityService(engine)
 
         suffix = uuid.uuid4().hex[:8]
@@ -809,8 +820,9 @@ async def test_root_bootstrap_identifier_collision_fails_closed():
         uid, token = await web_repo.register("Legit Owner", email, "Password123!@#")
         await web_repo.verify_email(token)
 
-        org = await iam.create_workspace(
-            actor_user_id=uid,
+        org = await authorized_workspace(
+            engine,
+            uid,
             name=f"Col Org {suffix}",
             slug=f"col-org-{suffix}",
             kind="ORGANIZATION",
@@ -897,10 +909,9 @@ async def test_root_bootstrap_disabled_or_suspended_organization_fails_closed():
         ini = _find_alembic_ini()
         assert ini is not None
         await _run_alembic(ini, _migration_env(url), "upgrade", "head")
-        engine = create_engine(url)
+        engine = await create_controlled_engine(url)
 
         web_repo = WebIdentityRepository(engine)
-        iam = EnterpriseIAM(engine)
         svc = CustomerAuthorityService(engine)
 
         suffix = uuid.uuid4().hex[:8]
@@ -909,8 +920,9 @@ async def test_root_bootstrap_disabled_or_suspended_organization_fails_closed():
         )
         await web_repo.verify_email(token)
 
-        org = await iam.create_workspace(
-            actor_user_id=uid,
+        org = await authorized_workspace(
+            engine,
+            uid,
             name=f"Org Disabled {suffix}",
             slug=f"org-disabled-{suffix}",
             kind="ORGANIZATION",
@@ -958,10 +970,9 @@ async def test_root_bootstrap_revoked_membership_or_non_owner_fails_closed():
         ini = _find_alembic_ini()
         assert ini is not None
         await _run_alembic(ini, _migration_env(url), "upgrade", "head")
-        engine = create_engine(url)
+        engine = await create_controlled_engine(url)
 
         web_repo = WebIdentityRepository(engine)
-        iam = EnterpriseIAM(engine)
         svc = CustomerAuthorityService(engine)
 
         suffix = uuid.uuid4().hex[:8]
@@ -970,8 +981,9 @@ async def test_root_bootstrap_revoked_membership_or_non_owner_fails_closed():
         )
         await web_repo.verify_email(token)
 
-        org = await iam.create_workspace(
-            actor_user_id=uid,
+        org = await authorized_workspace(
+            engine,
+            uid,
             name=f"Member Org {suffix}",
             slug=f"member-org-{suffix}",
             kind="ORGANIZATION",
@@ -1024,10 +1036,9 @@ async def test_root_bootstrap_transaction_rollback_preserves_clean_state():
         ini = _find_alembic_ini()
         assert ini is not None
         await _run_alembic(ini, _migration_env(url), "upgrade", "head")
-        engine = create_engine(url)
+        engine = await create_controlled_engine(url)
 
         web_repo = WebIdentityRepository(engine)
-        iam = EnterpriseIAM(engine)
         svc = CustomerAuthorityService(engine)
 
         suffix = uuid.uuid4().hex[:8]
@@ -1036,8 +1047,9 @@ async def test_root_bootstrap_transaction_rollback_preserves_clean_state():
         )
         await web_repo.verify_email(token)
 
-        org = await iam.create_workspace(
-            actor_user_id=uid,
+        org = await authorized_workspace(
+            engine,
+            uid,
             name=f"Rollback Org {suffix}",
             slug=f"rollback-org-{suffix}",
             kind="ORGANIZATION",
@@ -1107,18 +1119,18 @@ async def test_root_bootstrap_identifier_recycling_after_revocation():
         ini = _find_alembic_ini()
         assert ini is not None
         await _run_alembic(ini, _migration_env(url), "upgrade", "head")
-        engine = create_engine(url)
+        engine = await create_controlled_engine(url)
 
         web_repo = WebIdentityRepository(engine)
-        iam = EnterpriseIAM(engine)
         svc = CustomerAuthorityService(engine)
 
         suffix = uuid.uuid4().hex[:8]
         shared_email = f"shared.{suffix}@example.com"
         old_uid, old_token = await web_repo.register("Old Owner", shared_email, "Password123!@#")
         await web_repo.verify_email(old_token)
-        old_workspace = await iam.create_workspace(
-            actor_user_id=old_uid,
+        old_workspace = await authorized_workspace(
+            engine,
+            old_uid,
             name=f"Old workspace {suffix}",
             slug=f"old-workspace-{suffix}",
             kind="ORGANIZATION",
@@ -1132,8 +1144,9 @@ async def test_root_bootstrap_identifier_recycling_after_revocation():
         new_uid, new_token = await web_repo.register("New Owner", shared_email, "Password123!@#")
         await web_repo.verify_email(new_token)
 
-        org = await iam.create_workspace(
-            actor_user_id=new_uid,
+        org = await authorized_workspace(
+            engine,
+            new_uid,
             name=f"Recycle Org {suffix}",
             slug=f"recycle-org-{suffix}",
             kind="ORGANIZATION",
@@ -1276,19 +1289,20 @@ async def test_root_bootstrap_unverified_email_does_not_imply_external_identity_
         ini = _find_alembic_ini()
         assert ini is not None
         await _run_alembic(ini, _migration_env(url), "upgrade", "head")
-        engine = create_engine(url)
+        engine = await create_controlled_engine(url)
 
         web_repo = WebIdentityRepository(engine)
-        iam = EnterpriseIAM(engine)
         svc = CustomerAuthorityService(engine)
 
         suffix = uuid.uuid4().hex[:8]
         raw_email = f"unverified.{suffix}@example.com"
         # User registers but DOES NOT verify email (email_verified_at is NULL)
-        uid, _ = await web_repo.register("Unverified User", raw_email, "Password123!@#")
+        uid, verify_token = await web_repo.register("Unverified User", raw_email, "Password123!@#")
 
-        org = await iam.create_workspace(
-            actor_user_id=uid,
+        org = await authorized_workspace_then_revoke_email_verification(
+            engine,
+            uid,
+            verify_token,
             name=f"Unverified Org {suffix}",
             slug=f"unverified-org-{suffix}",
             kind="ORGANIZATION",
@@ -1370,19 +1384,20 @@ async def test_root_bootstrap_forged_or_stale_identity_qualifications_rejected()
         ini = _find_alembic_ini()
         assert ini is not None
         await _run_alembic(ini, _migration_env(url), "upgrade", "head")
-        engine = create_engine(url)
+        engine = await create_controlled_engine(url)
 
         web_repo = WebIdentityRepository(engine)
-        iam = EnterpriseIAM(engine)
         svc = CustomerAuthorityService(engine)
 
         suffix = uuid.uuid4().hex[:8]
-        uid, _ = await web_repo.register(
+        uid, verify_token = await web_repo.register(
             "Spoofing User", f"spoof.{suffix}@example.com", "Password123!@#"
         )
 
-        org = await iam.create_workspace(
-            actor_user_id=uid,
+        org = await authorized_workspace_then_revoke_email_verification(
+            engine,
+            uid,
+            verify_token,
             name=f"Spoof Org {suffix}",
             slug=f"spoof-org-{suffix}",
             kind="ORGANIZATION",
@@ -1414,10 +1429,9 @@ async def test_root_bootstrap_pending_principal_promotion():
         ini = _find_alembic_ini()
         assert ini is not None
         await _run_alembic(ini, _migration_env(url), "upgrade", "head")
-        engine = create_engine(url)
+        engine = await create_controlled_engine(url)
 
         web_repo = WebIdentityRepository(engine)
-        iam = EnterpriseIAM(engine)
         svc = CustomerAuthorityService(engine)
 
         suffix = uuid.uuid4().hex[:8]
@@ -1425,8 +1439,9 @@ async def test_root_bootstrap_pending_principal_promotion():
         uid, token = await web_repo.register("Pending Owner", email, "Password123!@#")
         await web_repo.verify_email(token)
 
-        org = await iam.create_workspace(
-            actor_user_id=uid,
+        org = await authorized_workspace(
+            engine,
+            uid,
             name=f"Pending Org {suffix}",
             slug=f"pending-org-{suffix}",
             kind="ORGANIZATION",
@@ -1503,10 +1518,9 @@ async def test_root_bootstrap_unicode_domain_idna_consistency_and_collision():
         ini = _find_alembic_ini()
         assert ini is not None
         await _run_alembic(ini, _migration_env(url), "upgrade", "head")
-        engine = create_engine(url)
+        engine = await create_controlled_engine(url)
 
         web_repo = WebIdentityRepository(engine)
-        iam = EnterpriseIAM(engine)
         svc = CustomerAuthorityService(engine)
 
         suffix = uuid.uuid4().hex[:8]
@@ -1516,8 +1530,9 @@ async def test_root_bootstrap_unicode_domain_idna_consistency_and_collision():
         uid, token = await web_repo.register("Munich Owner", unicode_email, "Password123!@#")
         await web_repo.verify_email(token)
 
-        org = await iam.create_workspace(
-            actor_user_id=uid,
+        org = await authorized_workspace(
+            engine,
+            uid,
             name=f"Munich Org {suffix}",
             slug=f"munich-org-{suffix}",
             kind="ORGANIZATION",
