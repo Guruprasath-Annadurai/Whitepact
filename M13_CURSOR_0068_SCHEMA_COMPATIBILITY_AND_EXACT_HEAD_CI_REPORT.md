@@ -1,6 +1,6 @@
 # M13 schema 0068 compatibility and exact-head CI
 
-Inspected head: `3b941ef15c41d6f2c0234ee6d5c16ff8020b8981` (report-only commit on implementation `ae979efa289725a9aa84af84b2b8d8ba02f8c4e5`).
+Repair commit: `71113c57c6b2dd63ac525c7cd8949c2a1ee26219`, continued from report head `3b941ef15c41d6f2c0234ee6d5c16ff8020b8981` and implementation `ae979efa289725a9aa84af84b2b8d8ba02f8c4e5`.
 
 ## Root cause
 
