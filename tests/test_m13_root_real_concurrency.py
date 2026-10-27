@@ -8,7 +8,7 @@ import uuid
 import pytest
 from sqlalchemy import func, select
 
-from responsibleai.db.engine import create_engine, governance_root_authority_records
+from responsibleai.db.engine import governance_root_authority_records
 from responsibleai.db.migrate import _find_alembic_ini, _migration_env, _run_alembic
 from responsibleai.db.web_identity_repository import WebIdentityRepository
 from responsibleai.enterprise.authority.errors import (
@@ -19,11 +19,22 @@ from responsibleai.enterprise.authority.errors import (
 )
 from responsibleai.enterprise.authority.service import CustomerAuthorityService
 from responsibleai.enterprise.errors import EnterpriseError
-from responsibleai.enterprise.service import Actor, EnterpriseIAM
+from responsibleai.enterprise.service import Actor
 from responsibleai.rbac.models import Role
 from tests.m13_owner_qualification import qualify_owner, root_completion_assertion
 from tests.pg_test_url import isolated_pg_url
+from tests.protected_component_tenant import (
+    authorized_workspace,
+    bind_component_controller_scope,
+    create_controlled_engine,
+)
 from tests.test_m12fs_root_hardening import _fresh_root_proof
+
+
+@pytest.fixture(autouse=True)
+async def _component_controller_scope(tmp_path, monkeypatch):
+    async with bind_component_controller_scope(tmp_path, monkeypatch):
+        yield
 
 
 async def _complete_after(release, service, actor, parameters):
@@ -35,15 +46,16 @@ async def _complete_after(release, service, actor, parameters):
 async def test_independent_operation_bound_completions_commit_only_one_root():
     async for url in isolated_pg_url("wp_convergence_root_race"):
         await _run_alembic(_find_alembic_ini(), _migration_env(url), "upgrade", "head")
-        engine = create_engine(url)
+        engine = await create_controlled_engine(url)
         try:
             identities = WebIdentityRepository(engine)
             user, token = await identities.register(
                 "Concurrent owner", f"concurrent-{uuid.uuid4().hex}@example.com", "Local-Strong-42!"
             )
             await identities.verify_email(token)
-            org = await EnterpriseIAM(engine).create_workspace(
-                actor_user_id=user,
+            org = await authorized_workspace(
+                engine,
+                user,
                 name="Concurrent root",
                 slug=uuid.uuid4().hex,
                 kind="ORGANIZATION",
