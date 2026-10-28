@@ -3,7 +3,7 @@
 """Protected HTTP replacement, with reference identity and scoped test authority.
 
 Requires real disposable PG16/controller fixtures; not canonical identity
-acceptance. Two tests mock isolation; the third requires actual Docker.
+acceptance. Three tests mock isolation; one requires actual Docker.
 No production authority or bypass is introduced.
 """
 
@@ -169,6 +169,36 @@ async def test_fresh_request_uses_protected_http_and_requires_new_approval(repla
         outcome = await dashboard._outcome_repo.get_for_org(evidence.evidence_id, org_id)
         assert outcome.status.value == ("BLOCKED" if identifier == original_id else "SUCCEEDED")
     assert (await _execute(browser, original_id)).status_code == 409
+
+
+async def test_outcome_write_failure_returns_unknown_http_without_fabricated_record(
+    replacement_customer, monkeypatch
+):
+    """Actual PG/HTTP accounting failure, simulated isolation refusal and failed write."""
+    browser, sdk, org_id, _, backend = replacement_customer
+    pending = await sdk.call_tool("rai_health", purpose=PURPOSE)
+    assert pending.requires_approval and pending.approval_id
+    approved = await _resolve(browser, pending.approval_id, "APPROVED")
+    assert approved.status_code == 200 and approved.json()["status"] == "APPROVED"
+    failed_write = AsyncMock(side_effect=OSError("/srv/private credential=must-not-leak"))
+    monkeypatch.setattr(dashboard._outcome_repo, "record", failed_write)
+    response = await _execute(browser, pending.approval_id)
+    assert response.status_code == 503
+    assert response.json()["code"] == "ISOLATION_RUNTIME_UNAVAILABLE"
+    assert response.json()["execution_status"] == "UNKNOWN"
+    assert "Reconcile" in response.json()["message"]
+    for diagnostic in ("/srv/private", "credential", "must-not-leak", "private host"):
+        assert diagnostic not in response.text
+    failed_write.assert_awaited_once()
+    backend.execute.assert_not_awaited()
+    saved = await ApprovalRepository(dashboard._db_engine).get(pending.approval_id)
+    assert saved.status.value == "CONSUMED" and saved.organization_id == org_id
+    assert await nonce_count(org_id) == 0
+    evidence = await dashboard._evidence_repo.get_latest_for_approval(org_id, pending.approval_id)
+    assert evidence is not None
+    # Query the real database through the unchanged read path: no outcome was saved.
+    assert await dashboard._outcome_repo.get_for_org(evidence.evidence_id, org_id) is None
+    assert (await _execute(browser, pending.approval_id)).status_code == 409
 
 
 async def test_replacement_rejects_revoked_credential_without_new_approval(replacement_customer):
