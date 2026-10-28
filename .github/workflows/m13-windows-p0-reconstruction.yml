@@ -10,6 +10,8 @@ on:
       - 'src/responsibleai/dashboard/app.py'
       - 'tests/test_m13_windows_isolation_recovery.py'
       - 'tests/test_m13_execution_isolation_recovery.py'
+      - 'tests/test_m13_option_a_customer_recovery.py'
+      - 'docs/engineering/m13-option-a/**'
       - '.github/workflows/m13-windows-p0-reconstruction.yml'
   workflow_dispatch:
 
@@ -66,10 +68,10 @@ jobs:
         run: |
           git diff --check
           python scripts/check_pinned_actions.py
-          ruff check tests/test_m13_windows_isolation_recovery.py tests/test_m13_execution_isolation_recovery.py src/responsibleai/isolation src/responsibleai/governance/execution.py src/responsibleai/mcp/governance_integration.py src/responsibleai/dashboard/app.py
+          ruff check tests/test_m13_windows_isolation_recovery.py tests/test_m13_execution_isolation_recovery.py tests/test_m13_option_a_customer_recovery.py src/responsibleai/isolation src/responsibleai/governance/execution.py src/responsibleai/mcp/governance_integration.py src/responsibleai/dashboard/app.py
       - name: Qualify state transitions with PostgreSQL 16
         run: |
-          python scripts/engineering/m13_pg16_test_runner.py tests/test_m13_windows_isolation_recovery.py tests/test_m13_execution_isolation_recovery.py tests/test_approval_execution_binding.py --junitxml=/tmp/p0-tests.xml --cov-report=json:/tmp/p0-coverage.json --cov-report=term --tb=short -ra
+          python scripts/engineering/m13_pg16_test_runner.py tests/test_m13_windows_isolation_recovery.py tests/test_m13_execution_isolation_recovery.py tests/test_m13_option_a_customer_recovery.py tests/test_approval_execution_binding.py --junitxml=/tmp/p0-tests.xml --cov-report=json:/tmp/p0-coverage.json --cov-report=term --tb=short -ra
           python -c 'import xml.etree.ElementTree as E; r=E.parse("/tmp/p0-tests.xml"); assert not any(list(r.iter(k)) for k in ("skipped", "failure", "error"))'
       - name: Retain exact-source evidence
         if: always()
