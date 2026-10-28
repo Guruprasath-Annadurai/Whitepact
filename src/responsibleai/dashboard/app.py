@@ -843,6 +843,32 @@ app.add_exception_handler(Exception, global_exception_handler)
 app.add_exception_handler(HTTPException, http_exception_handler)  # type: ignore[arg-type]
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # type: ignore[arg-type]
 
+from responsibleai.isolation.errors import (  # noqa: E402
+    IsolationError,
+    IsolationExecutionUncertainError,
+    IsolationRuntimeUnavailableError,
+)
+
+
+@app.exception_handler(IsolationRuntimeUnavailableError)
+@app.exception_handler(IsolationExecutionUncertainError)
+async def isolation_unavailable_handler(request: Request, exc: IsolationError) -> JSONResponse:
+    """Expose no backend diagnostics, paths, arguments or credentials."""
+    before_admission = isinstance(exc, IsolationRuntimeUnavailableError)
+    return JSONResponse(
+        status_code=503,
+        content={
+            "code": "ISOLATION_RUNTIME_UNAVAILABLE",
+            "execution_status": "BLOCKED" if before_admission else "UNKNOWN",
+            "message": (
+                "Execution was blocked before admission. A fresh authorized request is required; "
+                "consumed approvals cannot be replayed."
+                if before_admission
+                else "Execution outcome is unknown. Reconcile before authorizing another action."
+            ),
+        },
+    )
+
 
 @app.exception_handler(TenantCreationDeniedError)
 async def tenant_creation_denied_handler(

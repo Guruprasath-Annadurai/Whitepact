@@ -314,10 +314,12 @@ class InternalToolExecutor:
         *,
         nonce_repo: ExecutionNonceRepository | None = None,
         broker: Any | None = None,
+        defer_runtime_initialization: bool = False,
     ) -> None:
         self._nonce_repo = nonce_repo
         self._broker: Any = broker
-        if broker is None:
+        self._defer_runtime_initialization = broker is None and defer_runtime_initialization
+        if broker is None and not self._defer_runtime_initialization:
             import os
 
             from responsibleai.isolation.mode import unisolated_execution_allowed
@@ -336,6 +338,26 @@ class InternalToolExecutor:
         from responsibleai.isolation.errors import IsolationError
         from responsibleai.isolation.mode import is_production
 
+        if getattr(self, "_defer_runtime_initialization", False):
+            import asyncio
+
+            from responsibleai.isolation.errors import (
+                IsolationBackendUnavailableError,
+                IsolationRuntimeUnavailableError,
+            )
+
+            _validate_authorization(authorization, action)
+            try:
+                initialized = await asyncio.to_thread(
+                    InternalToolExecutor, nonce_repo=self._nonce_repo
+                )
+            except IsolationBackendUnavailableError as exc:
+                raise IsolationRuntimeUnavailableError(
+                    "Isolation runtime is unavailable before execution admission."
+                ) from exc
+            self._broker = initialized._broker
+            self._defer_runtime_initialization = False
+
         # Reject a configuration that cannot execute safely before consuming
         # its single-use permit. This does not admit any execution path.
         if self._broker is None and is_production():
@@ -350,8 +372,6 @@ class InternalToolExecutor:
 
         await assert_current_restore_readiness_admitted()
 
-        await admit_execution(authorization, action, self._nonce_repo)
-
         from responsibleai.governance.synthetic_counter import SYNTHETIC_COUNTER_TOOL
         from responsibleai.isolation.mode import synthetic_host_tool_allowed
 
@@ -362,7 +382,42 @@ class InternalToolExecutor:
         )
 
         if self._broker is not None and not host_fixture:
-            return await self._broker.execute(authorization, action)
+            import asyncio
+
+            from responsibleai.isolation.errors import (
+                IsolationBackendUnavailableError,
+                IsolationFilesystemPermissionError,
+                IsolationRuntimeUnavailableError,
+            )
+
+            _validate_authorization(authorization, action)
+            # Injected trusted brokers may implement only execute; the canonical
+            # IsolationBroker always exposes preflight. Never dispatch in a probe.
+            probe = getattr(self._broker, "preflight", None)
+            if probe is not None:
+                try:
+                    await asyncio.to_thread(probe)
+                except (
+                    IsolationBackendUnavailableError,
+                    IsolationFilesystemPermissionError,
+                    OSError,
+                ) as exc:
+                    raise IsolationRuntimeUnavailableError(
+                        "Isolation runtime is unavailable before execution admission."
+                    ) from exc
+
+        await admit_execution(authorization, action, self._nonce_repo)
+
+        if self._broker is not None and not host_fixture:
+            from responsibleai.isolation.errors import IsolationExecutionUncertainError
+
+            try:
+                return await self._broker.execute(authorization, action)
+            except (IsolationError, OSError) as exc:
+                # Even a preflight-shaped exception after admission is uncertain.
+                raise IsolationExecutionUncertainError(
+                    "Isolated execution outcome is unknown; reconciliation required."
+                ) from exc
 
         from responsibleai.isolation.mode import (
             UNISOLATED_EXECUTION_ENV,

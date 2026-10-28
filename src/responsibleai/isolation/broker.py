@@ -126,3 +126,11 @@ class IsolationBroker:
             )
 
         return outcome.result_payload
+
+    def preflight(self) -> None:
+        """Check the selected backend without dispatch or authorization mutation."""
+        probe = getattr(self.backend, "preflight", None)
+        if probe is not None:
+            probe()
+        elif not self.backend.is_available():
+            raise IsolationBackendUnavailableError("Isolation backend is unavailable.")

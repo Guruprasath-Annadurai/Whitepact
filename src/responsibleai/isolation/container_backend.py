@@ -37,6 +37,7 @@ from responsibleai.isolation.backend import IsolationBackend
 from responsibleai.isolation.environment import build_isolated_environment
 from responsibleai.isolation.errors import (
     IsolationBackendUnavailableError,
+    IsolationFilesystemPermissionError,
     IsolationPolicyViolationError,
 )
 from responsibleai.isolation.filesystem import EphemeralWorkspace, grant_container_read
@@ -260,6 +261,27 @@ class DockerContainerBackend(IsolationBackend):
             return False
         except Exception:
             return False
+
+    def preflight(self) -> None:
+        """Probe prerequisites without creating or starting a container.
+
+        This is transient capability evidence, not a reservation. Execution
+        retains its own checks and may still fail after nonce admission.
+        Exercise the real ACL/chown paths on disposable private host files.
+        """
+        if not self.is_available():
+            raise IsolationBackendUnavailableError("Docker isolation is unavailable.")
+        if os.name != "posix":
+            raise IsolationFilesystemPermissionError(
+                "A compatible POSIX isolation host is required."
+            )
+        runner = self._install_trusted_runner(self.trusted_runner_source())
+        try:
+            with EphemeralWorkspace("preflight", "runtime") as workspace:
+                workspace.populate({"probe": "capability check"})
+                workspace.prepare_for_container()
+        finally:
+            shutil.rmtree(runner.parent, ignore_errors=True)
 
     def _remove_containers(
         self,

@@ -39,6 +39,7 @@ now exactly one place in the governed path that invokes
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from dataclasses import dataclass, replace
@@ -88,7 +89,7 @@ from responsibleai.governance.outcome import OutcomeStatus, build_outcome_record
 from responsibleai.integrations.client import TrustClient
 from responsibleai.rbac.models import GovernanceStatus, OrgContext
 
-_executor = InternalToolExecutor()
+_executor = InternalToolExecutor(defer_runtime_initialization=True)
 
 if TYPE_CHECKING:
     from responsibleai.db.execution_nonce_repository import ExecutionNonceRepository
@@ -605,20 +606,31 @@ async def apply_governance(
 
     assert authorization is not None
     executor = (
-        InternalToolExecutor(nonce_repo=services.nonce_repo)
+        InternalToolExecutor(nonce_repo=services.nonce_repo, defer_runtime_initialization=True)
         if services.nonce_repo is not None
         else _executor
     )
     try:
         result = await executor.execute(authorization, final_action)
-    except Exception:
-        await _record_outcome(
+    except (Exception, asyncio.CancelledError) as exc:
+        from responsibleai.isolation.errors import (
+            IsolationExecutionUncertainError,
+            IsolationRuntimeUnavailableError,
+        )
+
+        persisted = await _record_outcome(
             services,
             evidence.evidence_id,
             action.action_id,
-            OutcomeStatus.UNKNOWN,
+            OutcomeStatus.BLOCKED
+            if isinstance(exc, IsolationRuntimeUnavailableError)
+            else OutcomeStatus.UNKNOWN,
             organization_id=agent.organization_id,
         )
+        if isinstance(exc, IsolationRuntimeUnavailableError) and not persisted:
+            raise IsolationExecutionUncertainError(
+                "Execution accounting is incomplete; reconciliation required."
+            ) from exc
         raise
     status = _classify_execution_outcome(result)
     outcome_persisted = await _record_outcome(
@@ -845,7 +857,9 @@ async def resume_approval(
         executor: Any = UpstreamMCPExecutor(upstream_registry, nonce_repo=nonce_repo)
     else:
         executor = (
-            InternalToolExecutor(nonce_repo=nonce_repo) if nonce_repo is not None else _executor
+            InternalToolExecutor(nonce_repo=nonce_repo, defer_runtime_initialization=True)
+            if nonce_repo is not None
+            else _executor
         )
 
     # consume() is called BEFORE execution, not after -- it's the
@@ -879,24 +893,40 @@ async def resume_approval(
     await approval_repo.consume(approval.approval_id, action=action)
     try:
         result = await executor.execute(authorization, executable_action)
-    except Exception:
+    except (Exception, asyncio.CancelledError) as exc:
+        from responsibleai.isolation.errors import (
+            IsolationExecutionUncertainError,
+            IsolationRuntimeUnavailableError,
+        )
+
+        pre_admission_refusal = isinstance(exc, IsolationRuntimeUnavailableError)
+        outcome_persisted = False
         if outcome_repo is not None:
             try:
                 await outcome_repo.record(
                     build_outcome_record(
                         evidence.evidence_id,
                         executable_action.action_id,
-                        OutcomeStatus.UNKNOWN,
+                        OutcomeStatus.BLOCKED if pre_admission_refusal else OutcomeStatus.UNKNOWN,
                         organization_id=org_id,
-                        result_summary="execution raised after admission; reconciliation required",
+                        result_summary=(
+                            "isolation refused before nonce admission; approval remains consumed"
+                            if pre_admission_refusal
+                            else "execution outcome unknown; reconciliation required"
+                        ),
                     )
                 )
+                outcome_persisted = True
             except Exception:
                 _logger.exception(
                     "resume_approval_unknown_outcome_write_failed approval_id=%s action_id=%s",
                     approval.approval_id,
                     action.action_id,
                 )
+        if pre_admission_refusal and not outcome_persisted:
+            raise IsolationExecutionUncertainError(
+                "Execution accounting is incomplete; reconciliation required."
+            ) from exc
         raise
 
     # Outcome Observation (Phase 12) -- only attempted when the evidence
