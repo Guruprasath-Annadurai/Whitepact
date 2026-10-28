@@ -2,7 +2,7 @@
 
 PR #240 is a draft. Do not treat it as independently qualified. Do not merge.
 
-Candidate parent remains `a5a2fbfcfd17edb3459830ed0eff84003dfec42e`, tree `58756fd88cacf26163cd312c844959c62370edc7`. This note covers the successor commit on `cursor/m13-stage19-runtime-099e`.
+Candidate parent remains `a5a2fbfcfd17edb3459830ed0eff84003dfec42e`, tree `58756fd88cacf26163cd312c844959c62370edc7`. Qualification commit: `1862fd7e19711315a35154761fe031f425501458`. Tree of that commit: `40c6180ecac4095804e78b2f48e59a6089d83fb7`.
 
 ## What changed
 

@@ -18,7 +18,7 @@ Probe format `WHITEPACT-M13-STAGE19-HOST-PROBE-V1`. The captured JSON is reprodu
 | Requirement | This host | Result |
 | --- | --- | --- |
 | Linux kernel | `6.12.94+` x86_64 | Present. Not a production kernel pin |
-| POSIX ACL tools | `/usr/bin/setfacl`, `/usr/bin/getfacl` | Functional grant to UID 65534 and removal proved |
+| POSIX ACL tools | `/usr/bin/setfacl`, `/usr/bin/getfacl` | UID 65534 read succeeded, then failed after the ACE was removed |
 | Workspace mode | owner-only plus ACL, other bits clear | Proved in `test_posix_acl_grants_container_uid_and_can_be_removed` |
 | Docker daemon | `/usr/bin/docker`, API reachable, id `695d1154-d6ed-4b2b-bb03-a9c3572f47c3` | Reachable for this run only |
 | Image provenance | `python:3.11-slim` at `sha256:673719e071ecf27434fd2635bbd8d00f49f4fdd81f243143438a42ced8bedf60` | Recorded. Not a signed production admission policy |
