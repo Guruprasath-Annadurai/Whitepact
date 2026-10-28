@@ -1,0 +1,85 @@
+name: M13 reconstructed isolation refusal qualification
+
+on:
+  pull_request:
+    branches: [codex/m13-final-integrated-candidate]
+    paths:
+      - 'src/responsibleai/isolation/**'
+      - 'src/responsibleai/governance/execution.py'
+      - 'src/responsibleai/mcp/governance_integration.py'
+      - 'src/responsibleai/dashboard/app.py'
+      - 'tests/test_m13_windows_isolation_recovery.py'
+      - 'tests/test_m13_execution_isolation_recovery.py'
+      - '.github/workflows/m13-windows-p0-reconstruction.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  reconstruction:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.11', '3.12']
+    services:
+      postgres:
+        image: postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685
+        env:
+          POSTGRES_USER: wp
+          POSTGRES_PASSWORD: wp
+          POSTGRES_DB: postgres
+        ports: ['55432:5432']
+        options: >-
+          --health-cmd "pg_isready -U wp" --health-interval 5s
+          --health-timeout 5s --health-retries 12
+    env:
+      PYTHONPATH: src:sdk/python:.
+      WHITEPACT_TEST_PG_ADMIN_URL: postgresql://wp:wp@127.0.0.1:55432/postgres
+      WHITEPACT_P0_TEST_POSTGRES: '1'
+      RAI_DB_PATH: ':memory:'
+      WHITEPACT_REQUIRE_DOCKER_ISOLATION: '1'
+      WHITEPACT_TEST_RUNTIME_IMAGE: whitepact-p0-reconstruction:${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install test prerequisites
+        run: |
+          python -m pip install -r tests/requirements-m11.txt
+          python -m pip install '.[dashboard,postgres,mcp,sso]' ruff==0.17.0
+          git rev-parse HEAD 'HEAD^{tree}' > /tmp/p0-source.txt
+      - name: Prepare actual Linux container prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y acl
+          docker info
+          docker build -f Dockerfile.isolation -t "$WHITEPACT_TEST_RUNTIME_IMAGE" .
+      - name: Verify source hygiene
+        run: |
+          git diff --check
+          python scripts/check_pinned_actions.py
+          ruff check tests/test_m13_windows_isolation_recovery.py tests/test_m13_execution_isolation_recovery.py src/responsibleai/isolation src/responsibleai/governance/execution.py src/responsibleai/mcp/governance_integration.py src/responsibleai/dashboard/app.py
+      - name: Qualify state transitions with PostgreSQL 16
+        run: |
+          python scripts/engineering/m13_pg16_test_runner.py tests/test_m13_windows_isolation_recovery.py tests/test_m13_execution_isolation_recovery.py tests/test_approval_execution_binding.py --junitxml=/tmp/p0-tests.xml --cov-report=json:/tmp/p0-coverage.json --cov-report=term --tb=short -ra
+          python -c 'import xml.etree.ElementTree as E; r=E.parse("/tmp/p0-tests.xml"); assert not any(list(r.iter(k)) for k in ("skipped", "failure", "error"))'
+      - name: Retain exact-source evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: p0-reconstruction-${{ matrix.python }}-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            /tmp/p0-source.txt
+            /tmp/p0-tests.xml
+            /tmp/p0-coverage.json
+
+# Mocked backend transitions are distinct from native Linux containment.
+# Existing mandatory M13 workflows and independent release gates remain required.

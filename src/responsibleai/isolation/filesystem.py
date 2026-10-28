@@ -82,7 +82,7 @@ class EphemeralWorkspace:
         self._chmod_owner_only(root)
         if _try_setfacl(root, uid=uid):
             return
-        if os.geteuid() == 0:
+        if getattr(os, "geteuid", lambda: -1)() == 0:
             _chown_tree(root, uid=uid, gid=gid)
             self._chmod_owner_only(root)
             return
@@ -239,7 +239,7 @@ def grant_container_read(
             return
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError):
             pass
-    if os.geteuid() == 0:
+    if getattr(os, "geteuid", lambda: -1)() == 0:
         os.chown(path, uid, gid)
         return
     raise IsolationFilesystemPermissionError(

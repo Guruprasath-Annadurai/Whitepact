@@ -17,7 +17,6 @@ import asyncio
 import json
 import logging
 import os
-import resource
 import signal
 import sys
 import time
@@ -25,7 +24,10 @@ from typing import Any
 
 from responsibleai.isolation.backend import IsolationBackend
 from responsibleai.isolation.environment import build_isolated_environment
-from responsibleai.isolation.errors import IsolationPolicyViolationError
+from responsibleai.isolation.errors import (
+    IsolationBackendUnavailableError,
+    IsolationPolicyViolationError,
+)
 from responsibleai.isolation.filesystem import EphemeralWorkspace
 from responsibleai.isolation.models import ExecutionOutcome, IsolatedExecutionRequest, NetworkPolicy
 
@@ -39,9 +41,13 @@ class LocalSubprocessBackend(IsolationBackend):
         self.python_bin = python_bin or sys.executable
 
     def is_available(self) -> bool:
-        return os.path.exists(self.python_bin)
+        return os.name == "posix" and os.path.exists(self.python_bin)
 
     async def execute(self, request: IsolatedExecutionRequest) -> ExecutionOutcome:
+        if not self.is_available():
+            raise IsolationBackendUnavailableError("POSIX subprocess controls are unavailable.")
+        import resource
+
         # Check network policy: direct network egress from isolated execution is forbidden
         if request.profile.network_policy != NetworkPolicy.NONE:
             raise IsolationPolicyViolationError(
