@@ -46,11 +46,14 @@ def test_host_probe_records_real_capabilities(monkeypatch):
     evidence = probe_host()
     require_qualification_host(evidence)
     assert evidence["production_certified"] is False
+    assert evidence["digest_admission_enforced"] is False
+    assert evidence["posix_acl_enforced"] is True
     assert evidence["docker_daemon_id"]
 
 
-def test_posix_acl_grants_container_uid_and_can_be_removed(tmp_path):
+def test_posix_acl_grants_container_uid_and_can_be_removed():
     with EphemeralWorkspace("stage19", "acl") as workspace:
+        root = workspace.path
         workspace.populate({"note.txt": "TEST_ONLY"})
         workspace.prepare_for_container()
         listed = subprocess.run(
@@ -62,7 +65,14 @@ def test_posix_acl_grants_container_uid_and_can_be_removed(tmp_path):
         assert "user:nobody:r--" in listed.stdout
         mode = os.stat(workspace.path / "note.txt").st_mode
         assert mode & 0o007 == 0
-    assert not (tmp_path / "note.txt").exists()
+        read = subprocess.run(
+            ["sudo", "-n", "-u", "#65534", "cat", str(workspace.path / "note.txt")],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert read.returncode == 0 and read.stdout == "TEST_ONLY"
+    assert not root.exists()
 
 
 @pytest.mark.asyncio
@@ -108,6 +118,55 @@ async def test_postgres_journaled_container_denies_network(tmp_path, monkeypatch
                 .all()
             )
         assert states == ["CONTAINED"]
+
+
+@pytest.mark.asyncio
+async def test_trusted_runner_executes_on_whitepact_image(tmp_path, monkeypatch):
+    """Production runner source, not the containment probe. TEST_ONLY tenant."""
+    monkeypatch.delenv("WHITEPACT_ALLOW_UNISOLATED_EXECUTION", raising=False)
+    image = os.environ["WHITEPACT_TEST_RUNTIME_IMAGE"]
+    inspected = subprocess.run(
+        ["docker", "image", "inspect", "--format", "{{.Id}}", image],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    image_id = inspected.stdout.strip()
+    assert image_id.startswith("sha256:")
+    digests = subprocess.run(
+        ["docker", "image", "inspect", "--format", "{{json .RepoDigests}}", image],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    # Image id is recorded. An empty registry digest list is not production admission.
+    assert isinstance(json.loads(digests.stdout), list)
+    async with component_controller(tmp_path, monkeypatch, "s19r") as controller:
+        engine = controller.engine
+        configure_enterprise(engine)
+        org = await provision_component_organization(
+            engine, name="Stage 19 runner", slug=f"s19r-{uuid.uuid4().hex[:8]}"
+        )
+        outcome = await DockerContainerBackend(image_name=image).execute(
+            IsolatedExecutionRequest(
+                action_id="runner",
+                organization_id=org.id,
+                action_type="rai_scan",
+                arguments={"text": "Customer SSN is 123-45-6789, email: alice@company.com"},
+                profile=IsolationProfile(),
+                workspace_files={"input.txt": "TEST_ONLY"},
+                authorization_id=uuid.uuid4().hex,
+                action_digest="cd" * 32,
+                authorization_expires_at=datetime.now(UTC) + timedelta(minutes=5),
+                admission_epoch=1,
+            )
+        )
+        assert outcome.is_success
+        assert outcome.result_payload["is_blocked"] is True
+        assert outcome.result_payload["has_pii"] is True
+        async with engine.raw.connect() as connection:
+            state = await connection.scalar(text("SELECT state FROM runtime_containment_records"))
+        assert state == "CONTAINED"
 
 
 def test_evidence_file_roundtrip(tmp_path, monkeypatch):

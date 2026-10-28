@@ -13,11 +13,37 @@ import os
 import platform
 import shutil
 import subprocess
+import tempfile
 from pathlib import Path
 
 
 def _run(argv: list[str]) -> subprocess.CompletedProcess[str]:
     return subprocess.run(argv, capture_output=True, text=True, timeout=20, check=False)
+
+
+def posix_acl_enforced() -> bool:
+    """Grant UID 65534 read, prove that user can read, then remove the grant."""
+    if shutil.which("setfacl") is None or shutil.which("sudo") is None:
+        return False
+    directory = tempfile.mkdtemp(prefix="wp-acl-proof-")
+    try:
+        path = Path(directory) / "secret.txt"
+        path.write_text("acl-proof", encoding="utf-8")
+        os.chmod(directory, 0o700)
+        os.chmod(path, 0o600)
+        if _run(["setfacl", "-m", "u:65534:rx", directory]).returncode != 0:
+            return False
+        if _run(["setfacl", "-m", "u:65534:r", str(path)]).returncode != 0:
+            return False
+        allowed = _run(["sudo", "-n", "-u", "#65534", "cat", str(path)])
+        if allowed.returncode != 0 or allowed.stdout != "acl-proof":
+            return False
+        if _run(["setfacl", "-x", "u:65534", str(path)]).returncode != 0:
+            return False
+        denied = _run(["sudo", "-n", "-u", "#65534", "cat", str(path)])
+        return denied.returncode != 0
+    finally:
+        shutil.rmtree(directory, ignore_errors=True)
 
 
 def probe_host() -> dict:
@@ -50,6 +76,8 @@ def probe_host() -> dict:
         "euid": os.geteuid(),
         "setfacl": acl,
         "getfacl": getfacl,
+        "posix_acl_enforced": posix_acl_enforced(),
+        "digest_admission_enforced": False,
         "docker": docker,
         "docker_reachable": docker_ok,
         "docker_daemon_id": docker_id,
@@ -65,8 +93,10 @@ def probe_host() -> dict:
 def require_qualification_host(evidence: dict) -> None:
     if evidence["system"] != "Linux":
         raise SystemExit("Stage 19 qualification refuses a non-Linux host")
-    if not evidence["setfacl"] or not evidence["getfacl"]:
-        raise SystemExit("Stage 19 qualification refuses a host without POSIX ACL tools")
+    if not evidence["setfacl"] or not evidence["getfacl"] or not evidence["posix_acl_enforced"]:
+        raise SystemExit(
+            "Stage 19 qualification refuses a host whose POSIX ACL grant does not work"
+        )
     if not evidence["docker_reachable"]:
         raise SystemExit("Stage 19 qualification refuses a host whose Docker daemon is unreachable")
     if evidence["unisolated_execution_requested"]:
