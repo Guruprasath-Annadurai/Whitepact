@@ -276,7 +276,24 @@ class TestRealContainerExecution:
         self, clean_environment: Any
     ) -> None:
         """Regression for the misleading 'Unable to find image ... Pulling' message."""
-        clean_environment.setenv(ISOLATION_IMAGE_ENV, DEFAULT_ISOLATION_IMAGE)
+        # The negative fixture must itself satisfy immutable image admission;
+        # retain the historical assertion that an admitted stock image cannot
+        # manufacture successful WhitePact execution.
+        import json
+
+        stock = "python@sha256:7a8b475003c4fe15a2cd4e55e5cfc2f3560bdc9333d624f24cdd6d4340fd7a17"
+        subprocess.run(["docker", "pull", "--quiet", stock], check=True, timeout=90)
+        image_id = subprocess.run(
+            ["docker", "image", "inspect", "--format", "{{.Id}}", stock],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=15,
+        ).stdout.strip()
+        approvals = json.loads(os.environ.get("WHITEPACT_ISOLATION_IMAGE_APPROVALS", "{}"))
+        approvals[image_id] = image_id
+        clean_environment.setenv("WHITEPACT_ISOLATION_IMAGE_APPROVALS", json.dumps(approvals))
+        clean_environment.setenv(ISOLATION_IMAGE_ENV, image_id)
         clean_environment.setenv("WHITEPACT_ISOLATION_BACKEND", "docker")
         action = _action("rai_scan")
         executor = InternalToolExecutor(broker=IsolationBroker())

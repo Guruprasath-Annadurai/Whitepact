@@ -22,8 +22,6 @@ jobs:
       PLAYWRIGHT_BROWSERS_PATH: /tmp/whitepact-m13-ironclad-chromium
       WHITEPACT_REDIS_URL: redis://127.0.0.1:6379/0
       WHITEPACT_REQUIRE_REDIS: "1"
-      WHITEPACT_ISOLATION_IMAGE: whitepact-isolated-runtime:ci
-      WHITEPACT_TEST_RUNTIME_IMAGE: whitepact-isolated-runtime:ci
     services:
       postgres:
         image: postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685
@@ -68,8 +66,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y nftables iproute2 nginx acl
-          docker build -f Dockerfile.isolation -t whitepact-isolated-runtime:ci .
-          echo "WHITEPACT_ISOLATION_IMAGE=$(docker image inspect whitepact-isolated-runtime:ci --format '{{.Id}}')" >> "$GITHUB_ENV"
+          docker build --iidfile "$RUNNER_TEMP/m13-isolation-image.id" -f Dockerfile.isolation -t whitepact-isolated-runtime:ci .
+          python scripts/engineering/m13_admit_qualification_image.py --iid-file "$RUNNER_TEMP/m13-isolation-image.id" --github-env "$GITHUB_ENV"
           docker version > /tmp/ironclad/docker-version.txt
           cli_version=$(docker version --format '{{.Client.Version}}')
           curl --fail --silent --show-error --max-time 30 "https://raw.githubusercontent.com/docker/cli/v$cli_version/cli/command/container/create.go" -o /tmp/ironclad/docker-cli-create.go

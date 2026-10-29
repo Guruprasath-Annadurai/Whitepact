@@ -1,0 +1,123 @@
+name: M13 immutable image admission
+on:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  admission:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.11', '3.12']
+    services:
+      postgres:
+        image: postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685
+        env:
+          POSTGRES_USER: wp
+          POSTGRES_PASSWORD: wp
+          POSTGRES_DB: postgres
+        ports: ['55432:5432']
+        options: --health-cmd "pg_isready -U wp" --health-interval 5s --health-timeout 5s --health-retries 12
+    env:
+      PYTHONPATH: src:sdk/python:.
+      WHITEPACT_DB_PATH: ':memory:'
+      WHITEPACT_TEST_PG_ADMIN_URL: postgresql://wp:wp@127.0.0.1:55432/postgres
+      WHITEPACT_P0_TEST_POSTGRES: '1'
+      WHITEPACT_REQUIRE_DOCKER_ISOLATION: '1'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Verify exact source and prepare real Linux prerequisites
+        env:
+          EXPECTED: ${{ github.event.pull_request.head.sha }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$EXPECTED"
+          git rev-parse HEAD 'HEAD^{tree}' HEAD^@ > /tmp/digest-source.txt
+          sudo apt-get update
+          sudo apt-get install -y acl
+          python -m pip install -r tests/requirements-m11.txt
+          python -m pip install '.[dashboard,postgres,mcp]' alembic
+          docker info
+          docker build --iidfile "$RUNNER_TEMP/digest-image.id" -f Dockerfile.isolation -t whitepact:digest-test .
+          python scripts/engineering/m13_admit_qualification_image.py --iid-file "$RUNNER_TEMP/digest-image.id" --github-env "$GITHUB_ENV"
+      - name: Admission, real registry attacks, accounting and Stage19 containment
+        env:
+          WHITEPACT_QUALIFICATION_SKIP_LOG: /tmp/digest-skips.json
+        run: |
+          python scripts/engineering/m13_pg16_test_runner.py tests/test_m13_image_digest_admission.py tests/test_m13_image_admission_accounting.py tests/test_m13_image_digest_native.py tests/test_m13_stage19_linux_qualification.py tests/test_m13_execution_isolation_recovery.py tests/test_m13_absolute_creation_protocol.py tests/test_m13_absolute_native_runtime.py tests/test_docker_ownership_regression.py tests/test_runtime_isolation_docker.py tests/test_container_isolation_contract.py -o junit_family=xunit1 --junitxml=/tmp/digest-tests.xml --cov-report=json:/tmp/digest-coverage.json --tb=short -ra
+          python -c 'import json; r=json.load(open("/tmp/digest-skips.json")); assert r["exit_status"] == 0 and r["skip_count"] == 0, r'
+      - name: Record actual admission host capability
+        run: python scripts/engineering/m13_stage19_host_qualification.py
+        env:
+          WHITEPACT_STAGE19_EVIDENCE: /tmp/digest-host.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: ${{ always() }}
+        with:
+          name: digest-admission-${{ matrix.python }}-${{ github.event.pull_request.head.sha }}
+          path: |
+            /tmp/digest-source.txt
+            /tmp/digest-tests.xml
+            /tmp/digest-skips.json
+            /tmp/digest-coverage.json
+            /tmp/digest-host.json
+          if-no-files-found: error
+  canonical-customer:
+    name: Genuine canonical journey (identity gate retained)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    services:
+      postgres:
+        image: postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685
+        env:
+          POSTGRES_USER: wp
+          POSTGRES_PASSWORD: wp
+          POSTGRES_DB: postgres
+        ports: ['55432:5432']
+        options: --health-cmd "pg_isready -U wp" --health-interval 5s --health-timeout 5s --health-retries 12
+    env:
+      PYTHONPATH: src:sdk/python:.
+      WHITEPACT_TEST_PG_ADMIN_URL: postgresql://wp:wp@127.0.0.1:55432/postgres
+      PLAYWRIGHT_BROWSERS_PATH: /tmp/whitepact-digest-chromium
+      WHITEPACT_REQUIRE_DOCKER_ISOLATION: '1'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+      - name: Prepare qualified Linux without identity seeding or Windows shims
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y acl
+          python -m pip install -r tests/requirements-m11.txt
+          python -m pip install '.[dashboard,postgres,mcp]' alembic
+          npm ci
+          npx playwright install --with-deps chromium
+          docker build --iidfile "$RUNNER_TEMP/digest-canonical.id" -f Dockerfile.isolation -t whitepact:digest-canonical .
+          python scripts/engineering/m13_admit_qualification_image.py --iid-file "$RUNNER_TEMP/digest-canonical.id" --github-env "$GITHUB_ENV"
+      - name: Execute genuine canonical acceptance, preserving all blockers
+        run: |
+          git rev-parse HEAD 'HEAD^{tree}' > /tmp/digest-canonical-source.txt
+          python scripts/engineering/m13_apex_customer_journey.py --authorized-disposable-bootstrap --report /tmp/digest-canonical.json
+          python -c 'import json; r=json.load(open("/tmp/digest-canonical.json")); assert not r["authority_seeded"] and not r["development_prototype"] and r["acceptance"] == "PASS" and len(r["stages"]) == 25 and all(s["status"] == "PASS" for s in r["stages"])'
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: ${{ always() }}
+        with:
+          name: genuine-canonical-${{ github.event.pull_request.head.sha }}
+          path: |
+            /tmp/digest-canonical-source.txt
+            /tmp/digest-canonical.json
+          if-no-files-found: error
+# This canonical job must remain failed/BLOCKED until genuine identity authority
+# is available. No prototype mode, seed, unisolated execution or expected-pass shim.

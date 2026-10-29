@@ -43,7 +43,7 @@ jobs:
       WHITEPACT_P0_TEST_POSTGRES: '1'
       RAI_DB_PATH: ':memory:'
       WHITEPACT_REQUIRE_DOCKER_ISOLATION: '1'
-      WHITEPACT_TEST_RUNTIME_IMAGE: whitepact-p0-reconstruction:${{ github.event.pull_request.head.sha || github.sha }}
+      WHITEPACT_BUILD_RUNTIME_TAG: whitepact-p0-reconstruction:${{ github.event.pull_request.head.sha || github.sha }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
@@ -63,7 +63,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y acl
           docker info
-          docker build -f Dockerfile.isolation -t "$WHITEPACT_TEST_RUNTIME_IMAGE" .
+          docker build --iidfile "$RUNNER_TEMP/m13-isolation-image.id" -f Dockerfile.isolation -t "$WHITEPACT_BUILD_RUNTIME_TAG" .
+          python scripts/engineering/m13_admit_qualification_image.py --iid-file "$RUNNER_TEMP/m13-isolation-image.id" --github-env "$GITHUB_ENV"
       - name: Verify source hygiene
         run: |
           git diff --check

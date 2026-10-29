@@ -118,8 +118,8 @@ jobs:
         # python image cannot run the trusted runner. Used only by
         # tests/test_isolation_real_tool_e2e.py (WHITEPACT_TEST_RUNTIME_IMAGE).
         run: |
-          docker build -f Dockerfile.isolation -t whitepact-isolated-runtime:ci .
-          echo "WHITEPACT_TEST_RUNTIME_IMAGE=whitepact-isolated-runtime:ci" >> "$GITHUB_ENV"
+          docker build --iidfile "$RUNNER_TEMP/m13-isolation-image.id" -f Dockerfile.isolation -t whitepact-isolated-runtime:ci .
+          python scripts/engineering/m13_admit_qualification_image.py --iid-file "$RUNNER_TEMP/m13-isolation-image.id" --github-env "$GITHUB_ENV"
 
       - name: Build TypeScript SDK
         run: |

@@ -376,12 +376,12 @@ jobs:
           docker info
           python -m pip install -r tests/requirements-m11.txt
           python -m pip install '.[dashboard,postgres,mcp]' alembic
-          docker build -f Dockerfile.isolation -t whitepact-isolated-runtime:m13i1 .
+          docker build --iidfile "$RUNNER_TEMP/m13-isolation-image.id" -f Dockerfile.isolation -t whitepact-isolated-runtime:m13i1 .
+          python scripts/engineering/m13_admit_qualification_image.py --iid-file "$RUNNER_TEMP/m13-isolation-image.id" --github-env "$GITHUB_ENV"
       - name: Execute actual kernel and container ownership scope without skips
         env:
           PYTHONPATH: src:.
           WHITEPACT_REQUIRE_DOCKER_ISOLATION: '1'
-          WHITEPACT_ISOLATION_IMAGE: whitepact-isolated-runtime:m13i1
           WHITEPACT_QUALIFICATION_SKIP_LOG: /tmp/m13i1-linux-skips.json
         run: |
           python -m pytest tests/test_docker_ownership_regression.py tests/test_runtime_isolation_docker.py tests/test_container_isolation_contract.py -o addopts='' --tb=short -ra

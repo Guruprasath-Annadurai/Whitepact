@@ -30,7 +30,6 @@ jobs:
       PYTHONPATH: src:.
       PLAYWRIGHT_BROWSERS_PATH: /tmp/whitepact-m13-sovereign-chromium
       WHITEPACT_TEST_PG_ADMIN_URL: postgresql://wp:wp@127.0.0.1:55432/postgres
-      WHITEPACT_ISOLATION_IMAGE: whitepact-isolated-runtime:sovereign
       WHITEPACT_REQUIRE_DOCKER_ISOLATION: '1'
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -55,7 +54,8 @@ jobs:
           python -m pip install '.[dashboard,postgres,mcp]' alembic ruff==0.17.0
           npm ci
           npx playwright install --with-deps chromium
-          docker build -f Dockerfile.isolation -t whitepact-isolated-runtime:sovereign .
+          docker build --iidfile "$RUNNER_TEMP/m13-isolation-image.id" -f Dockerfile.isolation -t whitepact-isolated-runtime:sovereign .
+          python scripts/engineering/m13_admit_qualification_image.py --iid-file "$RUNNER_TEMP/m13-isolation-image.id" --github-env "$GITHUB_ENV"
       - name: A2 and B1 positive and negative PostgreSQL qualification
         run: |
           python -m pytest tests/test_sovereign_authority.py tests/test_m13_convergence_a2.py tests/test_m13_convergence_restore_http.py -o addopts='' --junitxml=/tmp/sovereign.xml --tb=short -ra
