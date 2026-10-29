@@ -64,13 +64,32 @@ The only Chrome this agent can control is the computer-use window on this cloud 
 
 No password, cookie, or token was requested. No Sandbox application was created in that second attempt. The Live destination remains paused. Production identity code was not changed.
 
-## 10. Remaining work before Antigravity qualification
+## 10. Replacement credentials, 29 Oct 2026, 11:49 AM IST
 
-1. Founder signs in at `https://business.didit.me` (login, and MFA or CAPTCHA if Didit asks).
-2. Create a separate Sandbox application named `WhitePact M13 Sandbox`. Stop if Didit requires a payment method.
-3. Create `WhitePact KYC Sandbox` with only ID verification, passive liveness, 1:1 face match, and device/IP analysis.
-4. Create a Sandbox V3 destination for the tunnel URL, subscribed only to `status.updated`, and store its signing secret in the environment, not in git or chat.
-5. Bind that application id, workflow id, and secret to the receiver and run Didit Try Webhook. Keep the result only if the signed body matches that sandbox application, workflow, and `environment=sandbox`.
+The founder revoked the exposed credentials and saved replacements. The new API key is a sandbox key. A read-only session decision on that key returned `environment=sandbox`. It does not see the previous Live workflow.
+
+| Item | Result |
+| --- | --- |
+| Sandbox workflow | `Free KYC` `b782819d-22ae-452d-81f1-f18a75eb9236`, published, version 1 |
+| Enabled feature string | `OCR + LIVENESS + FACE_MATCH + IP_ANALYSIS` |
+| Liveness method | `PASSIVE` |
+| AML, NFC, database validation, KYB, document AI | disabled |
+| Didit price on this workflow | minimum $0.20, maximum $0.53. The name does not make it free |
+| Application UUID | not returned by the workflow, session, or destination APIs |
+| Sandbox destination | `d236bf07-f2c3-40a8-9120-fafac79b3eb9`, enabled, V3, URL is the tunnel, events `status.updated` and `data.updated` |
+| Destination signing secret | present and loaded into the receiver process. It matches the replacement environment secret. The value is not recorded here |
+| Deliveries | 0 |
+| Genuine Try Webhook | not sent. No console send-test API was found, and the VM browser is still signed out |
+
+The receiver process was restarted with the sandbox workflow id and the replacement signing secret. The application id is not set, so a signature-valid event fails closed until that UUID is known. The tunnel again returns `401` `{"error":"signature_rejected"}` for an unsigned POST. No identity document and no decision body were stored. Production identity code was not changed.
+
+One sandbox session exists in status **Not Started** on a different draft workflow, `45bf2dc2-9f79-40ed-bd70-1e5de6c41f61`. It was not started further and was not used as the approved workflow.
+
+## 11. Remaining work before Antigravity qualification
+
+1. Copy the non-secret Sandbox application UUID from the Didit application switcher into `WHITEPACT_DIDIT_SANDBOX_APPLICATION_ID`. Do not send the API key or the signing secret.
+2. In Didit Console, run Try Webhook for a `status.updated` scenario on destination `d236bf07-f2c3-40a8-9120-fafac79b3eb9`. Remove `data.updated` from that destination if only session-status events should be accepted.
+3. Accept the delivery only when the signed body has `environment=sandbox`, workflow `b782819d-22ae-452d-81f1-f18a75eb9236`, and that application UUID. Do not start a real KYC session: this workflow is priced at $0.20–$0.53.
 
 PRs #238–#243 were not merged. PR #243 stays a draft.
 
