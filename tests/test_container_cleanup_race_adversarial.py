@@ -34,10 +34,11 @@ from responsibleai.isolation.models import (
     NetworkPolicy,
     ResourceLimits,
 )
+from tests.image_admission_fixture import approved_inert_image as approved_inert_image
 
 
 @pytest.fixture(autouse=True)
-def reset_in_flight_registry(monkeypatch, tmp_path):
+def reset_in_flight_registry(monkeypatch, tmp_path, approved_inert_image):
     # These are controlled unit probes, not native Docker qualification. The
     # CREATE-before-START boundary must not leak real stopped daemon objects.
     def acknowledge_inert_create(self, command, receipt):

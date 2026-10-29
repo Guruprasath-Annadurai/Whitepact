@@ -36,6 +36,7 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
       - name: Verify exact source and prepare real Linux prerequisites
+        id: environment
         env:
           EXPECTED: ${{ github.event.pull_request.head.sha }}
         run: |
@@ -55,6 +56,7 @@ jobs:
           python scripts/engineering/m13_pg16_test_runner.py tests/test_m13_image_digest_admission.py tests/test_m13_image_admission_accounting.py tests/test_m13_image_digest_native.py tests/test_m13_stage19_linux_qualification.py tests/test_m13_execution_isolation_recovery.py tests/test_m13_absolute_creation_protocol.py tests/test_m13_absolute_native_runtime.py tests/test_docker_ownership_regression.py tests/test_runtime_isolation_docker.py tests/test_container_isolation_contract.py -o junit_family=xunit1 --junitxml=/tmp/digest-tests.xml --cov-report=json:/tmp/digest-coverage.json --tb=short -ra
           python -c 'import json; r=json.load(open("/tmp/digest-skips.json")); assert r["exit_status"] == 0 and r["skip_count"] == 0, r'
       - name: Record actual admission host capability
+        if: ${{ !cancelled() && steps.environment.conclusion == 'success' }}
         run: python scripts/engineering/m13_stage19_host_qualification.py
         env:
           WHITEPACT_STAGE19_EVIDENCE: /tmp/digest-host.json

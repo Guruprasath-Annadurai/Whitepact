@@ -5,6 +5,7 @@
 import hashlib
 import json
 import os
+import socket
 import subprocess
 import threading
 import time
@@ -30,8 +31,9 @@ def docker(*args):
     ).stdout.strip()
 
 
-def ready(port):
-    for _ in range(80):
+def ready(port, cid):
+    deadline = time.monotonic() + 30
+    while time.monotonic() < deadline:
         try:
             with urllib.request.urlopen(f"http://127.0.0.1:{port}/v2/", timeout=1) as response:
                 if response.status == 200:
@@ -39,19 +41,41 @@ def ready(port):
         except (OSError, ValueError):
             pass
         time.sleep(0.1)
-    pytest.fail("Disposable loopback registry did not become ready")
+    state = json.loads(docker("inspect", cid))[0]
+    pytest.fail(
+        "Disposable loopback registry did not become ready: "
+        + json.dumps(
+            {
+                "expected_port": port,
+                "running": state["State"]["Running"],
+                "exit_code": state["State"]["ExitCode"],
+                "actual_bindings": state["NetworkSettings"]["Ports"],
+            }
+        )
+    )
+
+
+def assert_registry_binding(cid, port):
+    state = json.loads(docker("inspect", cid))[0]
+    expected = [{"HostIp": "127.0.0.1", "HostPort": str(port)}]
+    assert state["HostConfig"]["PortBindings"]["5000/tcp"] == expected
+    assert state["NetworkSettings"]["Ports"]["5000/tcp"] == expected
+    assert state["State"]["Running"] is True
 
 
 @pytest.fixture
 def registry(real_container_host, monkeypatch):
     image = os.environ["WHITEPACT_TEST_RUNTIME_IMAGE"]
     assert image.startswith("sha256:") and len(image) == 71
-    cid = docker("run", "-d", "-p", "127.0.0.1::5000", REGISTRY_IMAGE)
+    # Fix the chosen port in Docker's configuration so STOP/START preserves the
+    # exact approved registry reference. A bind race fails setup, never admission.
+    with socket.socket() as reservation:
+        reservation.bind(("127.0.0.1", 0))
+        port = reservation.getsockname()[1]
+    cid = docker("run", "-d", "-p", f"127.0.0.1:{port}:5000", REGISTRY_IMAGE)
     try:
-        port = json.loads(docker("inspect", cid))[0]["NetworkSettings"]["Ports"]["5000/tcp"][0][
-            "HostPort"
-        ]
-        ready(port)
+        assert_registry_binding(cid, port)
+        ready(port, cid)
         tag = f"localhost:{port}/runtime:qualified"
         docker("tag", image, tag)
         docker("push", tag)
@@ -95,7 +119,8 @@ def test_real_registry_outage_does_not_fall_back_to_approved_cached_id(registry)
     with pytest.raises(ImageAdmissionError):
         admit_image("docker", registry["ref"])
     docker("start", registry["cid"])
-    ready(registry["port"])
+    assert_registry_binding(registry["cid"], registry["port"])
+    ready(registry["port"], registry["cid"])
     assert admit_image("docker", registry["ref"]).image_id == registry["image"]
 
 

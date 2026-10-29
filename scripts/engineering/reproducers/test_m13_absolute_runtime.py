@@ -9,6 +9,7 @@ import uuid
 from unittest.mock import patch
 
 import pytest
+from tests.image_admission_fixture import approved_inert_image as approved_inert_image
 
 import responsibleai.isolation.in_flight as tracking
 from responsibleai.isolation.container_backend import DockerContainerBackend
@@ -23,7 +24,7 @@ from responsibleai.isolation.models import (
 
 
 @pytest.fixture
-def registry(tmp_path, monkeypatch):
+def registry(tmp_path, monkeypatch, approved_inert_image):
     from responsibleai.isolation.durable_intent import required_journal
 
     # Resolve the existing explicit development-mode configuration before the
