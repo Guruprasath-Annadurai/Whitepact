@@ -493,6 +493,14 @@ async def identity_webhook(
         return _error_response(exc, _request_id(request))
 
 
+@router.post("/identity/verification/didit/sandbox")
+async def didit_sandbox_webhook(request: Request) -> Any:
+    """Sandbox receipt only. Production assurance stays on ``_verification``."""
+    from responsibleai.enterprise.didit_sandbox import handle_sandbox_webhook
+
+    return await handle_sandbox_webhook(request)
+
+
 async def _require_org(request: Request, org_id: str) -> Actor:
     actor = await _web_actor(request)
     if actor.org_id != org_id:
