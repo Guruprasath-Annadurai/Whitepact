@@ -142,6 +142,10 @@ def identity_assurance_accepted(provider: str | None, assurance_level: str | Non
     normalized = assurance_level.strip()
     if normalized.lower() in REJECTED_ASSURANCE_LEVELS:
         return False
+    if provider == "didit-sandbox" and (
+        is_production() or os.environ.get("WHITEPACT_DIDIT_SANDBOX_ASSURANCE_ENABLED") != "1"
+    ):
+        return False
     if is_production() and provider in DEVELOPMENT_ONLY_PROVIDERS:
         return False
     providers, levels, reference = approved_identity_policy()

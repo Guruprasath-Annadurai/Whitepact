@@ -99,6 +99,16 @@ def _iam() -> EnterpriseIAM:
 
 
 def _verification() -> VerificationService:
+    import os
+
+    adapter = os.environ.get("WHITEPACT_IDENTITY_PROVIDER_ADAPTER", "reference")
+    if adapter == "didit":
+        from responsibleai.enterprise.didit import DiditProvider
+        from responsibleai.enterprise.didit_service import DiditVerificationService
+
+        return DiditVerificationService(get_enterprise_engine(), DiditProvider.from_env())
+    if adapter != "reference":
+        raise EnterpriseError("PROVIDER_NOT_ENROLLED", "Identity adapter is not enrolled.", 403)
     from responsibleai.enterprise.preflight import identity_webhook_secret_from_env
 
     secret = identity_webhook_secret_from_env()
@@ -447,9 +457,30 @@ async def get_identity_verification(request: Request) -> Any:
 async def start_identity_verification(request: Request) -> Any:
     try:
         actor = await _web_actor(request)
-        return await _verification().start_human_verification(
+        service = _verification()
+        from responsibleai.enterprise.didit_service import DiditVerificationService
+
+        if isinstance(service, DiditVerificationService):
+            return await service.start_human_verification(
+                actor.user_id or "", org_id=actor.org_id, request_id=actor.request_id
+            )
+        return await service.start_human_verification(
             actor.user_id or "", request_id=actor.request_id
         )
+    except EnterpriseError as exc:
+        return _error_response(exc, _request_id(request))
+
+
+@router.post("/identity/verification/{session_id}/reconcile")
+async def reconcile_didit_verification(session_id: str, request: Request) -> Any:
+    try:
+        actor = await _web_actor(request)
+        service = _verification()
+        from responsibleai.enterprise.didit_service import DiditVerificationService
+
+        if not isinstance(service, DiditVerificationService):
+            raise EnterpriseError("PROVIDER_NOT_ENROLLED", "Didit adapter is not enrolled.", 403)
+        return await service.reconcile(session_id, user_id=actor.user_id, org_id=actor.org_id)
     except EnterpriseError as exc:
         return _error_response(exc, _request_id(request))
 
@@ -482,7 +513,27 @@ async def identity_webhook(
 ) -> Any:
     try:
         payload = await request.body()
-        result = await _verification().apply_provider_event(
+        service = _verification()
+        from responsibleai.enterprise.didit_service import DiditVerificationService
+
+        if isinstance(service, DiditVerificationService):
+            from sqlalchemy.exc import SQLAlchemyError
+
+            try:
+                return await service.apply_didit_event(
+                    payload=payload,
+                    signature=request.headers.get("x-signature-v2", ""),
+                    timestamp=request.headers.get("x-timestamp", ""),
+                    test_delivery=request.headers.get("x-didit-test-webhook", "").lower() == "true",
+                    request_id=_request_id(request),
+                )
+            except (SQLAlchemyError, OSError):
+                raise EnterpriseError(
+                    "DIDIT_PERSISTENCE_UNAVAILABLE",
+                    "Provider evidence persistence is unavailable; reconcile the original event.",
+                    503,
+                ) from None
+        result = await service.apply_provider_event(
             payload=payload,
             signature=x_identity_signature,
             timestamp=x_identity_timestamp,
