@@ -56,7 +56,15 @@ Local sandbox tests from SHA `891549f48d3a003846280a656a1369acad738d5d` remain t
 
 `router.py` `_verification` still constructs only `HmacVerificationProvider`. The sandbox handler still refuses `environment` other than `sandbox` and still does not write `IDENTITY_VERIFIED`.
 
-## 9. Remaining work before Antigravity qualification
+## 9. Second browser check, 29 Oct 2026, 11:19 AM IST
+
+The account is not unsigned. The Live API key still reads the Live application. What failed is a different browser.
+
+The only Chrome this agent can control is the computer-use window on this cloud VM: Google Chrome, user-data directory `/home/ubuntu/.config/google-chrome`, window about 1820 by 1100. Both of its tabs are the Didit sign-in page (`Welcome back`, Sign in with Google). There is no control channel to a Chrome window on the founder's own computer. Attaching to that signed-in session is unsupported.
+
+No password, cookie, or token was requested. No Sandbox application was created in that second attempt. The Live destination remains paused. Production identity code was not changed.
+
+## 10. Remaining work before Antigravity qualification
 
 1. Founder signs in at `https://business.didit.me` (login, and MFA or CAPTCHA if Didit asks).
 2. Create a separate Sandbox application named `WhitePact M13 Sandbox`. Stop if Didit requires a payment method.
