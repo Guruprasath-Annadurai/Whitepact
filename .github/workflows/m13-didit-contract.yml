@@ -1,0 +1,68 @@
+name: M13 Didit contract and PostgreSQL durability
+on:
+  pull_request:
+    paths:
+      - 'src/responsibleai/enterprise/**'
+      - 'tests/test_m13_didit*'
+      - '.github/workflows/m13-didit-contract.yml'
+permissions:
+  contents: read
+jobs:
+  contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.11', '3.12']
+    services:
+      postgres:
+        image: postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685
+        env:
+          POSTGRES_USER: wp
+          POSTGRES_PASSWORD: wp
+          POSTGRES_DB: postgres
+        ports: ['55432:5432']
+        options: >-
+          --health-cmd "pg_isready -U wp" --health-interval 5s
+          --health-timeout 5s --health-retries 12
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: ${{ matrix.python }}
+      - run: |
+          python -m pip install -r tests/requirements-m11.txt
+          python -m pip install '.[dashboard,postgres,mcp,sso]' alembic hypothesis
+      - name: Verify and record exact PR source
+        env:
+          EXPECTED: ${{ github.event.pull_request.head.sha }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$EXPECTED"
+          git rev-parse HEAD 'HEAD^{tree}' HEAD^@ > /tmp/didit-source.txt
+      - name: Local provider fixtures against real PostgreSQL 16
+        env:
+          PYTHONPATH: src:sdk/python:.
+          WHITEPACT_DB_PATH: ':memory:'
+          WHITEPACT_DIDIT_TEST_BACKEND: postgresql
+          WHITEPACT_TEST_PG_ADMIN_URL: postgresql://wp:wp@127.0.0.1:55432/postgres
+          WHITEPACT_QUALIFICATION_SKIP_LOG: /tmp/didit-skips.json
+        run: |
+          python scripts/engineering/m13_pg16_test_runner.py tests/test_m13_didit_provider.py tests/test_m13_didit_durability.py tests/test_m13_didit_postgres.py tests/test_m13_identity_trust_boundary.py tests/test_m13_identity_session_schema.py tests/test_identity_authority_adapter.py tests/test_sso_identity_elevation.py --junitxml=/tmp/didit.xml --cov-report=json:/tmp/didit-coverage.json
+          python -c 'import json; r=json.load(open("/tmp/didit-skips.json")); assert r["exit_status"] == 0 and r["skip_count"] == 0, r'
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: ${{ always() }}
+        with:
+          name: didit-contract-${{ matrix.python }}-${{ github.event.pull_request.head.sha }}
+          path: |
+            /tmp/didit-source.txt
+            /tmp/didit.xml
+            /tmp/didit-skips.json
+            /tmp/didit-coverage.json
+          if-no-files-found: error
+# This uses local API fixtures, never provider sandbox delivery evidence.
+# Existing mandatory workflow commands, DCO and security gates are unchanged.
