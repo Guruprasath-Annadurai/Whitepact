@@ -8,7 +8,6 @@ import uuid
 from unittest.mock import patch
 
 import pytest
-from tests.image_admission_fixture import approved_inert_image as approved_inert_image
 
 from responsibleai.isolation.container_backend import DockerContainerBackend
 from responsibleai.isolation.filesystem import EphemeralWorkspace
@@ -56,7 +55,7 @@ async def test_cleanup_preserves_exact_cancellation_request_count() -> None:
 
 
 @pytest.mark.asyncio
-async def test_execute_cleanup_failure_retains_tracking_after_cancellation(approved_inert_image) -> None:
+async def test_execute_cleanup_failure_retains_tracking_after_cancellation() -> None:
     """Exercise actual execute(), replacing Docker transport only; not native evidence."""
     from responsibleai.isolation.durable_intent import required_journal
 
