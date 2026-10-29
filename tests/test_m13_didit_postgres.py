@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Mandatory real-PostgreSQL concurrency proof; unavailable databases are errors."""
 
 import asyncio
