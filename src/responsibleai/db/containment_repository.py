@@ -129,6 +129,59 @@ class ContainmentRepository:
             raise ValueError("An exact immutable container ID is required")
         await self._transition(execution_id, owner_generation, "ACTIVE", cid=cid)
 
+    async def record_image_binding(
+        self, execution_id: str, generation: str, cid: str, reference: str, image_id: str
+    ) -> None:
+        """Persist checked image/owner association before START; never execution success."""
+        from responsibleai.enterprise.audit import EnterpriseAuditLog
+
+        _required(reference, 4096)
+        if not re.fullmatch(r"sha256:[0-9a-f]{64}", image_id):
+            raise ContainmentAdmissionError("An exact immutable image identity is required")
+        c = runtime_containment_records.c
+        async with self._engine.raw.begin() as conn:
+            row = (
+                (
+                    await conn.execute(
+                        select(runtime_containment_records)
+                        .where(
+                            c.execution_id == execution_id,
+                            c.owner_generation == generation,
+                            c.container_id == cid,
+                            c.state == "ACTIVE",
+                        )
+                        .with_for_update()
+                    )
+                )
+                .mappings()
+                .first()
+            )
+            if row is None:
+                raise ContainmentAdmissionError(
+                    "Image evidence requires acknowledged runtime ownership"
+                )
+            await EnterpriseAuditLog(self._engine).record(
+                actor_type="system",
+                actor_id="isolated-runtime",
+                org_id=row["organization_id"],
+                action="isolation.image.bound",
+                target_type="execution",
+                target_id=execution_id,
+                result="ALLOWED",
+                conn=conn,
+                metadata={
+                    "reference": reference,
+                    "image_id": image_id,
+                    "container_id": cid,
+                    "owner_generation": generation,
+                    "authorization_id": row["authorization_id"],
+                    "action_digest": row["action_digest"],
+                    "start_sent": False,
+                    "registry_manifest_bound": "@" in reference,
+                    "publisher_signature_verified": False,
+                },
+            )
+
     async def assert_startable(self, execution_id: str, generation: str, cid: str) -> None:
         from responsibleai.db.revocation_epoch_repository import current_epoch_on_connection
 

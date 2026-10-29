@@ -3,6 +3,7 @@
 """Protocol-order unit evidence. Mocked Docker is NOT native containment proof."""
 
 import asyncio
+import json
 import subprocess
 import time
 from pathlib import Path
@@ -28,7 +29,9 @@ def protocol(monkeypatch, tmp_path):
     in_flight.InFlightExecutionRegistry.reset_instance()
     monkeypatch.setattr(EphemeralWorkspace, "prepare_for_container", lambda *a, **k: None)
     monkeypatch.setattr(module, "grant_container_read", lambda *a, **k: None)
-    backend = DockerContainerBackend()
+    image_id = "sha256:" + "a" * 64
+    monkeypatch.setenv("WHITEPACT_ISOLATION_IMAGE_APPROVALS", json.dumps({image_id: image_id}))
+    backend = DockerContainerBackend(image_name=image_id)
     monkeypatch.setattr(backend, "is_available", lambda: True)
     cleanup = AsyncMock()
     monkeypatch.setattr(backend, "_remove_containers_uninterruptible", cleanup)
@@ -37,7 +40,14 @@ def protocol(monkeypatch, tmp_path):
     cid = "c" * 64
 
     def create(command, **kwargs):
+        if command[1:3] == ["image", "inspect"]:
+            return subprocess.CompletedProcess(
+                command, 0, stdout=json.dumps([{"Id": image_id, "Os": "linux"}])
+            )
+        if command[1:3] == ["container", "inspect"]:
+            return subprocess.CompletedProcess(command, 0, stdout=image_id)
         assert command[1] == "create", "The daemon must not receive RUN"
+        assert "--pull=never" in command and image_id in command
         assert kwargs["check"]
         events.append("create")
         receipt = Path(next(x.split("=", 1)[1] for x in command if x.startswith("--cidfile=")))

@@ -119,14 +119,14 @@ jobs:
           docker info
           python -m pip install -r tests/requirements-m11.txt
           python -m pip install '.[dashboard,postgres,mcp]' alembic
-          docker build -f Dockerfile.isolation -t whitepact-isolated-runtime:absolute .
+          docker build --iidfile "$RUNNER_TEMP/m13-isolation-image.id" -f Dockerfile.isolation -t whitepact-isolated-runtime:absolute .
+          python scripts/engineering/m13_admit_qualification_image.py --iid-file "$RUNNER_TEMP/m13-isolation-image.id" --github-env "$GITHUB_ENV"
       - name: Verify real Docker availability before qualification
         run: python scripts/engineering/m13_docker_qualification_probe.py --phase before --output /tmp/native-docker-before.json
       - name: Actual Docker execution, cancellation and failure containment
         env:
           PYTHONPATH: src:.
           WHITEPACT_REQUIRE_DOCKER_ISOLATION: '1'
-          WHITEPACT_ISOLATION_IMAGE: whitepact-isolated-runtime:absolute
         run: |
           python -m pytest tests/test_m13_absolute_native_runtime.py tests/test_docker_ownership_regression.py tests/test_runtime_isolation_docker.py tests/test_container_isolation_contract.py -o addopts='' --junitxml=/tmp/native.xml --tb=short -ra
           python -c 'import xml.etree.ElementTree as E; r=E.parse("/tmp/native.xml"); assert not list(r.iter("skipped")) and not list(r.iter("failure")) and not list(r.iter("error"))'

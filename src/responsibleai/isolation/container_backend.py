@@ -41,6 +41,11 @@ from responsibleai.isolation.errors import (
     IsolationPolicyViolationError,
 )
 from responsibleai.isolation.filesystem import EphemeralWorkspace, grant_container_read
+from responsibleai.isolation.image_admission import (
+    admit_image,
+    assert_approval_current,
+    verify_container_image,
+)
 from responsibleai.isolation.models import ExecutionOutcome, IsolatedExecutionRequest, NetworkPolicy
 
 logger = logging.getLogger(__name__)
@@ -271,6 +276,9 @@ class DockerContainerBackend(IsolationBackend):
         """
         if not self.is_available():
             raise IsolationBackendUnavailableError("Docker isolation is unavailable.")
+        # Deployment approval and immutable identity are prerequisites, not an
+        # advisory digest receipt. No container is created by this probe.
+        admit_image(self.docker_cmd, self.image_name)
         if os.name != "posix":
             raise IsolationFilesystemPermissionError(
                 "A compatible POSIX isolation host is required."
@@ -445,6 +453,9 @@ class DockerContainerBackend(IsolationBackend):
                 "Direct network egress from isolated container execution is forbidden; "
                 "all network operations must pass through canonical host-mediated egress chokepoints."
             )
+        # Re-admit after nonce admission: preflight is not a lease. Any failure
+        # here retains the existing post-admission UNKNOWN/reconciliation rules.
+        admitted_image = await asyncio.to_thread(admit_image, self.docker_cmd, self.image_name)
         workspace_files = self._reject_untrusted_workspace(request.workspace_files)
         runner_source = self._runner_source_for(workspace_files)
         staged_files = {
@@ -484,6 +495,7 @@ class DockerContainerBackend(IsolationBackend):
                 cmd = [
                     self.docker_cmd,
                     "create",
+                    "--pull=never",
                     "--rm",
                     "-i",
                     f"--name={container_name}",
@@ -514,7 +526,9 @@ class DockerContainerBackend(IsolationBackend):
                 for k, v in clean_env.items():
                     cmd.append(f"-e={k}={v}")
 
-                cmd.extend([self.image_name, "python3", _TRUSTED_RUNNER_MOUNT])
+                # Never resolve a mutable alias again after approval. Docker's
+                # content-addressed ID binds creation to the inspected content.
+                cmd.extend([admitted_image.image_id, "python3", _TRUSTED_RUNNER_MOUNT])
 
                 input_payload = json.dumps(
                     {"action_type": request.action_type, "arguments": request.arguments}
@@ -676,6 +690,19 @@ class DockerContainerBackend(IsolationBackend):
                 stderr_data = b""
                 communication_started = True
                 try:
+                    # Validate the stopped object's immutable identity before
+                    # the final deadline, expiry and revocation checks.
+                    await asyncio.to_thread(
+                        verify_container_image, self.docker_cmd, created_cid, admitted_image
+                    )
+                    if journal is not None:
+                        await journal.record_image_binding(
+                            execution_id,
+                            generation,
+                            created_cid,
+                            admitted_image.reference,
+                            admitted_image.image_id,
+                        )
                     remaining = limits.wall_timeout_seconds - (time.monotonic() - start_time)
                     if remaining <= 0:
                         raise TimeoutError
@@ -690,6 +717,7 @@ class DockerContainerBackend(IsolationBackend):
                             )
                     # Register ownership/revocation before a byte of START is
                     # sent. CREATE has not executed the workload.
+                    assert_approval_current(admitted_image)
                     proc = await self._await_owned_completion(
                         asyncio.create_task(
                             asyncio.create_subprocess_exec(
