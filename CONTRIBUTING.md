@@ -37,6 +37,11 @@ that doesn't exist.
 
 ## Developer Certificate of Origin (DCO)
 
+Read [OWNERSHIP.md](OWNERSHIP.md) before configuring an identity or signing a
+contribution. Only verified, explicitly authorized identities may be used.
+Historical Git attribution does not establish current project authority or
+authorize a new signoff. Contribution-specific human consent remains required.
+
 Every commit in a pull request must be signed off, certifying you wrote it
 or otherwise have the right to submit it under this project's license, per
 the [Developer Certificate of Origin 1.1](https://developercertificate.org/).
