@@ -19,6 +19,8 @@ import {
   verifyWebhook,
 } from "./verify.js";
 import {
+  OutOfOrderError,
+  RateLimitedError,
   ReplayConflictError,
   SessionUnknownError,
   StoreUnavailableError,
@@ -129,15 +131,23 @@ export async function handleDiditWebhook(request, ctx) {
       event_id: event.event_id,
     });
   } catch (err) {
-    if (err instanceof StoreUnavailableError) {
-      log("store_unavailable", { event_id: event.event_id });
+    if (err instanceof StoreUnavailableError || err instanceof RateLimitedError) {
+      log("store_unavailable", {
+        event_id: event.event_id,
+        reason: err.reason || err.code,
+      });
       // 503 triggers Didit retries; do NOT claim success.
-      return jsonResponse(503, { error: err.code, reconcile: true });
+      return jsonResponse(503, {
+        error: err.code,
+        reconcile: true,
+        reason: err.reason || undefined,
+      });
     }
     if (
       err instanceof ReplayConflictError ||
       err instanceof TenantIsolationError ||
       err instanceof SessionUnknownError ||
+      err instanceof OutOfOrderError ||
       err instanceof ProofInvalidError
     ) {
       return jsonResponse(err.httpStatus || 403, { error: err.code });
@@ -145,6 +155,28 @@ export async function handleDiditWebhook(request, ctx) {
     log("unexpected", { name: err?.name });
     return jsonResponse(503, { error: "IDENTITY_STORE_UNAVAILABLE", reconcile: true });
   }
+}
+
+/**
+ * Simulate Didit delivery attempts: initial + up to 2 retries on 5xx.
+ * After exhaustion, record deadletter — never elevate without a later signed success.
+ */
+export async function simulateDiditRetryBudget(postOnce, { maxRetries = 2 } = {}) {
+  const attempts = [];
+  for (let attempt = 1; attempt <= 1 + maxRetries; attempt++) {
+    const res = await postOnce(attempt);
+    const status = res.status;
+    attempts.push({ attempt, status });
+    if (status >= 200 && status < 300) {
+      return { outcome: "delivered", attempts };
+    }
+    // Didit retries 5xx and 404 only; 4xx (non-404) stop.
+    if (status === 404 || (status >= 500 && status <= 599)) {
+      continue;
+    }
+    return { outcome: "no_retry", attempts };
+  }
+  return { outcome: "exhausted", attempts };
 }
 
 /** Minimal Worker export shape (local harness / future wrangler entry). */

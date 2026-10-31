@@ -1,6 +1,14 @@
 /**
  * Didit V3 webhook authentication (X-Signature-V2 only).
- * Intentionally rejects X-Signature-Simple as sole authority (envelope-only).
+ *
+ * Contract (docs.didit.me/integration/webhooks, fetched 2026-10-31):
+ * - X-Signature-V2: HMAC-SHA256 over sorted Unicode-preserved canonical JSON
+ *   (ensure_ascii=False). Recommended. This is NOT HMAC(raw body bytes).
+ * - X-Signature: HMAC-SHA256 over exact raw request bytes (legacy; fragile).
+ * - X-Signature-Simple: envelope-only; MUST NOT authorize identity elevation.
+ *
+ * We parse from the original raw body Uint8Array, then verify V2 over
+ * canonical(parsed). Constant-time compare via crypto.timingSafeEqual.
  * Matches WhitePact #244 DiditProvider.verify_webhook fail-closed rules.
  */
 
