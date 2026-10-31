@@ -14,7 +14,7 @@
 
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { canonical } from "./canonical.js";
-import { parseJsonStrict } from "./parse.js";
+import { OversizedPayloadError, parseJsonStrict } from "./parse.js";
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -127,6 +127,8 @@ export function verifyWebhook(opts) {
 
     return data;
   } catch (err) {
+    // Oversized → retryable (503), not proof-invalid (403). Preserve Didit retries.
+    if (err instanceof OversizedPayloadError) throw err;
     if (err instanceof ProofInvalidError) throw err;
     throw new ProofInvalidError();
   }

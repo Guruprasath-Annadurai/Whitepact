@@ -13,6 +13,7 @@
  */
 
 import { scrubForLogs } from "./redact.js";
+import { OversizedPayloadError } from "./parse.js";
 import {
   ProofInvalidError,
   signEvent,
@@ -107,7 +108,16 @@ export async function handleDiditWebhook(request, ctx) {
       testDelivery: request.headers.get("X-Didit-Test-Delivery") === "1",
       now,
     });
-  } catch {
+  } catch (err) {
+    if (err instanceof OversizedPayloadError) {
+      log("oversized", { bytes: err.byteLength, limit: err.limit });
+      // 503 → Didit retries; operator reconcile if exhausted. Never silent drop / 2xx.
+      return jsonResponse(503, {
+        error: err.code,
+        reconcile: true,
+        limit: err.limit,
+      });
+    }
     log("deny", { reason: "proof_invalid" });
     return jsonResponse(403, { error: "DIDIT_PROOF_INVALID" });
   }

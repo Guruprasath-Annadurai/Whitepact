@@ -365,22 +365,28 @@ export class InMemoryIdentityStore {
       }
 
       const v = this.verifications.get(event.session_id);
+      let prevStatus = null;
+      let nextStatus = null;
       if (v) {
         const prev = { ...v };
+        prevStatus = prev.status;
         let next = outcome;
         if (v.status === "IDENTITY_VERIFIED" && outcome !== "VERIFIED") next = "SUSPENDED";
         if (next === "VERIFIED") v.status = "IDENTITY_VERIFIED";
         else if (next === "REJECTED") v.status = "REJECTED";
         else if (next === "SUSPENDED") v.status = "SUSPENDED";
         else v.status = "REVIEW_REQUIRED";
+        nextStatus = v.status;
         stage({ type: "update_verification", sessionId: event.session_id, prev });
       }
 
       this.committedAcks.push(eventKey);
+      const transitionedToVerified =
+        nextStatus === "IDENTITY_VERIFIED" && prevStatus !== "IDENTITY_VERIFIED";
       return {
-        status: outcome === "VERIFIED" ? "IDENTITY_VERIFIED" : outcome,
+        status: nextStatus === "IDENTITY_VERIFIED" ? "IDENTITY_VERIFIED" : outcome,
         duplicate: false,
-        identity_transition: outcome === "VERIFIED",
+        identity_transition: transitionedToVerified,
         record,
       };
     } catch (err) {

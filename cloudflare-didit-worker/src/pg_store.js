@@ -222,7 +222,8 @@ export class PgIdentityStore {
         throw new StoreUnavailableError("Forced abort after insert.", "txn_abort");
       }
 
-      const nextStatus = mapOutcomeToStatus(outcome, ver.rows[0].status);
+      const prevStatus = ver.rows[0].status;
+      const nextStatus = mapOutcomeToStatus(outcome, prevStatus);
       await client.query(
         `UPDATE identity_verifications
          SET status=$3,
@@ -234,10 +235,12 @@ export class PgIdentityStore {
 
       await client.query("COMMIT");
       this.committedAcks.push(eventKey);
+      const elevated =
+        nextStatus === "IDENTITY_VERIFIED" && prevStatus !== "IDENTITY_VERIFIED";
       return {
         status: nextStatus === "IDENTITY_VERIFIED" ? "IDENTITY_VERIFIED" : outcome,
         duplicate: false,
-        identity_transition: nextStatus === "IDENTITY_VERIFIED",
+        identity_transition: elevated,
       };
     } catch (err) {
       try {
