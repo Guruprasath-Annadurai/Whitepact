@@ -1,0 +1,24 @@
+# EXAMPLE ONLY — do not deploy. Founder architecture approval + preflight PASS required.
+# Copy to wrangler.toml locally after gates clear; never commit production secrets.
+
+name = "whitepact-didit-webhook"
+main = "src/index.js"
+compatibility_date = "2026-10-01"
+
+# Custom domain on founder-owned Cloudflare zone (not workers.dev for M13 staging claim).
+# routes = [{ pattern = "idv.example.com/webhooks/didit", custom_domain = true }]
+
+# Hyperdrive binding for Neon (Free plan includes Hyperdrive query quota).
+# [[hyperdrive]]
+# binding = "HYPERDRIVE"
+# id = "REPLACE_AFTER_FOUNDER_PROVISION"
+
+[vars]
+WHITEPACT_DIDIT_ENVIRONMENT = "sandbox"
+WHITEPACT_RUNTIME_MODE = "staging"
+
+# Secrets via `wrangler secret put` (never in git):
+#   WHITEPACT_DIDIT_WEBHOOK_SECRET
+#   WHITEPACT_DIDIT_WORKFLOW_ID
+#   WHITEPACT_DIDIT_APPLICATION_ID
+#   WHITEPACT_DIDIT_API_KEY  (only if Worker also starts sessions)
