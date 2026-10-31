@@ -5,9 +5,6 @@
  */
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import test from "node:test";
 import {
   AuthorityDeniedError,
@@ -24,12 +21,13 @@ import {
 } from "../src/sovereign.js";
 import { createPool, PgIdentityStore } from "../src/pg_store.js";
 import { baseEvent, postWebhook, storeWithBinding } from "./helpers.mjs";
+import { SOVEREIGN_URL, applyAllSchemas, truncateIdentityTables } from "./pg_roles.mjs";
 
 const DATABASE_URL =
   process.env.DATABASE_URL || "postgres://ubuntu@127.0.0.1:54329/m13_didit";
-const __dir = dirname(fileURLToPath(import.meta.url));
 
 let pool;
+let sovereignPool;
 let pgReady = false;
 
 test("SEC-CF-007 PG setup", async (t) => {
@@ -40,18 +38,9 @@ test("SEC-CF-007 PG setup", async (t) => {
     t.skip("PostgreSQL unavailable: " + err.message);
     return;
   }
-  for (const f of [
-    "001_identity_events.sql",
-    "002_reconciliation_jobs.sql",
-    "003_authority_boundary.sql",
-  ]) {
-    await pool.query(readFileSync(join(__dir, "../schema", f), "utf8"));
-  }
-  await pool.query(
-    `TRUNCATE identity_authority_denials, identity_reconciliation_jobs,
-              identity_reconciliation_deadletters, identity_provider_events,
-              identity_verifications, identity_session_bindings`,
-  );
+  await applyAllSchemas(pool);
+  await truncateIdentityTables(pool);
+  sovereignPool = createPool(SOVEREIGN_URL);
   pgReady = true;
 });
 
@@ -299,7 +288,8 @@ test("CTO-14 mock sovereign admit then execution allowed; edge still cannot elev
   await store.commitIdentityEvent(
     baseEvent({ session_id: sessionId, status: "Approved" }),
   );
-  const adm = await sovereignAdmitPg(pool, {
+  // 007C: admit must use distinct sovereign_login pool (not superuser GUC).
+  const adm = await sovereignAdmitPg(sovereignPool, {
     provider: "didit-sandbox",
     sessionId,
     admit: true,
@@ -344,5 +334,6 @@ test("SEC-CF-007: sovereign deny without PROVIDER_APPROVED fails", () => {
 });
 
 test("SEC-CF-007 PG teardown", async () => {
+  if (sovereignPool) await sovereignPool.end();
   if (pool) await pool.end();
 });

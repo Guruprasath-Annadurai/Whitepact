@@ -43,10 +43,14 @@ test("reconcile-pg setup", async (t) => {
     t.skip("PostgreSQL unavailable: " + err.message);
     return;
   }
-  const schema1 = readFileSync(join(__dir, "../schema/001_identity_events.sql"), "utf8");
-  const schema2 = readFileSync(join(__dir, "../schema/002_reconciliation_jobs.sql"), "utf8");
-  await pool.query(schema1);
-  await pool.query(schema2);
+  for (const f of [
+    "001_identity_events.sql",
+    "002_reconciliation_jobs.sql",
+    "003_authority_boundary.sql",
+    "004_database_hardening.sql",
+  ]) {
+    await pool.query(readFileSync(join(__dir, "../schema", f), "utf8"));
+  }
   await pool.query(
     `TRUNCATE identity_reconciliation_jobs, identity_webhook_delivery_ops,
               identity_reconciliation_deadletters, identity_provider_events,

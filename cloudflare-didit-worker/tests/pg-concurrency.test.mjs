@@ -32,6 +32,7 @@ test("pg setup", async (t) => {
     "001_identity_events.sql",
     "002_reconciliation_jobs.sql",
     "003_authority_boundary.sql",
+    "004_database_hardening.sql",
   ]) {
     await pool.query(readFileSync(join(__dir, "../schema", f), "utf8"));
   }

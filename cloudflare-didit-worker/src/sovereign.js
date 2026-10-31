@@ -1,9 +1,9 @@
 /**
- * Mock / adapter for WhitePact sovereign Linux authority (SEC-CF-007).
+ * Mock / adapter for WhitePact sovereign Linux authority (SEC-CF-007 / 007A).
  * Real Linux runtime undeployed → E2E BLOCKED; this module qualifies the contract locally.
  *
- * Neon is NOT the admission authority — this adapter only mutates durable mirror
- * rows when explicitly invoked as sovereign (PG: whitepact.sovereign_admit=on).
+ * Sovereign PG admission MUST use whitepact_sovereign_apply_admission() as
+ * session_user=whitepact_sovereign_login. Caller-controlled GUCs are NOT proof.
  */
 
 import { randomUUID } from "node:crypto";
@@ -37,55 +37,60 @@ export function sovereignAdmitInMemory(store, sessionId, { admit = true } = {}) 
 }
 
 /**
- * PostgreSQL sovereign admission — requires whitepact.sovereign_admit=on in txn.
+ * PostgreSQL sovereign admission via SECURITY DEFINER function.
+ * Pool MUST connect as whitepact_sovereign_login (distinct non-superuser).
+ * Does NOT use set_config('whitepact.sovereign_admit') — that bypass is removed (007A).
  */
 export async function sovereignAdmitPg(pool, { provider, sessionId, admit = true }) {
   const client = await pool.connect();
   try {
+    const who = await client.query("SELECT session_user AS su, current_user AS cu");
+    if (who.rows[0].su !== "whitepact_sovereign_login") {
+      throw new AuthorityDeniedError(
+        `sovereignAdmitPg requires session_user=whitepact_sovereign_login (got ${who.rows[0].su})`,
+        "SOVEREIGN_SESSION_REQUIRED",
+      );
+    }
     await client.query("BEGIN");
-    await client.query("SELECT set_config('whitepact.sovereign_admit', 'on', true)");
-    const cur = await client.query(
-      `SELECT status, provider_proofing_status, sovereign_admission, user_id, org_id
-         FROM identity_verifications
-        WHERE provider=$1 AND provider_reference_id=$2
-        FOR UPDATE`,
-      [provider, sessionId],
+    const res = await client.query(
+      `SELECT out_status, out_admission, out_proofing, out_elevates
+         FROM whitepact_sovereign_apply_admission($1, $2, $3)`,
+      [provider, sessionId, admit],
     );
-    if (!cur.rowCount) {
+    if (!res.rowCount) {
       throw new AuthorityDeniedError("VERIFICATION_SESSION_UNKNOWN");
     }
-    const row = cur.rows[0];
-    const next = sovereignAdmitDecision(
-      {
-        status: row.status,
-        provider_proofing_status: row.provider_proofing_status,
-        sovereign_admission: row.sovereign_admission,
-      },
-      { admit },
-    );
-    await client.query(
-      `UPDATE identity_verifications
-          SET status=$3,
-              sovereign_admission=$4,
-              provider_proofing_status=$5,
-              verified_at = CASE WHEN $3='IDENTITY_VERIFIED' THEN now() ELSE verified_at END,
-              updated_at = now()
-        WHERE provider=$1 AND provider_reference_id=$2`,
-      [
-        provider,
-        sessionId,
-        next.status,
-        next.sovereign_admission,
-        next.provider_proofing_status,
-      ],
-    );
+    const row = res.rows[0];
     await client.query("COMMIT");
-    return { ...next, session_id: sessionId, source: "mock_sovereign_pg" };
+    return {
+      status: row.out_status,
+      sovereign_admission: row.out_admission,
+      provider_proofing_status: row.out_proofing,
+      identity_transition: row.out_elevates === true,
+      elevates: row.out_elevates === true,
+      execution_granted: row.out_status === SOVEREIGN_STATUS.IDENTITY_VERIFIED,
+      session_id: sessionId,
+      source: "mock_sovereign_pg_definer",
+    };
   } catch (err) {
     try {
       await client.query("ROLLBACK");
     } catch {
       /* ignore */
+    }
+    if (err instanceof AuthorityDeniedError) throw err;
+    const msg = err.message || String(err);
+    if (/PROVIDER_EVIDENCE_REQUIRED/.test(msg)) {
+      throw new AuthorityDeniedError(msg, "PROVIDER_EVIDENCE_REQUIRED");
+    }
+    if (/REOPEN_FORBIDDEN/.test(msg)) {
+      throw new AuthorityDeniedError(msg, "REOPEN_FORBIDDEN");
+    }
+    if (/VERIFICATION_SESSION_UNKNOWN|P0002/.test(msg)) {
+      throw new AuthorityDeniedError(msg, "VERIFICATION_SESSION_UNKNOWN");
+    }
+    if (/42501|SEC-CF-007A|denied for session_user/.test(msg)) {
+      throw new AuthorityDeniedError(msg, "SOVEREIGN_ADMISSION_DENIED");
     }
     throw err;
   } finally {

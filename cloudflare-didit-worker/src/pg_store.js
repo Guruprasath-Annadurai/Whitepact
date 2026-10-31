@@ -82,13 +82,17 @@ export class PgIdentityStore {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
-      // Explicitly clear sovereign gate for edge path.
-      await client.query("SELECT set_config('whitepact.sovereign_admit', 'off', true)");
+      // SEC-CF-007A: no session GUC gate — elevation is session_user / DEFINER only.
 
       if (testDelivery) {
+        // Advisory lock: SELECT FOR UPDATE requires UPDATE priv — edge must not have it (007B).
+        await client.query(`SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2))`, [
+          this.provider,
+          eventKey,
+        ]);
         const prior = await client.query(
           `SELECT payload_hash FROM identity_provider_events
-           WHERE provider=$1 AND event_id=$2 FOR UPDATE`,
+           WHERE provider=$1 AND event_id=$2`,
           [this.provider, eventKey],
         );
         if (prior.rowCount) {
@@ -128,9 +132,15 @@ export class PgIdentityStore {
         };
       }
 
+      // Serialize session admits without UPDATE privilege on bindings/events (007B).
+      await client.query(`SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2))`, [
+        this.provider,
+        event.session_id,
+      ]);
+
       const binding = await client.query(
         `SELECT user_id, org_id, context_hash FROM identity_session_bindings
-         WHERE provider=$1 AND session_id=$2 FOR UPDATE`,
+         WHERE provider=$1 AND session_id=$2`,
         [this.provider, event.session_id],
       );
       if (!binding.rowCount) throw new SessionUnknownError();
@@ -138,7 +148,7 @@ export class PgIdentityStore {
 
       const prior = await client.query(
         `SELECT payload_hash FROM identity_provider_events
-         WHERE provider=$1 AND event_id=$2 FOR UPDATE`,
+         WHERE provider=$1 AND event_id=$2`,
         [this.provider, eventKey],
       );
       if (prior.rowCount) {
