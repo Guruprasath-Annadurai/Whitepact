@@ -82,9 +82,10 @@ export async function handleDiditWebhook(request, ctx) {
   }
 
   const signature = request.headers.get("X-Signature-V2") || "";
+  const signaturePrevious = request.headers.get("X-Signature-V2-Previous") || "";
   const timestamp = request.headers.get("X-Timestamp") || "";
   // Refuse Simple-only authentication for identity elevation.
-  if (!signature && request.headers.get("X-Signature-Simple")) {
+  if (!signature && !signaturePrevious && request.headers.get("X-Signature-Simple")) {
     return jsonResponse(403, { error: "DIDIT_PROOF_INVALID", detail: "V2_REQUIRED" });
   }
 
@@ -96,8 +97,10 @@ export async function handleDiditWebhook(request, ctx) {
     event = verifyWebhook({
       payload,
       signature,
+      signaturePrevious,
       timestamp,
       webhookSecret: enrollment.webhookSecret,
+      previousWebhookSecret: env.WHITEPACT_DIDIT_WEBHOOK_SECRET_PREVIOUS || "",
       applicationId: enrollment.applicationId,
       environment: enrollment.environment,
       workflowId: enrollment.workflowId,
@@ -122,7 +125,9 @@ export async function handleDiditWebhook(request, ctx) {
 
   try {
     // DURABLE COMMIT BEFORE ACK — do not defer to waitUntil().
-    const result = store.commitIdentityEvent(event, { testDelivery });
+    const result = await Promise.resolve(
+      store.commitIdentityEvent(event, { testDelivery }),
+    );
     return jsonResponse(200, {
       ok: true,
       status: result.status,

@@ -67,6 +67,8 @@ function safeEqualHex(a, b) {
  * @param {string} opts.workflowId enrolled workflow
  * @param {boolean} [opts.testDelivery]
  * @param {() => number} [opts.now] unix seconds
+ * @param {string} [opts.signaturePrevious] X-Signature-V2-Previous (rotation window)
+ * @param {string|Uint8Array} [opts.previousWebhookSecret] replaced destination secret
  */
 export function verifyWebhook(opts) {
   const {
@@ -79,6 +81,8 @@ export function verifyWebhook(opts) {
     workflowId,
     testDelivery = false,
     now = () => Math.floor(Date.now() / 1000),
+    signaturePrevious = "",
+    previousWebhookSecret = "",
   } = opts;
 
   try {
@@ -91,12 +95,22 @@ export function verifyWebhook(opts) {
     if (data.timestamp !== stamp) throw new Error("stale timestamp");
     if (Math.abs(now() - stamp) > 300) throw new Error("stale timestamp");
 
-    const secretBytes =
-      typeof webhookSecret === "string"
-        ? new TextEncoder().encode(webhookSecret)
-        : webhookSecret;
-    const expected = hmacHexSha256(secretBytes, canonical(data));
-    if (!safeEqualHex(signature, expected)) throw new Error("bad signature");
+    const canon = canonical(data);
+    const toBytes = (s) =>
+      typeof s === "string" ? new TextEncoder().encode(s) : s;
+
+    const currentOk = safeEqualHex(signature, hmacHexSha256(toBytes(webhookSecret), canon));
+    let previousOk = false;
+    if (!currentOk && previousWebhookSecret && signaturePrevious) {
+      // Didit rotation: accept match on V2 OR V2-Previous with replaced secret.
+      previousOk =
+        safeEqualHex(
+          signaturePrevious,
+          hmacHexSha256(toBytes(previousWebhookSecret), canon),
+        ) ||
+        safeEqualHex(signature, hmacHexSha256(toBytes(previousWebhookSecret), canon));
+    }
+    if (!currentOk && !previousOk) throw new Error("bad signature");
 
     if (data.application_id !== applicationId || data.environment !== environment) {
       throw new Error("wrong destination scope");
