@@ -199,12 +199,13 @@ test("reconcile applied observation never elevates; signed webhook still require
   assert.equal(store.verifications.get(event.session_id).status, "REVIEW_REQUIRED");
   assert.equal(store.events.size, 0);
 
-  // Authentic signed webhook still elevates via normal path.
+  // Authentic signed webhook records PROVIDER_APPROVED only (SEC-CF-007).
   const admitted = await postWebhook({ event, store });
   assert.equal(admitted.status, 200);
   const body = await admitted.json();
-  assert.equal(body.identity_transition, true);
-  assert.equal(store.verifications.get(event.session_id).status, "IDENTITY_VERIFIED");
+  assert.equal(body.identity_transition, false);
+  assert.equal(body.provider_proofing_status, "PROVIDER_APPROVED");
+  assert.equal(store.verifications.get(event.session_id).status, "REVIEW_REQUIRED");
 });
 
 test("missed delivery / exhausted retries → deadletter enqueue → reconcile non-elevating", async () => {
@@ -338,11 +339,14 @@ test("revoked/rejected session cannot be reopened by decision GET", async () => 
   assert.equal(store.verifications.get(event.session_id).status, "REJECTED");
 });
 
-test("conflicting decision after verified: observe conflict, no unsigned suspend", async () => {
+test("conflicting decision after provider-approved: observe conflict; signed decline rejects", async () => {
   const event = baseEvent();
   const store = storeWithBinding(event.session_id);
   assert.equal((await postWebhook({ event, store })).status, 200);
-  assert.equal(store.verifications.get(event.session_id).status, "IDENTITY_VERIFIED");
+  assert.equal(
+    store.verifications.get(event.session_id).provider_proofing_status,
+    "PROVIDER_APPROVED",
+  );
 
   const fetchImpl = createMockDiditFetch({
     [`GET ${decisionUrl(event.session_id)}`]: () => ({
@@ -365,8 +369,8 @@ test("conflicting decision after verified: observe conflict, no unsigned suspend
   assert.equal(snap.state, RECONCILE_STATES.APPLIED);
   assert.equal(snap.last_error_class, "CONFLICTING_DECISION_OBSERVED");
   assert.equal(snap.elevates, false);
-  // Still verified — only signed Declined webhook may suspend.
-  assert.equal(store.verifications.get(event.session_id).status, "IDENTITY_VERIFIED");
+  // Still provider-approved until signed Declined webhook.
+  assert.equal(store.verifications.get(event.session_id).status, "REVIEW_REQUIRED");
 
   const decline = baseEvent({
     session_id: event.session_id,
@@ -377,7 +381,7 @@ test("conflicting decision after verified: observe conflict, no unsigned suspend
   });
   const sus = await postWebhook({ event: decline, store });
   assert.equal(sus.status, 200);
-  assert.equal(store.verifications.get(event.session_id).status, "SUSPENDED");
+  assert.equal(store.verifications.get(event.session_id).status, "REJECTED");
 });
 
 test("duplicate recovery is idempotent; no double elevation", async () => {

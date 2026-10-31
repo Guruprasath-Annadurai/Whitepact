@@ -32,7 +32,11 @@ test("Neon txn atomicity: mid-commit abort rolls back event + leaves identity un
     store,
   });
   assert.equal(ok.status, 200);
-  assert.equal(store.verifications.get(event.session_id).status, "IDENTITY_VERIFIED");
+  assert.equal(store.verifications.get(event.session_id).status, "REVIEW_REQUIRED");
+  assert.equal(
+    store.verifications.get(event.session_id).provider_proofing_status,
+    "PROVIDER_APPROVED",
+  );
 });
 
 test("DB suspension (quota / Free CU exhausted) → 503, no ACK, deadletter after retries", async () => {
@@ -148,7 +152,11 @@ test("newer in-order status update after review is admitted", async () => {
   });
   const res = await postWebhook({ event: approved, store });
   assert.equal(res.status, 200, await res.text());
-  assert.equal(store.verifications.get(sessionId).status, "IDENTITY_VERIFIED");
+  assert.equal(store.verifications.get(sessionId).status, "REVIEW_REQUIRED");
+  assert.equal(
+    store.verifications.get(sessionId).provider_proofing_status,
+    "PROVIDER_APPROVED",
+  );
 });
 
 test("concurrent duplicate delivery: single winner under lock", async () => {

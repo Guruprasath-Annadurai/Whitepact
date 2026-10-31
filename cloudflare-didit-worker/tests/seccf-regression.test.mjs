@@ -137,7 +137,7 @@ test("SEC-CF-006 sensitive-data redaction on durable path", async () => {
   assert.equal(JSON.stringify(row).includes("document_front"), false);
 });
 
-test("SEC-CF-006 terminal-state: verified then declined suspends (not reopen)", async () => {
+test("SEC-CF-006 terminal-state: provider-approved then declined rejects (no edge elevation)", async () => {
   const sessionId = randomUUID();
   const store = storeWithBinding(sessionId);
   const ts = Math.floor(Date.now() / 1000);
@@ -148,7 +148,12 @@ test("SEC-CF-006 terminal-state: verified then declined suspends (not reopen)", 
     status: "Approved",
   });
   assert.equal((await postWebhook({ event: approved, store })).status, 200);
-  assert.equal(store.verifications.get(sessionId).status, "IDENTITY_VERIFIED");
+  // SEC-CF-007: edge stops at PROVIDER_APPROVED / REVIEW_REQUIRED.
+  assert.equal(store.verifications.get(sessionId).status, "REVIEW_REQUIRED");
+  assert.equal(
+    store.verifications.get(sessionId).provider_proofing_status,
+    "PROVIDER_APPROVED",
+  );
   const declined = baseEvent({
     session_id: sessionId,
     timestamp: ts + 5,
@@ -156,5 +161,9 @@ test("SEC-CF-006 terminal-state: verified then declined suspends (not reopen)", 
     status: "Declined",
   });
   assert.equal((await postWebhook({ event: declined, store })).status, 200);
-  assert.equal(store.verifications.get(sessionId).status, "SUSPENDED");
+  assert.equal(store.verifications.get(sessionId).status, "REJECTED");
+  assert.equal(
+    store.verifications.get(sessionId).provider_proofing_status,
+    "PROVIDER_REJECTED",
+  );
 });

@@ -10,6 +10,12 @@
 
 import { payloadHashHex } from "./verify.js";
 import { assertNoMediaInRecord, durableProjection } from "./redact.js";
+import {
+  mapDiditStatusToProviderProofing,
+  applyEdgeProviderOutcome,
+  SOVEREIGN_ADMISSION,
+  SOVEREIGN_STATUS,
+} from "./authority_status.js";
 
 export class StoreUnavailableError extends Error {
   constructor(message = "Identity store unavailable; reconcile later.", reason = "unavailable") {
@@ -110,8 +116,10 @@ export const SQL = {
   `,
   updateVerification: `
     UPDATE identity_verifications
-    SET status = $3, updated_at = now(),
-        verified_at = CASE WHEN $3 = 'IDENTITY_VERIFIED' THEN now() ELSE verified_at END
+    SET status = $3,
+        provider_proofing_status = $4,
+        sovereign_admission = $5,
+        updated_at = now()
     WHERE provider = $1 AND provider_reference_id = $2
   `,
   insertDeadletter: `
@@ -119,18 +127,6 @@ export const SQL = {
       id, provider, event_id, session_id, reason, payload_hash, observed_at
     ) VALUES (gen_random_uuid()::text, $1, $2, $3, $4, $5, now())
   `,
-};
-
-const STATUS_MAP = {
-  Approved: "VERIFIED",
-  Declined: "REJECTED",
-  "In Review": "REVIEW",
-  "Not Started": "REVIEW",
-  "In Progress": "REVIEW",
-  Resubmitted: "REVIEW",
-  Expired: "REJECTED",
-  Abandoned: "REJECTED",
-  "Kyc Expired": "SUSPENDED",
 };
 
 export class InMemoryIdentityStore {
@@ -232,7 +228,9 @@ export class InMemoryIdentityStore {
       context_hash: contextHash,
     });
     this.verifications.set(sessionId, {
-      status: "REVIEW_REQUIRED",
+      status: SOVEREIGN_STATUS.REVIEW_REQUIRED,
+      provider_proofing_status: null,
+      sovereign_admission: SOVEREIGN_ADMISSION.PENDING,
       user_id: userId,
       org_id: orgId,
     });
@@ -333,8 +331,8 @@ export class InMemoryIdentityStore {
         throw new OutOfOrderError();
       }
 
-      const outcome = STATUS_MAP[event.status];
-      if (!outcome) throw new TenantIsolationError("unsupported status");
+      const proofing = mapDiditStatusToProviderProofing(event.status);
+      if (!proofing) throw new TenantIsolationError("unsupported status");
 
       const record = {
         provider: this.provider,
@@ -365,28 +363,41 @@ export class InMemoryIdentityStore {
       }
 
       const v = this.verifications.get(event.session_id);
-      let prevStatus = null;
-      let nextStatus = null;
+      let edgeResult = null;
       if (v) {
         const prev = { ...v };
-        prevStatus = prev.status;
-        let next = outcome;
-        if (v.status === "IDENTITY_VERIFIED" && outcome !== "VERIFIED") next = "SUSPENDED";
-        if (next === "VERIFIED") v.status = "IDENTITY_VERIFIED";
-        else if (next === "REJECTED") v.status = "REJECTED";
-        else if (next === "SUSPENDED") v.status = "SUSPENDED";
-        else v.status = "REVIEW_REQUIRED";
-        nextStatus = v.status;
+        edgeResult = applyEdgeProviderOutcome({
+          currentSovereignStatus: v.status,
+          currentAdmission: v.sovereign_admission,
+          providerProofing: proofing,
+        });
+        // SEC-CF-007: edge must never write IDENTITY_VERIFIED as a new elevation.
+        if (
+          edgeResult.status === SOVEREIGN_STATUS.IDENTITY_VERIFIED &&
+          prev.status !== SOVEREIGN_STATUS.IDENTITY_VERIFIED
+        ) {
+          throw new StoreUnavailableError(
+            "SEC-CF-007 invariant: edge attempted elevation.",
+            "authority_boundary",
+          );
+        }
+        v.status = edgeResult.status;
+        v.provider_proofing_status = edgeResult.provider_proofing_status;
+        v.sovereign_admission = edgeResult.sovereign_admission;
         stage({ type: "update_verification", sessionId: event.session_id, prev });
       }
 
       this.committedAcks.push(eventKey);
-      const transitionedToVerified =
-        nextStatus === "IDENTITY_VERIFIED" && prevStatus !== "IDENTITY_VERIFIED";
       return {
-        status: nextStatus === "IDENTITY_VERIFIED" ? "IDENTITY_VERIFIED" : outcome,
+        status: edgeResult?.provider_proofing_status || proofing,
+        provider_proofing_status: edgeResult?.provider_proofing_status || proofing,
+        sovereign_status: edgeResult?.status || SOVEREIGN_STATUS.REVIEW_REQUIRED,
+        sovereign_admission: edgeResult?.sovereign_admission || SOVEREIGN_ADMISSION.PENDING,
+        sovereign_admission_required: edgeResult?.sovereign_admission_required !== false,
         duplicate: false,
-        identity_transition: transitionedToVerified,
+        identity_transition: false,
+        elevates: false,
+        execution_granted: false,
         record,
       };
     } catch (err) {

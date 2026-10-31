@@ -12,11 +12,19 @@ test("ACK 200 only after durable commit; event ledger contains hash", async () =
   const body = await res.json();
   assert.equal(body.ok, true);
   assert.equal(body.duplicate, false);
-  assert.equal(body.identity_transition, true);
+  // SEC-CF-007: edge records provider evidence only — no sovereign elevation.
+  assert.equal(body.identity_transition, false);
+  assert.equal(body.elevates, false);
+  assert.equal(body.provider_proofing_status, "PROVIDER_APPROVED");
+  assert.equal(body.sovereign_admission_required, true);
   assert.ok(store.committedAcks.includes("event:" + event.event_id));
   const row = store.events.get("event:" + event.event_id);
   assert.equal(row.payload_hash, payloadHashHex(event));
-  assert.equal(store.verifications.get(event.session_id).status, "IDENTITY_VERIFIED");
+  assert.equal(store.verifications.get(event.session_id).status, "REVIEW_REQUIRED");
+  assert.equal(
+    store.verifications.get(event.session_id).provider_proofing_status,
+    "PROVIDER_APPROVED",
+  );
 });
 
 test("identical retry is idempotent ALREADY_PROCESSED (still 200)", async () => {

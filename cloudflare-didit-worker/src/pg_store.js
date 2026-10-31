@@ -1,7 +1,9 @@
 /**
  * Real PostgreSQL durable store (disposable local / future Neon).
  * Uses explicit BEGIN / FOR UPDATE / COMMIT / ROLLBACK.
- * Not an in-memory stand-in — concurrency tests must use this against live PG.
+ *
+ * SEC-CF-007: edge commits provider proofing only — never IDENTITY_VERIFIED.
+ * Sovereign admission uses set_config('whitepact.sovereign_admit','on',true).
  */
 
 import { randomUUID } from "node:crypto";
@@ -9,35 +11,18 @@ import pg from "pg";
 import { payloadHashHex } from "./verify.js";
 import { assertNoMediaInRecord, durableProjection } from "./redact.js";
 import {
+  applyEdgeProviderOutcome,
+  mapDiditStatusToProviderProofing,
+  SOVEREIGN_ADMISSION,
+  SOVEREIGN_STATUS,
+} from "./authority_status.js";
+import {
   OutOfOrderError,
   ReplayConflictError,
   SessionUnknownError,
   StoreUnavailableError,
   TenantIsolationError,
 } from "./store.js";
-
-const STATUS_MAP = {
-  Approved: "VERIFIED",
-  Declined: "REJECTED",
-  "In Review": "REVIEW",
-  "Not Started": "REVIEW",
-  "In Progress": "REVIEW",
-  Resubmitted: "REVIEW",
-  Expired: "REJECTED",
-  Abandoned: "REJECTED",
-  "Kyc Expired": "SUSPENDED",
-};
-
-function mapOutcomeToStatus(outcome, currentStatus) {
-  let next = outcome;
-  if (currentStatus === "IDENTITY_VERIFIED" && outcome !== "VERIFIED") {
-    next = "SUSPENDED";
-  }
-  if (next === "VERIFIED") return "IDENTITY_VERIFIED";
-  if (next === "REJECTED") return "REJECTED";
-  if (next === "SUSPENDED") return "SUSPENDED";
-  return "REVIEW_REQUIRED";
-}
 
 export class PgIdentityStore {
   constructor(pool, { provider = "didit-sandbox", suspended = false } = {}) {
@@ -71,8 +56,9 @@ export class PgIdentityStore {
       );
       await client.query(
         `INSERT INTO identity_verifications
-           (id, provider, provider_reference_id, user_id, org_id, status)
-         VALUES ($1,$2,$3,$4,$5,'REVIEW_REQUIRED')
+           (id, provider, provider_reference_id, user_id, org_id, status,
+            provider_proofing_status, sovereign_admission)
+         VALUES ($1,$2,$3,$4,$5,'REVIEW_REQUIRED', NULL, 'PENDING')
          ON CONFLICT (provider, provider_reference_id) DO NOTHING`,
         [randomUUID(), this.provider, sessionId, userId, orgId],
       );
@@ -96,6 +82,8 @@ export class PgIdentityStore {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
+      // Explicitly clear sovereign gate for edge path.
+      await client.query("SELECT set_config('whitepact.sovereign_admit', 'off', true)");
 
       if (testDelivery) {
         const prior = await client.query(
@@ -110,6 +98,8 @@ export class PgIdentityStore {
             status: "TEST_RECEIPT_ONLY",
             duplicate: true,
             identity_transition: false,
+            elevates: false,
+            execution_granted: false,
           };
         }
         await client.query(
@@ -133,6 +123,8 @@ export class PgIdentityStore {
           status: "TEST_RECEIPT_ONLY",
           duplicate: false,
           identity_transition: false,
+          elevates: false,
+          execution_granted: false,
         };
       }
 
@@ -156,10 +148,11 @@ export class PgIdentityStore {
           status: "ALREADY_PROCESSED",
           duplicate: true,
           identity_transition: false,
+          elevates: false,
+          execution_granted: false,
         };
       }
 
-      // Latest created_at for session via order keys session:ts:event
       const latestRes = await client.query(
         `SELECT event_id FROM identity_provider_events
          WHERE provider=$1 AND event_id LIKE $2`,
@@ -173,12 +166,13 @@ export class PgIdentityStore {
       }
       if (event.created_at <= latest) throw new OutOfOrderError();
 
-      const outcome = STATUS_MAP[event.status];
-      if (!outcome) throw new TenantIsolationError("unsupported status");
+      const proofing = mapDiditStatusToProviderProofing(event.status);
+      if (!proofing) throw new TenantIsolationError("unsupported status");
 
       const ver = await client.query(
-        `SELECT id, status FROM identity_verifications
-         WHERE provider=$1 AND provider_reference_id=$2 FOR UPDATE`,
+        `SELECT id, status, provider_proofing_status, sovereign_admission
+           FROM identity_verifications
+          WHERE provider=$1 AND provider_reference_id=$2 FOR UPDATE`,
         [this.provider, event.session_id],
       );
       if (!ver.rowCount) throw new SessionUnknownError();
@@ -222,25 +216,50 @@ export class PgIdentityStore {
         throw new StoreUnavailableError("Forced abort after insert.", "txn_abort");
       }
 
-      const prevStatus = ver.rows[0].status;
-      const nextStatus = mapOutcomeToStatus(outcome, prevStatus);
+      const prev = ver.rows[0];
+      const edgeResult = applyEdgeProviderOutcome({
+        currentSovereignStatus: prev.status,
+        currentAdmission: prev.sovereign_admission,
+        providerProofing: proofing,
+      });
+      if (
+        edgeResult.status === SOVEREIGN_STATUS.IDENTITY_VERIFIED &&
+        prev.status !== SOVEREIGN_STATUS.IDENTITY_VERIFIED
+      ) {
+        throw new StoreUnavailableError(
+          "SEC-CF-007 invariant: edge attempted elevation.",
+          "authority_boundary",
+        );
+      }
+
       await client.query(
         `UPDATE identity_verifications
          SET status=$3,
-             verified_at = CASE WHEN $3='IDENTITY_VERIFIED' THEN now() ELSE verified_at END,
+             provider_proofing_status=$4,
+             sovereign_admission=$5,
              updated_at = now()
          WHERE provider=$1 AND provider_reference_id=$2`,
-        [this.provider, event.session_id, nextStatus],
+        [
+          this.provider,
+          event.session_id,
+          edgeResult.status,
+          edgeResult.provider_proofing_status,
+          edgeResult.sovereign_admission,
+        ],
       );
 
       await client.query("COMMIT");
       this.committedAcks.push(eventKey);
-      const elevated =
-        nextStatus === "IDENTITY_VERIFIED" && prevStatus !== "IDENTITY_VERIFIED";
       return {
-        status: nextStatus === "IDENTITY_VERIFIED" ? "IDENTITY_VERIFIED" : outcome,
+        status: edgeResult.provider_proofing_status,
+        provider_proofing_status: edgeResult.provider_proofing_status,
+        sovereign_status: edgeResult.status,
+        sovereign_admission: edgeResult.sovereign_admission,
+        sovereign_admission_required: edgeResult.sovereign_admission_required !== false,
         duplicate: false,
-        identity_transition: elevated,
+        identity_transition: false,
+        elevates: false,
+        execution_granted: false,
       };
     } catch (err) {
       try {
@@ -257,9 +276,12 @@ export class PgIdentityStore {
       ) {
         throw err;
       }
-      // unique violation under race → treat as conflict for caller to re-read
       if (err && err.code === "23505") {
         throw new StoreUnavailableError("Unique race; retry.", "unique_race");
+      }
+      // SEC-CF-007 trigger / privilege denial
+      if (err && (err.code === "42501" || /SEC-CF-007/.test(err.message || ""))) {
+        throw new StoreUnavailableError(err.message, "authority_boundary");
       }
       throw new StoreUnavailableError(err.message || "pg error", "connection_failure");
     } finally {
@@ -274,6 +296,16 @@ export class PgIdentityStore {
       [this.provider, sessionId],
     );
     return res.rows[0]?.status ?? null;
+  }
+
+  async getVerificationRow(sessionId) {
+    const res = await this.pool.query(
+      `SELECT status, provider_proofing_status, sovereign_admission, user_id, org_id
+         FROM identity_verifications
+        WHERE provider=$1 AND provider_reference_id=$2`,
+      [this.provider, sessionId],
+    );
+    return res.rows[0] ?? null;
   }
 
   async countEvents(prefix = "event:") {

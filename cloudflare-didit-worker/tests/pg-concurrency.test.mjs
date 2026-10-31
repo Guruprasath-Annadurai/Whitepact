@@ -4,6 +4,9 @@
  */
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { createPool, PgIdentityStore } from "../src/pg_store.js";
 import { handleDiditWebhook } from "../src/handler.js";
@@ -12,6 +15,7 @@ import { APP, SECRET, WORKFLOW, baseEvent, env } from "./helpers.mjs";
 
 const DATABASE_URL =
   process.env.DATABASE_URL || "postgres://ubuntu@127.0.0.1:54329/m13_didit";
+const __dir = dirname(fileURLToPath(import.meta.url));
 
 let pool;
 let store;
@@ -24,8 +28,16 @@ test("pg setup", async (t) => {
     t.skip("PostgreSQL not available: " + err.message);
     return;
   }
-  // Isolate schema per run
-  await pool.query("TRUNCATE identity_provider_events, identity_session_bindings, identity_verifications, identity_reconciliation_deadletters");
+  for (const f of [
+    "001_identity_events.sql",
+    "002_reconciliation_jobs.sql",
+    "003_authority_boundary.sql",
+  ]) {
+    await pool.query(readFileSync(join(__dir, "../schema", f), "utf8"));
+  }
+  await pool.query(
+    "TRUNCATE identity_provider_events, identity_session_bindings, identity_verifications, identity_reconciliation_deadletters",
+  );
   store = new PgIdentityStore(pool, { provider: "didit-sandbox" });
 });
 
@@ -66,7 +78,9 @@ test("PG concurrent webhook delivery: single durable winner", async (t) => {
     1,
     JSON.stringify(statuses),
   );
-  assert.equal(await store.getVerificationStatus(event.session_id), "IDENTITY_VERIFIED");
+  assert.equal(await store.getVerificationStatus(event.session_id), "REVIEW_REQUIRED");
+  const row = await store.getVerificationRow(event.session_id);
+  assert.equal(row.provider_proofing_status, "PROVIDER_APPROVED");
   assert.ok(n >= 1);
 });
 
@@ -91,7 +105,7 @@ test("PG txn rollback on mid-commit abort leaves no event / no elevation", async
   assert.equal(await store.getVerificationStatus(event.session_id), "REVIEW_REQUIRED");
 });
 
-test("PG out-of-order / terminal suspend after verified", async (t) => {
+test("PG out-of-order / terminal reject after provider-approved (no edge elevation)", async (t) => {
   if (!store) return t.skip("no pg");
   const sessionId = randomUUID();
   const ts = Math.floor(Date.now() / 1000);
@@ -108,7 +122,8 @@ test("PG out-of-order / terminal suspend after verified", async (t) => {
     status: "Approved",
   });
   const r1 = await store.commitIdentityEvent(approved);
-  assert.equal(r1.identity_transition, true);
+  assert.equal(r1.identity_transition, false);
+  assert.equal(r1.provider_proofing_status, "PROVIDER_APPROVED");
   const older = baseEvent({
     session_id: sessionId,
     timestamp: ts + 2,
@@ -123,7 +138,7 @@ test("PG out-of-order / terminal suspend after verified", async (t) => {
     status: "Declined",
   });
   await store.commitIdentityEvent(declined);
-  assert.equal(await store.getVerificationStatus(sessionId), "SUSPENDED");
+  assert.equal(await store.getVerificationStatus(sessionId), "REJECTED");
 });
 
 test("PG suspension returns retryable StoreUnavailable", async (t) => {

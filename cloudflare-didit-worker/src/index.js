@@ -21,6 +21,19 @@ import {
   RECONCILE_STATES,
   REQUIRED_ACTION,
 } from "./reconcile.js";
+import {
+  PROVIDER_PROOFING,
+  SOVEREIGN_STATUS,
+  SOVEREIGN_ADMISSION,
+  assertExecutionAllowed,
+  AuthorityDeniedError,
+} from "./authority_status.js";
+import {
+  sovereignAdmitInMemory,
+  sovereignAdmitPg,
+  checkExecutionOrDeny,
+  recordAuthorityDenialPg,
+} from "./sovereign.js";
 
 export {
   createWorker,
@@ -35,6 +48,15 @@ export {
   createReconcileEngineFromEnv,
   RECONCILE_STATES,
   REQUIRED_ACTION,
+  PROVIDER_PROOFING,
+  SOVEREIGN_STATUS,
+  SOVEREIGN_ADMISSION,
+  assertExecutionAllowed,
+  AuthorityDeniedError,
+  sovereignAdmitInMemory,
+  sovereignAdmitPg,
+  checkExecutionOrDeny,
+  recordAuthorityDenialPg,
 };
 
 // Default export for wrangler `main` once founder authorizes deploy.

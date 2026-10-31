@@ -343,8 +343,9 @@ export class ReconcileEngine {
     // observation, still do NOT elevate or suspend from unsigned decision —
     // record conflict and require signed event (#244 required_action).
     const localStatus = verification?.status ?? null;
+    const localProofing = verification?.provider_proofing_status ?? null;
     const conflict =
-      localStatus === "IDENTITY_VERIFIED" &&
+      (localStatus === "IDENTITY_VERIFIED" || localProofing === "PROVIDER_APPROVED") &&
       observation.status &&
       observation.status !== "Approved";
 

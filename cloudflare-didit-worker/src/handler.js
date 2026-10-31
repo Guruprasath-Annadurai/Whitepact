@@ -141,8 +141,15 @@ export async function handleDiditWebhook(request, ctx) {
     return jsonResponse(200, {
       ok: true,
       status: result.status,
+      provider_proofing_status: result.provider_proofing_status ?? null,
+      sovereign_status: result.sovereign_status ?? null,
+      sovereign_admission: result.sovereign_admission ?? null,
+      sovereign_admission_required: result.sovereign_admission_required === true,
       duplicate: result.duplicate,
-      identity_transition: result.identity_transition,
+      // SEC-CF-007: edge webhook never elevates WhitePact identity.
+      identity_transition: false,
+      elevates: false,
+      execution_granted: false,
       event_id: event.event_id,
     });
   } catch (err) {
