@@ -165,7 +165,7 @@ test("CTO-8 REJECTED stays fail-closed for execution", async () => {
   assert.equal(denied.denied, true);
 });
 
-test("CTO-9 Sovereign-admitted then Declined → SUSPENDED / revocation pending", async () => {
+test("CTO-9 Sovereign-admitted then Declined → proofing hold; sovereign state preserved (007D)", async () => {
   const sessionId = randomUUID();
   const store = storeWithBinding(sessionId);
   const ts = Math.floor(Date.now() / 1000);
@@ -191,9 +191,13 @@ test("CTO-9 Sovereign-admitted then Declined → SUSPENDED / revocation pending"
     store,
   });
   const v = store.verifications.get(sessionId);
-  assert.equal(v.status, SOVEREIGN_STATUS.SUSPENDED);
-  assert.equal(v.sovereign_admission, SOVEREIGN_ADMISSION.REVOCATION_PENDING);
-  assert.equal(checkExecutionOrDeny(v).execution_granted, false);
+  // 007D: edge records PROVIDER_REJECTED evidence only — does not demote admission.
+  assert.equal(v.status, SOVEREIGN_STATUS.IDENTITY_VERIFIED);
+  assert.equal(v.sovereign_admission, SOVEREIGN_ADMISSION.ADMITTED);
+  assert.equal(v.provider_proofing_status, PROVIDER_PROOFING.REJECTED);
+  const denied = checkExecutionOrDeny(v);
+  assert.equal(denied.execution_granted, false);
+  assert.equal(denied.code, "PROVIDER_PROOFING_HOLD");
 });
 
 test("CTO-10 cross-tenant Approved still CROSS_TENANT", async () => {

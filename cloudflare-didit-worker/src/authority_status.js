@@ -52,7 +52,10 @@ export function mapDiditStatusToProviderProofing(diditStatus) {
 
 /**
  * Apply a verified signed Didit outcome at the EDGE.
- * Must never return sovereign status IDENTITY_VERIFIED.
+ * Must never newly grant IDENTITY_VERIFIED / ADMITTED.
+ * SEC-CF-007D: must never demote an already admitted identity's sovereign
+ * status/admission — record provider proofing evidence only; execution gate
+ * fail-closes on PROVIDER_REJECTED / PROVIDER_SUSPENDED.
  *
  * @param {object} args
  * @param {string} args.currentSovereignStatus
@@ -69,21 +72,29 @@ export function applyEdgeProviderOutcome({
   }
 
   const wasVerified = currentSovereignStatus === SOVEREIGN_STATUS.IDENTITY_VERIFIED;
+  const wasAdmitted = currentAdmission === SOVEREIGN_ADMISSION.ADMITTED;
 
-  // Fail-closed demotion: sovereign-verified subject later declined / expired / kyc-expired.
-  if (
-    wasVerified &&
-    (providerProofing === PROVIDER_PROOFING.REJECTED ||
-      providerProofing === PROVIDER_PROOFING.SUSPENDED)
-  ) {
+  // SEC-CF-007D: admitted identity — edge may update provider proofing only.
+  // Sovereign status/admission mutation requires whitepact_sovereign_login.
+  if (wasVerified || wasAdmitted) {
     return {
       provider_proofing_status: providerProofing,
-      status: SOVEREIGN_STATUS.SUSPENDED,
-      sovereign_admission: SOVEREIGN_ADMISSION.REVOCATION_PENDING,
+      status: wasVerified
+        ? SOVEREIGN_STATUS.IDENTITY_VERIFIED
+        : currentSovereignStatus,
+      sovereign_admission: wasAdmitted
+        ? SOVEREIGN_ADMISSION.ADMITTED
+        : currentAdmission || SOVEREIGN_ADMISSION.PENDING,
       identity_transition: false,
       elevates: false,
-      sovereign_admission_required: true,
+      sovereign_admission_required: false,
       execution_granted: false,
+      proofing_hold:
+        providerProofing === PROVIDER_PROOFING.REJECTED ||
+        providerProofing === PROVIDER_PROOFING.SUSPENDED,
+      sovereign_mutation_required:
+        providerProofing === PROVIDER_PROOFING.REJECTED ||
+        providerProofing === PROVIDER_PROOFING.SUSPENDED,
     };
   }
 
@@ -107,19 +118,14 @@ export function applyEdgeProviderOutcome({
   }
 
   if (providerProofing === PROVIDER_PROOFING.APPROVED) {
-    // Evidence only — sovereign remains REVIEW_REQUIRED (or stays IDENTITY_VERIFIED
-    // if already sovereign-admitted; edge does not elevate).
+    // Evidence only — sovereign remains REVIEW_REQUIRED; edge does not elevate.
     return {
       provider_proofing_status: PROVIDER_PROOFING.APPROVED,
-      status: wasVerified
-        ? SOVEREIGN_STATUS.IDENTITY_VERIFIED
-        : SOVEREIGN_STATUS.REVIEW_REQUIRED,
-      sovereign_admission: wasVerified
-        ? SOVEREIGN_ADMISSION.ADMITTED
-        : SOVEREIGN_ADMISSION.PENDING,
+      status: SOVEREIGN_STATUS.REVIEW_REQUIRED,
+      sovereign_admission: SOVEREIGN_ADMISSION.PENDING,
       identity_transition: false,
       elevates: false,
-      sovereign_admission_required: !wasVerified,
+      sovereign_admission_required: true,
       execution_granted: false,
     };
   }
@@ -139,12 +145,8 @@ export function applyEdgeProviderOutcome({
   if (providerProofing === PROVIDER_PROOFING.SUSPENDED) {
     return {
       provider_proofing_status: PROVIDER_PROOFING.SUSPENDED,
-      status: wasVerified
-        ? SOVEREIGN_STATUS.SUSPENDED
-        : SOVEREIGN_STATUS.REVIEW_REQUIRED,
-      sovereign_admission: wasVerified
-        ? SOVEREIGN_ADMISSION.REVOCATION_PENDING
-        : SOVEREIGN_ADMISSION.PENDING,
+      status: SOVEREIGN_STATUS.REVIEW_REQUIRED,
+      sovereign_admission: SOVEREIGN_ADMISSION.PENDING,
       identity_transition: false,
       elevates: false,
       sovereign_admission_required: true,
@@ -152,18 +154,14 @@ export function applyEdgeProviderOutcome({
     };
   }
 
-  // REVIEW family
+  // REVIEW family (pre-admit)
   return {
     provider_proofing_status: PROVIDER_PROOFING.REVIEW,
-    status: wasVerified
-      ? SOVEREIGN_STATUS.IDENTITY_VERIFIED
-      : SOVEREIGN_STATUS.REVIEW_REQUIRED,
-    sovereign_admission: wasVerified
-      ? SOVEREIGN_ADMISSION.ADMITTED
-      : SOVEREIGN_ADMISSION.PENDING,
+    status: SOVEREIGN_STATUS.REVIEW_REQUIRED,
+    sovereign_admission: SOVEREIGN_ADMISSION.PENDING,
     identity_transition: false,
     elevates: false,
-    sovereign_admission_required: !wasVerified,
+    sovereign_admission_required: true,
     execution_granted: false,
   };
 }
@@ -203,6 +201,17 @@ export function assertExecutionAllowed(verification) {
     throw new AuthorityDeniedError(
       "Sovereign admission flag is not ADMITTED.",
       "SOVEREIGN_ADMISSION_REQUIRED",
+    );
+  }
+  // SEC-CF-007D: provider revocation / suspend evidence → immediate fail-closed
+  // without mutating sovereign admission state.
+  if (
+    verification.provider_proofing_status === PROVIDER_PROOFING.REJECTED ||
+    verification.provider_proofing_status === PROVIDER_PROOFING.SUSPENDED
+  ) {
+    throw new AuthorityDeniedError(
+      "Provider proofing hold — execution denied pending sovereign review.",
+      "PROVIDER_PROOFING_HOLD",
     );
   }
   return { execution_granted: true };

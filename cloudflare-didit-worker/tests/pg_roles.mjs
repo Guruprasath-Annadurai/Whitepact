@@ -34,6 +34,7 @@ export async function applyAllSchemas(adminPool) {
     "002_reconciliation_jobs.sql",
     "003_authority_boundary.sql",
     "004_database_hardening.sql",
+    "005_sec_cf_007d_admitted_guard.sql",
   ]) {
     await adminPool.query(readFileSync(join(__dir, "../schema", f), "utf8"));
   }
