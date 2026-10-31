@@ -14,6 +14,12 @@ Smallest safe public HTTPS ingress layer for Didit V3 webhooks:
 - **No HTTP 2xx until durable commit succeeds** (rejects Didit sample “ACK then async” pattern)
 - Fail-closed on proof/tenant/replay errors; **503** when store unavailable (provider retries)
 - No raw ID documents / biometric media in durable rows or logs
+- **Reconciliation** (`DiditClient.retrieveDecision` + `ReconcileEngine`): authenticated
+  `GET /v3/session/{id}/decision/` observation only — **never elevates identity**.
+  Durable job states record provider status / hash; elevation still requires a
+  signed webhook admit. `reconcile: true` on 503 ≠ recovery complete.
+- Optional mocked webhook delivery list/resend client shapes (Didit management API;
+  entitlement not assumed)
 
 ## Run tests (no cloud credentials)
 
