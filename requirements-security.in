@@ -1,6 +1,12 @@
-# Security tooling executed by .github/workflows/security-scan.yml.
+# Security tooling executed by .github/workflows/security-scan.yml and ci.yml.
 # Regenerate with:
 #   uv pip compile requirements-security.in --generate-hashes \
 #     --python-version 3.12 --output-file requirements-security.lock
+#
+# Explicit floors close transitive vulns that pip-audit fails CI on:
+#   certifi  PYSEC-2026-4320  → >=2026.10.18
+#   filelock CVE-2026-1129xx family → >=4.2.1 (also covers CVE-2026-112940)
 bandit==1.8.6
 pip-audit==2.10.0
+certifi>=2026.10.18
+filelock>=4.2.1

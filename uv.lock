@@ -2,16 +2,111 @@ version = 1
 revision = 5
 requires-python = ">=3.11"
 resolution-markers = [
-    "python_full_version >= '3.15' and sys_platform == 'win32'",
-    "python_full_version >= '3.15' and sys_platform != 'win32'",
-    "python_full_version == '3.14.*' and sys_platform == 'win32'",
-    "python_full_version == '3.14.*' and sys_platform != 'win32'",
-    "python_full_version == '3.13.*' and sys_platform == 'win32'",
-    "python_full_version == '3.13.*' and sys_platform != 'win32'",
-    "python_full_version == '3.12.*' and sys_platform == 'win32'",
-    "python_full_version == '3.12.*' and sys_platform != 'win32'",
-    "python_full_version < '3.12' and sys_platform == 'win32'",
-    "python_full_version < '3.12' and sys_platform != 'win32'",
+    "python_full_version >= '3.15' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.14.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version >= '3.15' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.14.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version < '3.12' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version < '3.12' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version >= '3.14' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version >= '3.14' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version < '3.12' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version < '3.12' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version >= '3.15' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.14.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version >= '3.15' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.14.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version < '3.12' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version < '3.12' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version >= '3.14' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version >= '3.14' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version < '3.12' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version < '3.12' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version >= '3.14' and sys_platform == 'win32' and extra == 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version >= '3.14' and sys_platform != 'win32' and extra == 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform == 'win32' and extra == 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform == 'win32' and extra == 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version < '3.12' and sys_platform == 'win32' and extra == 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform != 'win32' and extra == 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform != 'win32' and extra == 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version < '3.12' and sys_platform != 'win32' and extra == 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version >= '3.15' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.14.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version >= '3.15' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.14.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version < '3.12' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version < '3.12' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version >= '3.14' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version >= '3.14' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version < '3.12' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version < '3.12' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version >= '3.15' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.14.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version >= '3.15' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.14.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version < '3.12' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version < '3.12' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version >= '3.14' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version >= '3.14' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version < '3.12' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version < '3.12' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+]
+conflicts = [[
+    { package = "rai-governance-platform", extra = "adk" },
+    { package = "rai-governance-platform", extra = "telemetry" },
+], [
+    { package = "rai-governance-platform", extra = "adk" },
+    { package = "rai-governance-platform", extra = "all" },
+], [
+    { package = "rai-governance-platform", extra = "adk" },
+    { package = "rai-governance-platform", extra = "dev" },
+], [
+    { package = "rai-governance-platform", extra = "agent-frameworks" },
+    { package = "rai-governance-platform", extra = "telemetry" },
+], [
+    { package = "rai-governance-platform", extra = "agent-frameworks" },
+    { package = "rai-governance-platform", extra = "all" },
+], [
+    { package = "rai-governance-platform", extra = "agent-frameworks" },
+    { package = "rai-governance-platform", extra = "dev" },
+]]
+
+[manifest]
+constraints = [
+    { name = "certifi", specifier = ">=2026.10.18" },
+    { name = "filelock", specifier = ">=4.2.1" },
 ]
 
 [[package]]
@@ -473,11 +568,11 @@ wheels = [
 
 [[package]]
 name = "certifi"
-version = "2026.7.22"
+version = "2026.10.23"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/a3/c2/24167ea9858356b47a87a50d39908bfdb72ceeefe0041586e704e5376b3a/certifi-2026.7.22.tar.gz", hash = "sha256:741e2c3b351ddf169a738da9f2c048608ff7f2c5cc02f1ebc6b118bb090d5d55", size = 138112, upload-time = "2026-07-22T03:35:12.644Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/fd/11/b524cbd9bbdaca58608e4cf4053fd463417549e1959fa8d3aa18319f9555/certifi-2026.10.23.tar.gz", hash = "sha256:a9895e6e2758b371e0545e321a3a8fd1fcfd9829ada8824a936dfb16aaaf36cd", size = 136225, upload-time = "2026-10-23T11:36:16.478Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/0b/a7/71ac2cff56fec219ed242bb11b8efb69fcc4bec75db06fb7bfe35de520e6/certifi-2026.7.22-py3-none-any.whl", hash = "sha256:62f22742b58a1a33014a2b6b706588a8d7e2a88ae7bd1a6ebe8c992928483775", size = 136983, upload-time = "2026-07-22T03:35:11.276Z" },
+    { url = "https://files.pythonhosted.org/packages/32/d1/a3652fe2c19134d0d15922177821d863cbd7e842d53a21bbe7e8e3a1b5ac/certifi-2026.10.23-py3-none-any.whl", hash = "sha256:e9b54de76e530bb6cf0ccd036787103acb58fd42ba930ea8bf948ddbaa2f61d1", size = 135082, upload-time = "2026-10-23T11:36:14.763Z" },
 ]
 
 [[package]]
@@ -1096,11 +1191,11 @@ wheels = [
 
 [[package]]
 name = "filelock"
-version = "3.32.5"
+version = "4.2.6"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/0a/a0/50c2c0ce5e74d7721bbb1b19a26ebd339aac5878553a6e35308c2f31f935/filelock-3.32.5.tar.gz", hash = "sha256:f6a6a28f743f9b95ce19db5abe0f376f75eb56517dff21e1a4751e2657d3e83d", size = 222838, upload-time = "2026-08-31T18:56:34.729Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/35/6c/730b340182f1fd74d4ef8d3f35431ce84f8f97b1a1f2afd145174b7bb047/filelock-4.2.6.tar.gz", hash = "sha256:ee7af8ede36dcaf12e1016d9f7c3a63ecd5497d46f85dab21b8c779b8f944e97", size = 661339, upload-time = "2026-10-31T15:10:16.889Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/36/d2/b70a31e13d04456d28493f31d2aa087e99eeb2767ef0293b2625727ccb8c/filelock-3.32.5-py3-none-any.whl", hash = "sha256:142cd9fa77a872c5e78c62329a0d15278fadc686eb89e760017968961a4fd6b2", size = 100003, upload-time = "2026-08-31T18:56:33.078Z" },
+    { url = "https://files.pythonhosted.org/packages/b7/8d/3f849fcb79359259737bc2d8ddcaee6149ffb773239a260c9ff20179736f/filelock-4.2.6-py3-none-any.whl", hash = "sha256:fd7d4fca497bf3e3d0945a13261f8e684f2aef12ce7cf76aef26e13bf7388b88", size = 164378, upload-time = "2026-10-31T15:10:15.322Z" },
 ]
 
 [[package]]
@@ -1227,13 +1322,13 @@ dependencies = [
     { name = "authlib" },
     { name = "click" },
     { name = "fastapi" },
-    { name = "google-auth", extra = ["pyopenssl"] },
+    { name = "google-auth", extra = ["pyopenssl"], marker = "extra == 'extra-23-rai-governance-platform-adk' or extra == 'extra-23-rai-governance-platform-agent-frameworks' or (extra != 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry')" },
     { name = "google-genai" },
     { name = "graphviz" },
     { name = "httpx" },
     { name = "jsonschema" },
-    { name = "opentelemetry-api" },
-    { name = "opentelemetry-sdk" },
+    { name = "opentelemetry-api", version = "1.42.1", source = { registry = "https://pypi.org/simple" } },
+    { name = "opentelemetry-sdk", version = "1.42.1", source = { registry = "https://pypi.org/simple" } },
     { name = "packaging" },
     { name = "pydantic" },
     { name = "python-dotenv" },
@@ -1347,7 +1442,7 @@ source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio" },
     { name = "distro" },
-    { name = "google-auth", extra = ["requests"] },
+    { name = "google-auth", extra = ["requests"], marker = "extra == 'extra-23-rai-governance-platform-adk' or extra == 'extra-23-rai-governance-platform-agent-frameworks' or (extra != 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry')" },
     { name = "httpx" },
     { name = "pydantic" },
     { name = "requests" },
@@ -2854,14 +2949,68 @@ name = "numpy"
 version = "2.5.2"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
-    "python_full_version >= '3.15' and sys_platform == 'win32'",
-    "python_full_version >= '3.15' and sys_platform != 'win32'",
-    "python_full_version == '3.14.*' and sys_platform == 'win32'",
-    "python_full_version == '3.14.*' and sys_platform != 'win32'",
-    "python_full_version == '3.13.*' and sys_platform == 'win32'",
-    "python_full_version == '3.13.*' and sys_platform != 'win32'",
-    "python_full_version == '3.12.*' and sys_platform == 'win32'",
-    "python_full_version == '3.12.*' and sys_platform != 'win32'",
+    "python_full_version >= '3.15' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.14.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version >= '3.15' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.14.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version >= '3.14' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version >= '3.14' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version >= '3.15' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.14.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version >= '3.15' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.14.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version >= '3.14' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version >= '3.14' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version >= '3.14' and sys_platform == 'win32' and extra == 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version >= '3.14' and sys_platform != 'win32' and extra == 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform == 'win32' and extra == 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform == 'win32' and extra == 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform != 'win32' and extra == 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform != 'win32' and extra == 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version >= '3.15' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.14.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version >= '3.15' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.14.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version >= '3.14' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version >= '3.14' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version >= '3.15' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.14.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version >= '3.15' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.14.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version >= '3.14' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version >= '3.14' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/9a/80/db0b4559e57ec36362bedbb05530a87fafbcb6067708c946967a41d449e7/numpy-2.5.2.tar.gz", hash = "sha256:d482d171c406ae88c5b19cad3b6a1c4c5209f886ab74bc44c2c865c23f52d860", size = 20773161, upload-time = "2026-08-09T13:48:27.962Z" }
 wheels = [
@@ -3125,6 +3274,16 @@ wheels = [
 name = "opentelemetry-api"
 version = "1.42.1"
 source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version >= '3.14' and sys_platform == 'win32'",
+    "python_full_version >= '3.14' and sys_platform != 'win32'",
+    "python_full_version == '3.13.*' and sys_platform == 'win32'",
+    "python_full_version == '3.12.*' and sys_platform == 'win32'",
+    "python_full_version < '3.12' and sys_platform == 'win32'",
+    "python_full_version == '3.13.*' and sys_platform != 'win32'",
+    "python_full_version == '3.12.*' and sys_platform != 'win32'",
+    "python_full_version < '3.12' and sys_platform != 'win32'",
+]
 dependencies = [
     { name = "typing-extensions" },
 ]
@@ -3134,117 +3293,236 @@ wheels = [
 ]
 
 [[package]]
+name = "opentelemetry-api"
+version = "1.45.2"
+source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version >= '3.15' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.14.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version >= '3.15' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.14.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version < '3.12' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version < '3.12' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version >= '3.14' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version >= '3.14' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version < '3.12' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version < '3.12' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version >= '3.15' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.14.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version >= '3.15' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.14.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version < '3.12' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version < '3.12' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version >= '3.14' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version >= '3.14' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version < '3.12' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version < '3.12' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version >= '3.15' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.14.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version >= '3.15' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.14.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version < '3.12' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version < '3.12' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version >= '3.14' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version >= '3.14' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version < '3.12' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version < '3.12' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version >= '3.15' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.14.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version >= '3.15' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.14.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version < '3.12' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version < '3.12' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+]
+dependencies = [
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/19/14/cf3a6b6448849656e1e5f4e2101f3988dc6789724050096aba1bc5ccf592/opentelemetry_api-1.45.2.tar.gz", hash = "sha256:d7b0008e21e5fd61cbe7a7f34ca3b6905a78ab677d9bc395e299359c75cda6b4", size = 73277, upload-time = "2026-10-29T17:29:37.888Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a9/2d/610db864d7513158cebb8f36cc88e67e73bd6c7aa1905ef18d89e1281c81/opentelemetry_api-1.45.2-py3-none-any.whl", hash = "sha256:2cbd737377e710ee740d261c94e93fa0f08e6d037c18f17513cc0a2d94479a34", size = 60335, upload-time = "2026-10-29T17:29:06.955Z" },
+]
+
+[[package]]
+name = "opentelemetry-exporter-http-transport"
+version = "0.66b2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "opentelemetry-api", version = "1.45.2", source = { registry = "https://pypi.org/simple" } },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/a6/e6/dbeb3e217418071656232a4028c791060d219f218cef1249b664049d12c0/opentelemetry_exporter_http_transport-0.66b2.tar.gz", hash = "sha256:66d6ed810a515432c8891da9a834464332fd70badeca45bdeeae81b4280c903b", size = 11693, upload-time = "2026-10-29T17:29:39.444Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a1/b2/c622a101f31c0e6670b82f4264c4e77c161bce415bc6fc158fda0b82e218/opentelemetry_exporter_http_transport-0.66b2-py3-none-any.whl", hash = "sha256:fd5f5b490c099acda1cd7b909d5e8981436bf18cc8c6098d302d114c271720e9", size = 12154, upload-time = "2026-10-29T17:29:10.244Z" },
+]
+
+[package.optional-dependencies]
+requests = [
+    { name = "requests" },
+]
+
+[[package]]
+name = "opentelemetry-exporter-otlp-common"
+version = "0.66b2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "opentelemetry-sdk", version = "1.45.2", source = { registry = "https://pypi.org/simple" } },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/5a/3c/3f2cc8c42bde2620e65024d71e2eb025f7bd0821bb363b52bcc5a3260dbd/opentelemetry_exporter_otlp_common-0.66b2.tar.gz", hash = "sha256:06f5a9b88638e310efa1f1d206cdf6b75393e112aba4e174a963416192bd1028", size = 14325, upload-time = "2026-10-29T17:29:41.701Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a8/47/b3049e30b339c82e3c7ec1fc692185a5d5a3ba65a94c570bb39b2c0b8424/opentelemetry_exporter_otlp_common-0.66b2-py3-none-any.whl", hash = "sha256:ace86efb75489f925f1ef809856ae5f0c7db534e4afdc624530222228b1236a5", size = 12385, upload-time = "2026-10-29T17:29:13.667Z" },
+]
+
+[[package]]
 name = "opentelemetry-exporter-otlp-proto-common"
-version = "1.42.1"
+version = "1.45.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "opentelemetry-proto" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/0e/9c/216acfeaedadf2e1937f4373929b20f73197c5c4a2546d4f584b7fa63813/opentelemetry_exporter_otlp_proto_common-1.42.1.tar.gz", hash = "sha256:04f1f01fb597c4249dfcd7f8b861c902c2102369d376d9d346ff38de4469a2ee", size = 21433, upload-time = "2026-05-21T16:32:55.526Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/69/58/239c98b36d9ea317098769957043c251703636a26189c884fba46c1dad84/opentelemetry_exporter_otlp_proto_common-1.45.2.tar.gz", hash = "sha256:f1f2806f3f28ce7938033823e50934fcd91595a39de38e69a28a51e19f40fc6d", size = 18873, upload-time = "2026-10-29T17:29:44.496Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/d6/43/2375e7612e1121a4518c17603b6e0b03ad94f565aafad53f464dc5be2bf6/opentelemetry_exporter_otlp_proto_common-1.42.1-py3-none-any.whl", hash = "sha256:f48d395ab815b444da118868977e9798ea354c25737d5cf39578ae894011c140", size = 17327, upload-time = "2026-05-21T16:32:33.387Z" },
+    { url = "https://files.pythonhosted.org/packages/e6/d6/0f30d38120a949aef70528f845bf539f80df62abb4b8e62fdf69c2b6df5a/opentelemetry_exporter_otlp_proto_common-1.45.2-py3-none-any.whl", hash = "sha256:af483b24217028892f017096731b794b196b785025d2e6808874720fd0b05a80", size = 15392, upload-time = "2026-10-29T17:29:17.913Z" },
 ]
 
 [[package]]
 name = "opentelemetry-exporter-otlp-proto-http"
-version = "1.42.1"
+version = "1.45.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "googleapis-common-protos" },
-    { name = "opentelemetry-api" },
+    { name = "opentelemetry-api", version = "1.45.2", source = { registry = "https://pypi.org/simple" } },
+    { name = "opentelemetry-exporter-http-transport", extra = ["requests"], marker = "extra == 'extra-23-rai-governance-platform-all' or extra == 'extra-23-rai-governance-platform-dev' or extra == 'extra-23-rai-governance-platform-telemetry'" },
+    { name = "opentelemetry-exporter-otlp-common" },
     { name = "opentelemetry-exporter-otlp-proto-common" },
     { name = "opentelemetry-proto" },
-    { name = "opentelemetry-sdk" },
+    { name = "opentelemetry-sdk", version = "1.45.2", source = { registry = "https://pypi.org/simple" } },
     { name = "requests" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/77/32/826bfa1d80ecea24f47808de03cd4a0d13c17ecc07712f45123f0f61e4ac/opentelemetry_exporter_otlp_proto_http-1.42.1.tar.gz", hash = "sha256:bf142a21035d7571ac3a09cb2e5639f49886f243972883cfe777ed3bf02b734d", size = 25406, upload-time = "2026-05-21T16:32:56.807Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/db/07/b7b01ecb69d02f540e679a9e36f7413d081f225bbbed4469d212ada10bb7/opentelemetry_exporter_otlp_proto_http-1.45.2.tar.gz", hash = "sha256:5984a3fb46bc4628e4e2b85d4a6e72637e03962aae6cf372791137768a4ad939", size = 28843, upload-time = "2026-10-29T17:29:46.15Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/d3/96/82cb223a1502f0787d4bbff12907f5f8d870a50731febcd5818d93ef9555/opentelemetry_exporter_otlp_proto_http-1.42.1-py3-none-any.whl", hash = "sha256:00a16da1b312a1d6c7233d600d557c91df71125af73020f3b9a7765bd699d59d", size = 21793, upload-time = "2026-05-21T16:32:35.277Z" },
+    { url = "https://files.pythonhosted.org/packages/32/65/f64d7d2450217e2989714e1dee15e19bf79a77a313387abac0cac77bc10e/opentelemetry_exporter_otlp_proto_http-1.45.2-py3-none-any.whl", hash = "sha256:6e4d025138829d0ee57946930c2ccad6491ad4d92a958e9c7eea69278fe60cfc", size = 22180, upload-time = "2026-10-29T17:29:20.154Z" },
 ]
 
 [[package]]
 name = "opentelemetry-instrumentation"
-version = "0.63b1"
+version = "0.66b2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "opentelemetry-api" },
-    { name = "opentelemetry-semantic-conventions" },
+    { name = "opentelemetry-api", version = "1.45.2", source = { registry = "https://pypi.org/simple" } },
+    { name = "opentelemetry-semantic-conventions", version = "0.66b2", source = { registry = "https://pypi.org/simple" } },
     { name = "packaging" },
     { name = "wrapt" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/da/6d/4de72d97ff54db1ed270c7a59c9b904b917c0ac7af429c086c388b824ddb/opentelemetry_instrumentation-0.63b1.tar.gz", hash = "sha256:32368d6ae52c8de20aa790a6ad86b10a76f09956092337ae37d675773990e541", size = 41081, upload-time = "2026-05-21T16:36:14.206Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/76/b9/46a136199fa6928eecefec8418867a460d94f01c608a85d22bd2ed4e8d48/opentelemetry_instrumentation-0.66b2.tar.gz", hash = "sha256:02b094150e53b76f5906d75e628dbb3833bbc6e62fa109b5c7ba0c081865e923", size = 43305, upload-time = "2026-10-29T17:38:11.618Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/35/a1/9314e621c143e4d82a5bf7a43c2ff7a745d31023506336857607c8c543cc/opentelemetry_instrumentation-0.63b1-py3-none-any.whl", hash = "sha256:f1986716d52cc316ea5f60189098726a9071d8ecc0eee96c9ed110be08bade9c", size = 35577, upload-time = "2026-05-21T16:34:56.818Z" },
+    { url = "https://files.pythonhosted.org/packages/3b/41/014d40e2b08a5d9d9058ed4967ad992657c203ce0c292ded97364ee7b82a/opentelemetry_instrumentation-0.66b2-py3-none-any.whl", hash = "sha256:fa9ccfdab147a14af8107d19ef0a7b5015675273c5adced7a1fc38f28b42ec4c", size = 36902, upload-time = "2026-10-29T17:37:06.994Z" },
 ]
 
 [[package]]
 name = "opentelemetry-instrumentation-asgi"
-version = "0.63b1"
+version = "0.66b2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "asgiref" },
-    { name = "opentelemetry-api" },
+    { name = "opentelemetry-api", version = "1.45.2", source = { registry = "https://pypi.org/simple" } },
     { name = "opentelemetry-instrumentation" },
-    { name = "opentelemetry-semantic-conventions" },
+    { name = "opentelemetry-semantic-conventions", version = "0.66b2", source = { registry = "https://pypi.org/simple" } },
     { name = "opentelemetry-util-http" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/a0/b5/7ea3a9fd1b80e89786c14250bfaecf32a753c3fd08232690f4da8dc16e29/opentelemetry_instrumentation_asgi-0.63b1.tar.gz", hash = "sha256:267b422416d768f3c7f4054883b41d9c3a7c943d86d20032b738c99a3dbb5862", size = 26151, upload-time = "2026-05-21T16:36:18.368Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/54/96/0524b34042406e632d2ec625be2432db703c2911bb594cef3280666e7b9e/opentelemetry_instrumentation_asgi-0.66b2.tar.gz", hash = "sha256:da8a2df4589976ad483feaec150a78ec7d1947754e420b838a4942361e465bfb", size = 25991, upload-time = "2026-10-29T17:38:16.291Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/57/7e/83986f27b421de04fab1e1a84e892621dac42e6432a9c66779505f4d1381/opentelemetry_instrumentation_asgi-0.63b1-py3-none-any.whl", hash = "sha256:1a22453dfa965f14799b10a674b8acbcb897a8a75c79136060af54214cc7886e", size = 15906, upload-time = "2026-05-21T16:35:04.162Z" },
+    { url = "https://files.pythonhosted.org/packages/b8/6e/bbb647fc9c789365593b77aefc949beef5fa684015e2b81fb41f5da0aa9c/opentelemetry_instrumentation_asgi-0.66b2-py3-none-any.whl", hash = "sha256:9c5ec36e6b898f18e6b07b5077c2a3bafa9abf69de98e729797b9efa465f8aa3", size = 15810, upload-time = "2026-10-29T17:37:13.306Z" },
 ]
 
 [[package]]
 name = "opentelemetry-instrumentation-fastapi"
-version = "0.63b1"
+version = "0.66b2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "opentelemetry-api" },
+    { name = "opentelemetry-api", version = "1.45.2", source = { registry = "https://pypi.org/simple" } },
     { name = "opentelemetry-instrumentation" },
     { name = "opentelemetry-instrumentation-asgi" },
-    { name = "opentelemetry-semantic-conventions" },
+    { name = "opentelemetry-semantic-conventions", version = "0.66b2", source = { registry = "https://pypi.org/simple" } },
     { name = "opentelemetry-util-http" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/32/d6/0c128fac2e34b7d526a8d3c6edc45b875a97f8a987861b00511151b6337d/opentelemetry_instrumentation_fastapi-0.63b1.tar.gz", hash = "sha256:cc42dff56c96d0a2921510c4abab2a4c2e27fe64b26dc1254727fb550df100ba", size = 25387, upload-time = "2026-05-21T16:36:32.071Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/58/71/8ccb9d84bbdbb4798682796dcf20892e404ef9548f58975c4b0dd3d372d6/opentelemetry_instrumentation_fastapi-0.66b2.tar.gz", hash = "sha256:bd226e0196990999eef77380a64527a26f35b621e681c3cad860984ecc3c23f5", size = 26631, upload-time = "2026-10-29T17:38:28.173Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/b1/3d/2eae63f13f36d7a8ab5bf03d06ecaf169c2069b524547f24947be6d92094/opentelemetry_instrumentation_fastapi-0.63b1-py3-none-any.whl", hash = "sha256:52ee2cde9a2ac094bdd45d79f85860e03a972928a2553006071fe61d94cf7281", size = 12795, upload-time = "2026-05-21T16:35:28.68Z" },
+    { url = "https://files.pythonhosted.org/packages/ef/e3/10338083ccc116e65b0471796baa90fcb817daf96fed67e51eff9fb80d4e/opentelemetry_instrumentation_fastapi-0.66b2-py3-none-any.whl", hash = "sha256:401eb9fe58cc86015ac0a6682dcaf1b4bcea32c428969853d02171d6650d1774", size = 14217, upload-time = "2026-10-29T17:37:30.465Z" },
 ]
 
 [[package]]
 name = "opentelemetry-instrumentation-httpx"
-version = "0.63b1"
+version = "0.66b2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "opentelemetry-api" },
+    { name = "opentelemetry-api", version = "1.45.2", source = { registry = "https://pypi.org/simple" } },
     { name = "opentelemetry-instrumentation" },
-    { name = "opentelemetry-semantic-conventions" },
+    { name = "opentelemetry-semantic-conventions", version = "0.66b2", source = { registry = "https://pypi.org/simple" } },
     { name = "opentelemetry-util-http" },
     { name = "wrapt" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/02/27/c2b4335bca030e893acbe5ff2b4f434868773bf94508be7e6bf5af981b24/opentelemetry_instrumentation_httpx-0.63b1.tar.gz", hash = "sha256:f41ec82f25c3abcdada621052db3e5fd648e3b43d55eec4b9c0c5d3ecb7b4ff4", size = 23557, upload-time = "2026-05-21T16:36:34.583Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/41/43/3204ca7e7d91bd9e1b569a98a5f9252c98ae70ba3bb562d2770c34e21d49/opentelemetry_instrumentation_httpx-0.66b2.tar.gz", hash = "sha256:b4c81e4a6dc7b8d7cb2d3088eb8848f6db6bd4abdc443ac9586ec176f1460187", size = 26638, upload-time = "2026-10-29T17:38:31.46Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/ba/b8/f536780996195c3b9f2354998554671e05a7a262df8c043f63fe9e5a6f0b/opentelemetry_instrumentation_httpx-0.63b1-py3-none-any.whl", hash = "sha256:14df6e99d81be9a8cd238f6639b6fa52404c4d3ce219058fcb5dc8c0f2211f86", size = 16336, upload-time = "2026-05-21T16:35:32.221Z" },
+    { url = "https://files.pythonhosted.org/packages/53/40/37d6161dcd95285c9c3eb75e2dbeb1dbc6e868551532735374918a22e298/opentelemetry_instrumentation_httpx-0.66b2-py3-none-any.whl", hash = "sha256:93e2b6ab1a505d76ec3d98abcf7e8527d4712167d6c3b5ebbb9c68d9309d9ba5", size = 17723, upload-time = "2026-10-29T17:37:33.735Z" },
 ]
 
 [[package]]
 name = "opentelemetry-proto"
-version = "1.42.1"
+version = "1.45.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "protobuf" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/b4/55/63eac3e1089b768ba014091fdd2ae8a9a440c821ef5e2b786909c94c8836/opentelemetry_proto-1.42.1.tar.gz", hash = "sha256:c6a51e6b4f05ae63565f3a113217f3d2bfaec68f78c02d7a6c85f9010d1cfca6", size = 45839, upload-time = "2026-05-21T16:33:03.937Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/24/9c/1aa4ce60e9bc72af20dc49c92cc0566825092d92b3d6a277439fb5fb7c01/opentelemetry_proto-1.45.2.tar.gz", hash = "sha256:bd8d23cf770605b0af9b7be2071d26a464fea289d35429abfd2a66226114ad64", size = 46486, upload-time = "2026-10-29T17:29:53.007Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/41/9d/171c02c84a76940b7e601805b3bb536985aded9168fbcc9ba52f0a730fa2/opentelemetry_proto-1.42.1-py3-none-any.whl", hash = "sha256:dedb74cba2886c59c7789b227a7a670613025a07489040050aedff6e5c0fb43c", size = 71782, upload-time = "2026-05-21T16:32:44.867Z" },
+    { url = "https://files.pythonhosted.org/packages/7e/0d/a0b8f2b9efe2ec1abdf639d3696db9b1563ebeb11d91aac08ba7341e9122/opentelemetry_proto-1.45.2-py3-none-any.whl", hash = "sha256:03a7ca1b43f89fd5b965d5975902bb2515c0c86e2428b456836e9a6149c6235a", size = 72484, upload-time = "2026-10-29T17:29:31.403Z" },
 ]
 
 [[package]]
 name = "opentelemetry-sdk"
 version = "1.42.1"
 source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version >= '3.14' and sys_platform == 'win32'",
+    "python_full_version >= '3.14' and sys_platform != 'win32'",
+    "python_full_version == '3.13.*' and sys_platform == 'win32'",
+    "python_full_version == '3.12.*' and sys_platform == 'win32'",
+    "python_full_version < '3.12' and sys_platform == 'win32'",
+    "python_full_version == '3.13.*' and sys_platform != 'win32'",
+    "python_full_version == '3.12.*' and sys_platform != 'win32'",
+    "python_full_version < '3.12' and sys_platform != 'win32'",
+]
 dependencies = [
-    { name = "opentelemetry-api" },
-    { name = "opentelemetry-semantic-conventions" },
+    { name = "opentelemetry-api", version = "1.42.1", source = { registry = "https://pypi.org/simple" } },
+    { name = "opentelemetry-semantic-conventions", version = "0.63b1", source = { registry = "https://pypi.org/simple" } },
     { name = "typing-extensions" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/40/f7/b390bd9bfd703bf98a68fea1f27786c6872331fd617164a54b8a59bdc008/opentelemetry_sdk-1.42.1.tar.gz", hash = "sha256:8c834e8f8c9ba4171d4ec843d0cb8a67e4c7394d3f9e9297e582cbd9456ddbf7", size = 239262, upload-time = "2026-05-21T16:33:04.641Z" }
@@ -3253,11 +3531,101 @@ wheels = [
 ]
 
 [[package]]
+name = "opentelemetry-sdk"
+version = "1.45.2"
+source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version >= '3.15' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.14.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version >= '3.15' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.14.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version < '3.12' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version < '3.12' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version >= '3.14' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version >= '3.14' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version < '3.12' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version < '3.12' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version >= '3.15' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.14.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version >= '3.15' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.14.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version < '3.12' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version < '3.12' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version >= '3.14' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version >= '3.14' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version < '3.12' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version < '3.12' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version >= '3.15' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.14.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version >= '3.15' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.14.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version < '3.12' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version < '3.12' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version >= '3.14' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version >= '3.14' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version < '3.12' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version < '3.12' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version >= '3.15' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.14.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version >= '3.15' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.14.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version < '3.12' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version < '3.12' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+]
+dependencies = [
+    { name = "opentelemetry-api", version = "1.45.2", source = { registry = "https://pypi.org/simple" } },
+    { name = "opentelemetry-semantic-conventions", version = "0.66b2", source = { registry = "https://pypi.org/simple" } },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/7b/1a/74a21d4d6969fb8b432ac397e66112a8167a6deb267ea4559dbaf2fe91ef/opentelemetry_sdk-1.45.2.tar.gz", hash = "sha256:7eec4de13dd21ff3a1670dcb0e02079e692736f94d733dfdce5af461d884248d", size = 221705, upload-time = "2026-10-29T17:29:54.685Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/9f/a5/9a3b793ef48245f2336a16beb2324c2397dbb3f987cd68942f77cca06156/opentelemetry_sdk-1.45.2-py3-none-any.whl", hash = "sha256:ff974ea70ee4f1d51e2ec152db37c2b626c7bf82bb3f7d86114fd8704e7199c6", size = 141756, upload-time = "2026-10-29T17:29:33.722Z" },
+]
+
+[[package]]
 name = "opentelemetry-semantic-conventions"
 version = "0.63b1"
 source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version >= '3.14' and sys_platform == 'win32'",
+    "python_full_version >= '3.14' and sys_platform != 'win32'",
+    "python_full_version == '3.13.*' and sys_platform == 'win32'",
+    "python_full_version == '3.12.*' and sys_platform == 'win32'",
+    "python_full_version < '3.12' and sys_platform == 'win32'",
+    "python_full_version == '3.13.*' and sys_platform != 'win32'",
+    "python_full_version == '3.12.*' and sys_platform != 'win32'",
+    "python_full_version < '3.12' and sys_platform != 'win32'",
+]
 dependencies = [
-    { name = "opentelemetry-api" },
+    { name = "opentelemetry-api", version = "1.42.1", source = { registry = "https://pypi.org/simple" } },
     { name = "typing-extensions" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/93/99/4d7dd6df64795951413ce6e815f8cf1eb191daf7196ae86574589643d5f3/opentelemetry_semantic_conventions-0.63b1.tar.gz", hash = "sha256:3daf963611334b365e98a57438183eb012d3bfb40b2d931a9af613476b8701a9", size = 148340, upload-time = "2026-05-21T16:33:05.455Z" }
@@ -3266,12 +3634,91 @@ wheels = [
 ]
 
 [[package]]
-name = "opentelemetry-util-http"
-version = "0.63b1"
+name = "opentelemetry-semantic-conventions"
+version = "0.66b2"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/6c/d8/7bf5e4cec0578ac3c28c18eb7b88f34279139cbc8c568d6aa02b9c5ae53e/opentelemetry_util_http-0.63b1.tar.gz", hash = "sha256:ba1268f00922ee522dba2ae38458060f99486e7385a8056985901ca9685adfff", size = 11102, upload-time = "2026-05-21T16:36:56.675Z" }
+resolution-markers = [
+    "python_full_version >= '3.15' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.14.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version >= '3.15' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.14.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version < '3.12' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version < '3.12' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version >= '3.14' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version >= '3.14' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version < '3.12' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version < '3.12' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version >= '3.15' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.14.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version >= '3.15' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.14.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version < '3.12' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version < '3.12' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version >= '3.14' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version >= '3.14' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version < '3.12' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version < '3.12' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version >= '3.15' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.14.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version >= '3.15' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.14.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version < '3.12' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version < '3.12' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version >= '3.14' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version >= '3.14' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version < '3.12' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version < '3.12' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version >= '3.15' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.14.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version >= '3.15' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.14.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version < '3.12' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version < '3.12' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+]
+dependencies = [
+    { name = "opentelemetry-api", version = "1.45.2", source = { registry = "https://pypi.org/simple" } },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/37/3f/50f95972b50e8e353f5b9342034c9cd17730f1956f009ce6a3fbbd89f9ce/opentelemetry_semantic_conventions-0.66b2.tar.gz", hash = "sha256:7da5f1a5dc4383eb66711d4d3d3e71824d9403ac1559fea021cc103c1a4c4976", size = 150246, upload-time = "2026-10-29T17:29:55.682Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/e5/f1/34e047e8f6a3c67e5220acf1af7b9f62868c25d77791bca74457bd2180a6/opentelemetry_util_http-0.63b1-py3-none-any.whl", hash = "sha256:6284194028c59cd439f8acfe388145069a6127f11dc077e1344a2094adacc3f8", size = 8205, upload-time = "2026-05-21T16:36:09.736Z" },
+    { url = "https://files.pythonhosted.org/packages/67/bd/6bf33ed31521c565931c037e9e81bac47c1acb000e850c6e24220e2a0c00/opentelemetry_semantic_conventions-0.66b2-py3-none-any.whl", hash = "sha256:4cbe61e5f9275d57ab31708446e7938ef4291ebbe6a7fca6f7a629c5acae87d8", size = 206280, upload-time = "2026-10-29T17:29:35.062Z" },
+]
+
+[[package]]
+name = "opentelemetry-util-http"
+version = "0.66b2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/d6/57/33566966a7bced4d02fbc672f92029184e4a743f5b531e44b4c0dc4c999b/opentelemetry_util_http-0.66b2.tar.gz", hash = "sha256:7ba066ea609202e474679ddf1d0f753a1e6619bd206b36afaecba4bbb86e25d0", size = 11587, upload-time = "2026-10-29T17:38:56.043Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/18/8d/39885564eefa43f6181acfa3d698af2f6b5fe3e64c86dce3f1b955f6397f/opentelemetry_util_http-0.66b2-py3-none-any.whl", hash = "sha256:c4bb5d6744e60353bcaa3e325bc529a1515346b51cb4d9c8e5b730579337e06d", size = 8383, upload-time = "2026-10-29T17:38:07.462Z" },
 ]
 
 [[package]]
@@ -3879,7 +4326,7 @@ name = "pytest-cov"
 version = "7.1.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "coverage", extra = ["toml"] },
+    { name = "coverage", extra = ["toml"], marker = "extra == 'extra-23-rai-governance-platform-dev' or (extra == 'extra-23-rai-governance-platform-adk' and extra == 'extra-23-rai-governance-platform-all') or (extra == 'extra-23-rai-governance-platform-adk' and extra == 'extra-23-rai-governance-platform-telemetry') or (extra == 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all') or (extra == 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-telemetry')" },
     { name = "pluggy" },
     { name = "pytest" },
 ]
@@ -4024,28 +4471,28 @@ all = [
     { name = "fastapi" },
     { name = "google-generativeai" },
     { name = "httpx" },
-    { name = "limits", extra = ["redis"] },
+    { name = "limits", extra = ["redis"], marker = "extra == 'extra-23-rai-governance-platform-all' or (extra == 'extra-23-rai-governance-platform-adk' and extra == 'extra-23-rai-governance-platform-dev') or (extra == 'extra-23-rai-governance-platform-adk' and extra == 'extra-23-rai-governance-platform-telemetry') or (extra == 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-dev') or (extra == 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-telemetry')" },
     { name = "lxml" },
     { name = "openai" },
     { name = "opencv-python" },
     { name = "opentelemetry-exporter-otlp-proto-http" },
     { name = "opentelemetry-instrumentation-fastapi" },
     { name = "opentelemetry-instrumentation-httpx" },
-    { name = "opentelemetry-sdk" },
+    { name = "opentelemetry-sdk", version = "1.45.2", source = { registry = "https://pypi.org/simple" } },
     { name = "pillow" },
     { name = "prometheus-client" },
     { name = "pydantic-settings" },
-    { name = "pyjwt", extra = ["crypto"] },
+    { name = "pyjwt", extra = ["crypto"], marker = "extra == 'extra-23-rai-governance-platform-all' or (extra == 'extra-23-rai-governance-platform-adk' and extra == 'extra-23-rai-governance-platform-dev') or (extra == 'extra-23-rai-governance-platform-adk' and extra == 'extra-23-rai-governance-platform-telemetry') or (extra == 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-dev') or (extra == 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-telemetry')" },
     { name = "pyotp" },
     { name = "python-dotenv" },
     { name = "signxml" },
     { name = "slowapi" },
-    { name = "sqlalchemy", extra = ["asyncio"] },
+    { name = "sqlalchemy", extra = ["asyncio"], marker = "extra == 'extra-23-rai-governance-platform-all' or (extra == 'extra-23-rai-governance-platform-adk' and extra == 'extra-23-rai-governance-platform-dev') or (extra == 'extra-23-rai-governance-platform-adk' and extra == 'extra-23-rai-governance-platform-telemetry') or (extra == 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-dev') or (extra == 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-telemetry')" },
     { name = "structlog" },
     { name = "torch" },
     { name = "torchvision" },
     { name = "transformers" },
-    { name = "uvicorn", extra = ["standard"] },
+    { name = "uvicorn", extra = ["standard"], marker = "extra == 'extra-23-rai-governance-platform-all' or (extra == 'extra-23-rai-governance-platform-adk' and extra == 'extra-23-rai-governance-platform-dev') or (extra == 'extra-23-rai-governance-platform-adk' and extra == 'extra-23-rai-governance-platform-telemetry') or (extra == 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-dev') or (extra == 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-telemetry')" },
     { name = "websockets" },
 ]
 anthropic = [
@@ -4083,7 +4530,6 @@ dev = [
     { name = "asyncpg" },
     { name = "cbor2" },
     { name = "fastapi" },
-    { name = "google-adk" },
     { name = "httpx" },
     { name = "hypothesis" },
     { name = "langchain" },
@@ -4095,10 +4541,10 @@ dev = [
     { name = "opentelemetry-exporter-otlp-proto-http" },
     { name = "opentelemetry-instrumentation-fastapi" },
     { name = "opentelemetry-instrumentation-httpx" },
-    { name = "opentelemetry-sdk" },
+    { name = "opentelemetry-sdk", version = "1.45.2", source = { registry = "https://pypi.org/simple" } },
     { name = "prometheus-client" },
     { name = "pydantic-settings" },
-    { name = "pyjwt", extra = ["crypto"] },
+    { name = "pyjwt", extra = ["crypto"], marker = "extra == 'extra-23-rai-governance-platform-dev' or (extra == 'extra-23-rai-governance-platform-adk' and extra == 'extra-23-rai-governance-platform-all') or (extra == 'extra-23-rai-governance-platform-adk' and extra == 'extra-23-rai-governance-platform-telemetry') or (extra == 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all') or (extra == 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-telemetry')" },
     { name = "pyotp" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
@@ -4108,9 +4554,9 @@ dev = [
     { name = "ruff" },
     { name = "signxml" },
     { name = "slowapi" },
-    { name = "sqlalchemy", extra = ["asyncio"] },
+    { name = "sqlalchemy", extra = ["asyncio"], marker = "extra == 'extra-23-rai-governance-platform-dev' or (extra == 'extra-23-rai-governance-platform-adk' and extra == 'extra-23-rai-governance-platform-all') or (extra == 'extra-23-rai-governance-platform-adk' and extra == 'extra-23-rai-governance-platform-telemetry') or (extra == 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all') or (extra == 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-telemetry')" },
     { name = "structlog" },
-    { name = "uvicorn", extra = ["standard"] },
+    { name = "uvicorn", extra = ["standard"], marker = "extra == 'extra-23-rai-governance-platform-dev' or (extra == 'extra-23-rai-governance-platform-adk' and extra == 'extra-23-rai-governance-platform-all') or (extra == 'extra-23-rai-governance-platform-adk' and extra == 'extra-23-rai-governance-platform-telemetry') or (extra == 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all') or (extra == 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-telemetry')" },
     { name = "websockets" },
 ]
 google = [
@@ -4174,7 +4620,7 @@ telemetry = [
     { name = "opentelemetry-exporter-otlp-proto-http" },
     { name = "opentelemetry-instrumentation-fastapi" },
     { name = "opentelemetry-instrumentation-httpx" },
-    { name = "opentelemetry-sdk" },
+    { name = "opentelemetry-sdk", version = "1.45.2", source = { registry = "https://pypi.org/simple" } },
 ]
 
 [package.metadata]
@@ -4198,7 +4644,6 @@ requires-dist = [
     { name = "fastapi", marker = "extra == 'dev'", specifier = ">=0.110.0" },
     { name = "fastapi", marker = "extra == 'privacy'", specifier = ">=0.110.0" },
     { name = "google-adk", marker = "extra == 'adk'", specifier = ">=2.0.0" },
-    { name = "google-adk", marker = "extra == 'dev'", specifier = ">=2.0.0" },
     { name = "google-generativeai", marker = "extra == 'google'", specifier = ">=0.5.0" },
     { name = "httpx", specifier = ">=0.27.0" },
     { name = "httpx", marker = "extra == 'dashboard'", specifier = ">=0.27.0" },
@@ -4221,14 +4666,14 @@ requires-dist = [
     { name = "openai", marker = "extra == 'dev'", specifier = ">=1.30.0" },
     { name = "openai", marker = "extra == 'openai'", specifier = ">=1.30.0" },
     { name = "opencv-python", marker = "extra == 'deepfake'", specifier = ">=4.8.0" },
-    { name = "opentelemetry-exporter-otlp-proto-http", marker = "extra == 'dev'", specifier = ">=1.24.0" },
-    { name = "opentelemetry-exporter-otlp-proto-http", marker = "extra == 'telemetry'", specifier = ">=1.24.0" },
-    { name = "opentelemetry-instrumentation-fastapi", marker = "extra == 'dev'", specifier = ">=0.45b0" },
-    { name = "opentelemetry-instrumentation-fastapi", marker = "extra == 'telemetry'", specifier = ">=0.45b0" },
-    { name = "opentelemetry-instrumentation-httpx", marker = "extra == 'dev'", specifier = ">=0.45b0" },
-    { name = "opentelemetry-instrumentation-httpx", marker = "extra == 'telemetry'", specifier = ">=0.45b0" },
-    { name = "opentelemetry-sdk", marker = "extra == 'dev'", specifier = ">=1.24.0" },
-    { name = "opentelemetry-sdk", marker = "extra == 'telemetry'", specifier = ">=1.24.0" },
+    { name = "opentelemetry-exporter-otlp-proto-http", marker = "extra == 'dev'", specifier = ">=1.45.1" },
+    { name = "opentelemetry-exporter-otlp-proto-http", marker = "extra == 'telemetry'", specifier = ">=1.45.1" },
+    { name = "opentelemetry-instrumentation-fastapi", marker = "extra == 'dev'", specifier = ">=0.66b1" },
+    { name = "opentelemetry-instrumentation-fastapi", marker = "extra == 'telemetry'", specifier = ">=0.66b1" },
+    { name = "opentelemetry-instrumentation-httpx", marker = "extra == 'dev'", specifier = ">=0.66b1" },
+    { name = "opentelemetry-instrumentation-httpx", marker = "extra == 'telemetry'", specifier = ">=0.66b1" },
+    { name = "opentelemetry-sdk", marker = "extra == 'dev'", specifier = ">=1.45.1" },
+    { name = "opentelemetry-sdk", marker = "extra == 'telemetry'", specifier = ">=1.45.1" },
     { name = "pillow", marker = "extra == 'deepfake'", specifier = ">=10.0.0" },
     { name = "prometheus-client", marker = "extra == 'dashboard'", specifier = ">=0.20.0" },
     { name = "prometheus-client", marker = "extra == 'dev'", specifier = ">=0.20.0" },
@@ -4770,14 +5215,68 @@ name = "scipy"
 version = "1.18.1"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
-    "python_full_version >= '3.15' and sys_platform == 'win32'",
-    "python_full_version >= '3.15' and sys_platform != 'win32'",
-    "python_full_version == '3.14.*' and sys_platform == 'win32'",
-    "python_full_version == '3.14.*' and sys_platform != 'win32'",
-    "python_full_version == '3.13.*' and sys_platform == 'win32'",
-    "python_full_version == '3.13.*' and sys_platform != 'win32'",
-    "python_full_version == '3.12.*' and sys_platform == 'win32'",
-    "python_full_version == '3.12.*' and sys_platform != 'win32'",
+    "python_full_version >= '3.15' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.14.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version >= '3.15' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.14.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version >= '3.14' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version >= '3.14' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version >= '3.15' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.14.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version >= '3.15' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.14.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version >= '3.14' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version >= '3.14' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra == 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version >= '3.14' and sys_platform == 'win32' and extra == 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version >= '3.14' and sys_platform != 'win32' and extra == 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform == 'win32' and extra == 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform == 'win32' and extra == 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform != 'win32' and extra == 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform != 'win32' and extra == 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version >= '3.15' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.14.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version >= '3.15' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.14.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version >= '3.14' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version >= '3.14' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra == 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version >= '3.15' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.14.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version >= '3.15' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.14.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-agent-frameworks' and extra != 'extra-23-rai-governance-platform-all' and extra == 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version >= '3.14' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version >= '3.14' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform == 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.13.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
+    "python_full_version == '3.12.*' and sys_platform != 'win32' and extra != 'extra-23-rai-governance-platform-adk' and extra != 'extra-23-rai-governance-platform-all' and extra != 'extra-23-rai-governance-platform-dev' and extra != 'extra-23-rai-governance-platform-telemetry'",
 ]
 dependencies = [
     { name = "numpy", version = "2.5.2", source = { registry = "https://pypi.org/simple" } },
