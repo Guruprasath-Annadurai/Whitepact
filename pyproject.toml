@@ -74,10 +74,11 @@ dashboard = [
 postgres   = ["asyncpg>=0.29.0"]
 redis      = ["limits[redis]>=3.6.0"]
 telemetry  = [
-    "opentelemetry-sdk>=1.24.0",
-    "opentelemetry-exporter-otlp-proto-http>=1.24.0",
-    "opentelemetry-instrumentation-fastapi>=0.45b0",
-    "opentelemetry-instrumentation-httpx>=0.45b0",
+    # CVE-2026-114603 / GHSA-xcq7-p3pf-p88h: unbounded tracestate parsing — fixed in 1.45.1
+    "opentelemetry-sdk>=1.45.1",
+    "opentelemetry-exporter-otlp-proto-http>=1.45.1",
+    "opentelemetry-instrumentation-fastapi>=0.66b1",
+    "opentelemetry-instrumentation-httpx>=0.66b1",
 ]
 sso        = ["PyJWT[crypto]>=2.15.0", "httpx>=0.27.0", "signxml>=3.2.0", "lxml>=5.2.1"]
 openai     = ["openai>=1.30.0"]
@@ -97,6 +98,10 @@ billing    = ["stripe>=9.0.0"]
 # google-adk 2.5.0 as of this writing (2026-07-25).
 langchain  = ["langchain>=1.0.0"]
 langgraph  = ["langgraph>=1.0.0"]
+# google-adk<=2.13.0 requires opentelemetry-api/sdk<=1.44, which is
+# vulnerable to CVE-2026-114603 (fixed in 1.45.1). Keep ADK opt-in only
+# until upstream lifts that upper bound; do not co-install with [telemetry]
+# / CI [dev] floors of opentelemetry>=1.45.1.
 adk        = ["google-adk>=2.0.0"]
 # A2A (Agent2Agent protocol, src/responsibleai/integrations/a2a_adapter.py)
 # -- only needed for extract_agent_and_message()'s optional real-SDK
@@ -142,16 +147,18 @@ dev = [
     "asyncpg>=0.29.0",
     "websockets>=12.0",
     "prometheus-client>=0.20.0",
-    "opentelemetry-sdk>=1.24.0",
-    "opentelemetry-exporter-otlp-proto-http>=1.24.0",
-    "opentelemetry-instrumentation-fastapi>=0.45b0",
-    "opentelemetry-instrumentation-httpx>=0.45b0",
+    # Keep floor aligned with [telemetry] — CVE-2026-114603 fixed in 1.45.1
+    "opentelemetry-sdk>=1.45.1",
+    "opentelemetry-exporter-otlp-proto-http>=1.45.1",
+    "opentelemetry-instrumentation-fastapi>=0.66b1",
+    "opentelemetry-instrumentation-httpx>=0.66b1",
     "mcp>=1.0.0,<2.0.0",
     "pyotp>=2.9.0",
     "cbor2>=5.6.0",
     "langchain>=1.0.0",
     "langgraph>=1.0.0",
-    "google-adk>=2.0.0",
+    # google-adk intentionally omitted from [dev]: its otel<=1.44 pin
+    # conflicts with CVE-2026-114603 remediation (otel>=1.45.1). Use [adk].
     "hypothesis>=6.100.0",
     "PyYAML>=6.0.3",
     "signxml>=3.2.0",
@@ -217,3 +224,24 @@ ignore = ["E501", "B008", "N802"]
 # interpreter's version means each matrix job checks against itself.
 ignore_missing_imports = true
 mypy_path = "src"
+
+# Transitive floors for known CVEs that fail pip-audit in CI (no suppressions).
+# filelock: CVE-2026-112907..112940 family (incl. GHSA-v4x8-3wr5-3wq8) → >=4.2.1
+# certifi:  PYSEC-2026-4320 → >=2026.10.18
+#
+# google-adk (via [adk] / [agent-frameworks]) still pins otel<=1.44, which is
+# incompatible with CVE-2026-114603 remediation (otel>=1.45.1 on [telemetry],
+# [dev], [all]). Declare conflicts so the lock can fork; do not co-install.
+[tool.uv]
+constraint-dependencies = [
+    "filelock>=4.2.1",
+    "certifi>=2026.10.18",
+]
+conflicts = [
+    [{ extra = "adk" }, { extra = "telemetry" }],
+    [{ extra = "adk" }, { extra = "all" }],
+    [{ extra = "adk" }, { extra = "dev" }],
+    [{ extra = "agent-frameworks" }, { extra = "telemetry" }],
+    [{ extra = "agent-frameworks" }, { extra = "all" }],
+    [{ extra = "agent-frameworks" }, { extra = "dev" }],
+]

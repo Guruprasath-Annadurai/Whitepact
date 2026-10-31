@@ -1,0 +1,18 @@
+{
+  "name": "whitepact-cloudflare-didit-worker",
+  "version": "0.0.0-local",
+  "private": true,
+  "description": "LOCAL-ONLY Didit V3 webhook ingress for Cloudflare Workers + Neon. Not deployed. Not production.",
+  "type": "module",
+  "scripts": {
+    "test": "node --test --test-concurrency=1 tests/*.test.mjs",
+    "test:pg": "DATABASE_URL=${DATABASE_URL:-postgres://ubuntu@127.0.0.1:54329/m13_didit} node --test --test-concurrency=1 tests/pg-concurrency.test.mjs tests/pg-correctness.test.mjs tests/reconcile-pg.test.mjs",
+    "crosscheck:python": "python3 scripts/python_canonical_crosscheck.py"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "pg": "8.16.3"
+  }
+}
