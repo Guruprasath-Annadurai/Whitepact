@@ -3,7 +3,7 @@
   "name": "io.github.Guruprasath-Annadurai/whitepact",
   "title": "WhitePact",
   "description": "AI governance tools for MCP: policy checks, trust scoring, guardrails and audit evidence.",
-  "websiteUrl": "https://github.com/Guruprasath-Annadurai/whitepact-docs",
+  "websiteUrl": "https://github.com/Guruprasath-Annadurai/Whitepact",
   "version": "1.2.6",
   "packages": [
     {
