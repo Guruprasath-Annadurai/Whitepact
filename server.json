@@ -1,0 +1,56 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.Guruprasath-Annadurai/whitepact",
+  "title": "WhitePact",
+  "description": "AI governance tools for MCP: policy checks, trust scoring, guardrails and audit evidence.",
+  "websiteUrl": "https://github.com/Guruprasath-Annadurai/whitepact-docs",
+  "version": "1.2.6",
+  "packages": [
+    {
+      "registryType": "pypi",
+      "registryBaseUrl": "https://pypi.org",
+      "identifier": "rai-governance-platform",
+      "version": "1.2.6",
+      "runtimeHint": "uvx",
+      "runtimeArguments": [
+        {
+          "type": "named",
+          "name": "--from",
+          "value": "rai-governance-platform"
+        }
+      ],
+      "packageArguments": [
+        {
+          "type": "positional",
+          "value": "whitepact-mcp"
+        }
+      ],
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "RAI_MCP_LOG_LEVEL",
+          "description": "DEBUG, INFO, or WARNING.",
+          "isRequired": false,
+          "default": "WARNING"
+        }
+      ]
+    }
+  ],
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://whitepact-mcp-http.onrender.com/mcp",
+      "headers": [
+        {
+          "name": "Authorization",
+          "description": "Bearer token required. This is an authenticated endpoint, not a public production launch.",
+          "isRequired": true,
+          "isSecret": true,
+          "placeholder": "Bearer <your-token>"
+        }
+      ]
+    }
+  ]
+}
