@@ -72,7 +72,6 @@ dashboard = [
 postgres   = ["asyncpg>=0.29.0"]
 redis      = ["limits[redis]>=3.6.0"]
 telemetry  = [
-    "opentelemetry-api>=1.45.1",  # CVE-2026-114603 affects 1.44.0
     "opentelemetry-sdk>=1.24.0",
     "opentelemetry-exporter-otlp-proto-http>=1.24.0",
     "opentelemetry-instrumentation-fastapi>=0.45b0",
@@ -140,7 +139,6 @@ dev = [
     "aiosqlite>=0.19.0",
     "websockets>=12.0",
     "prometheus-client>=0.20.0",
-    "opentelemetry-api>=1.45.1",  # CVE-2026-114603 affects 1.44.0
     "opentelemetry-sdk>=1.24.0",
     "opentelemetry-exporter-otlp-proto-http>=1.24.0",
     "opentelemetry-instrumentation-fastapi>=0.45b0",
