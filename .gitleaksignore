@@ -1,0 +1,14 @@
+# Known documentation placeholders, verified non-functional -- see
+# compliance/OPENSSF_SECRET_SCAN.md for the full audit. Each fingerprint
+# below points at an example curl command or env var using an obviously
+# fake value (your-key-here, owner-key, abc123def456...), not a real
+# credential. Re-verify with `gitleaks detect --source . --no-git` before
+# adding a new entry here -- this file exists to keep CI from failing on
+# already-audited placeholders, not to silence real findings.
+DEPLOYMENT.md:generic-api-key:77
+DEPLOYMENT.md:curl-auth-header:80
+compliance/OPENSSF_SECRET_SCAN.md:generic-api-key:21
+wiki/Authentication-and-RBAC.md:curl-auth-header:26
+wiki/Authentication-and-RBAC.md:curl-auth-header:66
+wiki/Authentication-and-RBAC.md:curl-auth-header:75
+wiki/Authentication-and-RBAC.md:curl-auth-header:86

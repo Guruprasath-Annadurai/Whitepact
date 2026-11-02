@@ -1,0 +1,37 @@
+{
+  "nav.group.overview": "Resumen",
+  "nav.group.evaluate": "Evaluar",
+  "nav.group.cost_trust": "Costo y Confianza",
+  "nav.group.governance": "Gobernanza",
+  "nav.group.account": "Cuenta",
+
+  "nav.overview": "Panel",
+  "nav.evaluate": "Evaluar Modelo",
+  "nav.guardrails": "Barreras de Seguridad",
+  "nav.hallucination": "Alucinación",
+  "nav.eval": "Comparar y Evaluar",
+  "nav.redteam": "Equipo Rojo",
+  "nav.cost": "Inteligencia de Costos",
+  "nav.router": "Enrutador de Modelos",
+  "nav.trust_scores": "Puntuaciones de Confianza",
+  "nav.leaderboard": "Clasificación",
+  "nav.audit": "Registro de Auditoría",
+  "nav.incidents": "Incidentes",
+  "nav.incident_db": "Base de Datos de Incidentes",
+  "nav.webhooks": "Webhooks",
+  "nav.organizations": "Organizaciones y Acceso",
+  "nav.billing": "Facturación",
+  "nav.settings": "Configuración",
+
+  "topbar.toggle_nav": "Alternar navegación",
+  "topbar.toggle_theme": "Alternar tema",
+  "topbar.logout": "Cerrar sesión",
+  "topbar.signup": "Registrarse",
+  "topbar.login": "Iniciar sesión",
+  "topbar.locale_label": "Idioma",
+
+  "toast.results_count": {
+    "one": "{count} resultado",
+    "other": "{count} resultados"
+  }
+}

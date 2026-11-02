@@ -1,0 +1,34 @@
+{
+  "_comment": "Tool/resource definitions are NOT duplicated here — they drift. The canonical, live source is the server's own capability card, generated from the same TOOL_DEFS/RESOURCE_DEFS the live MCP server advertises.",
+  "canonicalCapabilityCard": "https://whitepact-mcp-http.onrender.com/.well-known/mcp/server-card.json",
+  "mcpEndpoint": {
+    "streamableHttp": "https://whitepact-mcp-http.onrender.com/mcp",
+    "legacySse": "https://whitepact-mcp-http.onrender.com/sse"
+  },
+  "authentication": {
+    "type": "apiKey",
+    "scheme": "Bearer",
+    "header": "Authorization",
+    "obtainedFrom": "WhitePact dashboard (Settings -> API Keys) after creating a free org",
+    "oauthAuthorizationServer": null
+  },
+  "toolCount": 27,
+  "resourceCount": {
+    "canonical": 10,
+    "advertisedDualScheme": 20
+  },
+  "toolProperties": {
+    "readOnly": true,
+    "destructive": false,
+    "idempotent": true,
+    "openWorld": false
+  },
+  "version": "1.2.2",
+  "listingVersion": "1.2.3",
+  "repository": "https://github.com/Guruprasath-Annadurai/Whitepact",
+  "_urlNote": "Support/privacy/terms below use the repo's own docs via raw.githubusercontent.com, verified live (200) 2026-08-13. A dedicated whitepact.<tld> domain does not exist yet -- these are real, reachable URLs today, not placeholders, but a Microsoft reviewer may expect a branded domain rather than a raw GitHub content link. Swapping to a real domain later is a founder action, not a content change.",
+  "support": "mailto:annaduraiguruprasath7@gmail.com",
+  "privacy": "https://raw.githubusercontent.com/Guruprasath-Annadurai/Whitepact/main/PRIVACY_POLICY.md",
+  "terms": "https://raw.githubusercontent.com/Guruprasath-Annadurai/Whitepact/main/TERMS_OF_SERVICE.md",
+  "icon": "TODO_FOUNDER_ACTION_REQUIRED_REUSE_APPROVED_LOGO_ASSET"
+}

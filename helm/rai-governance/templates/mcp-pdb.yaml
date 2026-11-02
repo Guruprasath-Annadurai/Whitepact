@@ -1,0 +1,13 @@
+{{- if and .Values.mcp.enabled .Values.mcp.pdb.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "rai-governance.mcp.fullname" . }}
+  labels:
+    {{- include "rai-governance.mcp.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.mcp.pdb.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "rai-governance.mcp.selectorLabels" . | nindent 6 }}
+{{- end }}

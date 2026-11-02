@@ -42,14 +42,17 @@ The existing package is distributed on PyPI as **`rai-governance-platform`**, wi
 **Latest PyPI release verified on 1 November 2026: `1.2.6`, released 30 August 2026.**
 
 ```bash
+# Core package installation:
 python -m pip install "rai-governance-platform==1.2.6"
+
+# For the `whitepact` CLI, explicit installation of `rich` is required for v1.2.6:
+python -m pip install "rai-governance-platform==1.2.6" rich
+
+# For developer-facing MCP support and CLI tools:
+python -m pip install "rai-governance-platform[mcp]==1.2.6" rich
 ```
 
-For developer-facing MCP support, the published distribution declares an `mcp` optional dependency group:
-
-```bash
-python -m pip install "rai-governance-platform[mcp]==1.2.6"
-```
+> **Note on CLI Dependency:** For the published 1.2.6 distribution, the `whitepact` CLI entry point requires `rich`, which was omitted from the base package dependencies in `pyproject.toml`. Install `rich` explicitly alongside the package to enable the command-line interface.
 
 The package documentation identifies `whitepact-mcp` as a self-hosted MCP entry point. Configure and validate the appropriate local service, authentication and dependencies for your environment before using it with an MCP client.
 

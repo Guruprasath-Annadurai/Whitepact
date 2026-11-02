@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>AI Passport — claude-sonnet-4</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+       max-width:820px;margin:48px auto;padding:0 24px;color:#1a1a1a;background:#fff}
+  header{border-bottom:2px solid #f3f4f6;padding-bottom:28px;margin-bottom:32px}
+  .brand{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;
+          color:#9ca3af;margin-bottom:8px}
+  h1{font-size:24px;font-weight:800;margin-bottom:4px}
+  .sub{color:#6b7280;font-size:13px}
+  .score-box{display:inline-flex;align-items:center;gap:20px;
+             padding:16px 24px;border-radius:12px;margin:20px 0;
+             background:#84cc1612;border:2px solid #84cc16}
+  .score-num{font-size:52px;font-weight:900;color:#84cc16;line-height:1}
+  .score-meta{display:flex;flex-direction:column;gap:4px}
+  .grade{font-size:18px;font-weight:800;color:#84cc16}
+  .risk-badge{display:inline-block;padding:2px 10px;border-radius:99px;
+              font-size:11px;font-weight:700;background:#84cc1620;color:#84cc16}
+  table{width:100%;border-collapse:collapse;font-size:13px;margin:12px 0}
+  th{font-size:10px;text-transform:uppercase;letter-spacing:.06em;
+      color:#9ca3af;font-weight:600;padding:6px 8px;border-bottom:1px solid #f3f4f6;
+      text-align:left}
+  td{padding:8px;border-bottom:1px solid #f9fafb}
+  .bar{height:6px;background:#f3f4f6;border-radius:3px;width:120px}
+  .bar-fill{height:100%;border-radius:3px}
+  h2{font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;
+      color:#374151;margin:28px 0 12px}
+  .hash{font-family:monospace;font-size:10px;color:#9ca3af;
+         word-break:break-all;background:#f9fafb;padding:10px 12px;border-radius:6px}
+  .meta{font-size:11px;color:#9ca3af;margin-top:4px}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">ResponsibleAI — AI Passport v1.0</div>
+  <h1>Trust Certificate</h1>
+  <p class="sub">Model: <strong>claude-sonnet-4</strong>
+     &nbsp;·&nbsp; Provider: <strong>anthropic</strong></p>
+  <div class="score-box">
+    <div class="score-num">88.9</div>
+    <div class="score-meta">
+      <span class="grade">Grade B</span>
+      <span class="risk-badge">LOW RISK</span>
+    </div>
+  </div>
+</header>
+
+<h2>Dimension Scores</h2>
+<table>
+  <tr><th>Dimension</th><th>Score</th><th></th></tr>
+  <tr><td>Fairness</td><td>88.0 / 100</td><td><div class='bar'><div class='bar-fill' style='width:88.0%;background:#84cc16'></div></div></td></tr><tr><td>Privacy</td><td>91.0 / 100</td><td><div class='bar'><div class='bar-fill' style='width:91.0%;background:#84cc16'></div></div></td></tr><tr><td>Security</td><td>85.0 / 100</td><td><div class='bar'><div class='bar-fill' style='width:85.0%;background:#84cc16'></div></div></td></tr><tr><td>Robustness</td><td>87.0 / 100</td><td><div class='bar'><div class='bar-fill' style='width:87.0%;background:#84cc16'></div></div></td></tr><tr><td>Compliance</td><td>93.0 / 100</td><td><div class='bar'><div class='bar-fill' style='width:93.0%;background:#84cc16'></div></div></td></tr><tr><td>Authenticity</td><td>90.0 / 100</td><td><div class='bar'><div class='bar-fill' style='width:90.0%;background:#84cc16'></div></div></td></tr>
+</table>
+
+<h2>Bias Assessment</h2>
+<table><tr><th>Field</th><th>Value</th></tr><tr><td>Gender Divergence</td><td>0.04</td></tr><tr><td>Racial Divergence</td><td>0.06</td></tr><tr><td>Probes Run</td><td>6</td></tr></table>
+
+<h2>Compliance Assessment</h2>
+<table><tr><th>Field</th><th>Value</th></tr><tr><td>Nist Score</td><td>0.91</td></tr><tr><td>Eu Ai Act Tier</td><td>MINIMAL</td></tr><tr><td>Iso Score</td><td>0.88</td></tr></table>
+
+<h2>Verification</h2>
+<p class="meta">Passport ID: cd889562-302f-4ebb-a0b5-6acc6723f843</p>
+<p class="meta">Generated: 2026-06-20T10:45:39.276547+00:00</p>
+<div class="hash" style="margin-top:8px">SHA-256: 9399afaae7a5038707a8cf465d1761bc6a758a567bdd55ccc0fe579d73f5c8f7</div>
+</body>
+</html>

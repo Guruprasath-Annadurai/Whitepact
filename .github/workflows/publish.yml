@@ -1,0 +1,208 @@
+name: Publish to PyPI
+
+on:
+  push:
+    tags:
+      - "v*"
+
+# Every job must opt in to only the permissions it needs.
+permissions: {}
+
+jobs:
+  # Release intent remains independent from build provenance: an approved human
+  # must sign the annotated tag before the trusted builder can run.
+  verify-signed-tag:
+    name: Verify signed release tag
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout the release tag
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Reject lightweight tags, verify SSH signature against approved signers
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          echo "Verifying tag: $TAG"
+
+          # checkout resolves an annotated tag push to its commit. Fetch the tag
+          # object itself before checking its type and signature.
+          git fetch origin "refs/tags/${TAG}:refs/tags/${TAG}" --force
+          TYPE="$(git cat-file -t "$TAG")"
+          if [ "$TYPE" != "tag" ]; then
+            echo "::error::Tag '$TAG' is lightweight; releases require an annotated, signed tag."
+            exit 1
+          fi
+
+          git config gpg.format ssh
+          git config gpg.ssh.allowedSignersFile "${GITHUB_WORKSPACE}/security/release-signers.allowed"
+          if ! grep -qE '^[^#[:space:]]+[[:space:]]+ssh-' security/release-signers.allowed; then
+            echo "::error::No approved release signer is configured."
+            exit 1
+          fi
+          if ! git tag -v "$TAG"; then
+            echo "::error::Tag '$TAG' is unsigned, invalid, or signed by an unapproved key."
+            exit 1
+          fi
+
+  build:
+    name: Reusable trusted builder
+    needs: verify-signed-tag
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    uses: ./.github/workflows/reusable-build.yml
+
+  publish:
+    name: Verify exact bytes and publish
+    runs-on: ubuntu-latest
+    needs:
+      - verify-signed-tag
+      - build
+    environment: pypi
+    permissions:
+      contents: write
+      id-token: write
+      attestations: read
+
+    steps:
+      - name: Download the attested release bundle
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-bundle
+          path: release-bundle
+
+      - name: Verify builder digests and artifact set
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd release-bundle
+          sha256sum --check SHA256SUMS
+          test "$(find . -maxdepth 1 -type f -name '*.whl' | wc -l | tr -d ' ')" = "1"
+          test "$(find . -maxdepth 1 -type f -name '*.tar.gz' | wc -l | tr -d ' ')" = "1"
+          test "$(find . -maxdepth 1 -type f | wc -l | tr -d ' ')" = "4"
+
+      - name: Independently verify wheel and sdist provenance
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for artifact in release-bundle/*.whl release-bundle/*.tar.gz; do
+            gh attestation verify "$artifact" \
+              --repo "$GITHUB_REPOSITORY" \
+              --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/reusable-build.yml" \
+              --source-digest "$GITHUB_SHA" \
+              --source-ref "$GITHUB_REF" \
+              --deny-self-hosted-runners
+          done
+
+      - name: Verify CycloneDX SBOM attestation
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh attestation verify release-bundle/*.whl \
+            --repo "$GITHUB_REPOSITORY" \
+            --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/reusable-build.yml" \
+            --source-digest "$GITHUB_SHA" \
+            --source-ref "$GITHUB_REF" \
+            --predicate-type https://cyclonedx.org/bom \
+            --deny-self-hosted-runners \
+            --format json \
+            --jq '.[0].verificationResult.statement.predicate' \
+            > "${RUNNER_TEMP}/attested-sbom.json"
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          attached = json.loads(
+              Path("release-bundle/sbom.cyclonedx.json").read_text(encoding="utf-8")
+          )
+          attested_path = Path(os.environ["RUNNER_TEMP"]) / "attested-sbom.json"
+          attested = json.loads(attested_path.read_text(encoding="utf-8"))
+          if attached != attested:
+              raise SystemExit("Attached CycloneDX SBOM differs from its attested predicate")
+          print("Attached CycloneDX SBOM exactly matches the attested predicate.")
+          PY
+
+      - name: Stage exact attested distributions for PyPI
+        shell: bash
+        run: |
+          set -euo pipefail
+          PUBLISH_DIR="${RUNNER_TEMP}/whitepact-pypi-publish"
+          rm -rf "${PUBLISH_DIR}"
+          mkdir -p "${PUBLISH_DIR}"
+          cp release-bundle/*.whl release-bundle/*.tar.gz "${PUBLISH_DIR}/"
+          test "$(find "${PUBLISH_DIR}" -maxdepth 1 -type f -name '*.whl' | wc -l | tr -d ' ')" = "1"
+          test "$(find "${PUBLISH_DIR}" -maxdepth 1 -type f -name '*.tar.gz' | wc -l | tr -d ' ')" = "1"
+          test "$(find "${PUBLISH_DIR}" -maxdepth 1 -type f | wc -l | tr -d ' ')" = "2"
+
+      - name: Publish exact attested distributions to PyPI
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
+        with:
+          packages-dir: ${{ runner.temp }}/whitepact-pypi-publish/
+          skip-existing: true
+
+      - name: Confirm PyPI published the builder's exact bytes
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib
+          import json
+          import os
+          import pathlib
+          import time
+          import urllib.error
+          import urllib.request
+
+          project = "rai-governance-platform"
+          version = os.environ["RELEASE_TAG"].removeprefix("v")
+          expected = {
+              path.name: hashlib.sha256(path.read_bytes()).hexdigest()
+              for path in pathlib.Path("release-bundle").iterdir()
+              if path.suffix == ".whl" or path.name.endswith(".tar.gz")
+          }
+          url = f"https://pypi.org/pypi/{project}/{version}/json"
+          for attempt in range(12):
+              try:
+                  with urllib.request.urlopen(url, timeout=30) as response:
+                      payload = json.load(response)
+                  published = {
+                      item["filename"]: item["digests"]["sha256"]
+                      for item in payload["urls"]
+                  }
+                  if all(published.get(name) == digest for name, digest in expected.items()):
+                      print("PyPI SHA-256 digests match the reusable builder outputs.")
+                      break
+              except (urllib.error.URLError, TimeoutError, json.JSONDecodeError):
+                  pass
+              if attempt == 11:
+                  raise SystemExit(
+                      f"PyPI did not expose matching artifact digests after retries: {expected}"
+                  )
+              time.sleep(10)
+          PY
+
+      - name: Create GitHub Release from the same verified bundle
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
+        with:
+          files: |
+            release-bundle/*
+          generate_release_notes: true
+          body: |
+            See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for the curated entry.
+
+            Supply-chain verification commands are documented in
+            [`docs/VERIFY_RELEASE.md`](https://github.com/${{ github.repository }}/blob/main/docs/VERIFY_RELEASE.md).
