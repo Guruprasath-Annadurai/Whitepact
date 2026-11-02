@@ -36,29 +36,31 @@ not add caching that would let a stale trust score survive the resume.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, Literal
 
-try:
-    import langgraph.types
+from responsibleai.integrations.client import TrustCheckResult, TrustClient
 
-    _LANGGRAPH_AVAILABLE = True
+_interrupt_impl: Callable[[Any], Any] | None = None
+try:
+    from langgraph.types import interrupt as _imported_interrupt
+
+    _interrupt_impl = _imported_interrupt
 except ImportError:  # pragma: no cover - exercised only when extra isn't installed
-    _LANGGRAPH_AVAILABLE = False
+    pass
+
+_LANGGRAPH_AVAILABLE = _interrupt_impl is not None
 
 
 def interrupt(value: Any) -> Any:
-    """Invoke LangGraph's interruption mechanism, keeping the dependency optional."""
-    if not _LANGGRAPH_AVAILABLE:
+    """Invoke the optional LangGraph interrupt without duplicate definitions."""
+    if _interrupt_impl is None:
         raise ImportError(
             "make_trust_gate_node requires the 'langgraph' extra: "
             'pip install "rai-governance-platform[langgraph]" (needs langgraph>=1.0).'
         )
-    from langgraph.types import interrupt as _langgraph_interrupt
+    return _interrupt_impl(value)
 
-    return _langgraph_interrupt(value)
-
-
-from responsibleai.integrations.client import TrustCheckResult, TrustClient
 
 if TYPE_CHECKING:
     pass
