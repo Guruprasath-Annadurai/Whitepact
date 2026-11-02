@@ -1,0 +1,27 @@
+# WhitePact release-signing allowed signers file.
+#
+# Git SSH-signature "allowed signers" format (see `git help gpg-sign` /
+# ssh-keygen(1) "ALLOWED SIGNERS" section):
+#
+#   <principal> <key-type> <base64-public-key>
+#
+# One line per approved release signer. `<principal>` should be a
+# stable identifier for the person (e.g. their email), not a
+# description. Example (illustrative only — not a real key):
+#
+#   founder@whitepact.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI...
+#
+# CRITICAL: this file holds PUBLIC keys only. Never paste a private
+# key (anything from `~/.ssh/id_*` without the `.pub` suffix, or a
+# PEM block containing "PRIVATE KEY") into this file or anywhere else
+# in this repository.
+#
+# To add yourself as an approved release signer:
+#   1. Generate or locate your SSH signing key (RELEASING.md "One-time
+#      setup: SSH tag signing" has the exact commands).
+#   2. Append one line here in the format above, using your PUBLIC
+#      key (the `.pub` file's contents) — never the private key.
+#   3. Open a PR. This file changing is itself a security-sensitive
+#      change and should be reviewed like one.
+
+milchcreamfoods@gmail.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAII2+KHF+G+SbJa/8gzrBggOntjYAg4/wPZZbexmYghsz release-signing

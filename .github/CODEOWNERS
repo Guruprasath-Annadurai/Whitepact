@@ -1,0 +1,7 @@
+# CODEOWNERS — this project is founder-led (see GOVERNANCE.md), not a
+# claim of a distributed team with per-area owners. One name, on
+# purpose: a CODEOWNERS file with invented team handles or fake
+# sub-maintainers would be exactly the kind of fabricated process this
+# project's own engineering rules prohibit.
+
+* @Guruprasath-Annadurai

@@ -1,0 +1,237 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "WhitePact Trust Index",
+    "description": "Score, verify, and check AI models/tools against the open Trust Index standard (fairness, privacy, security, robustness, compliance, authenticity). Free, unauthenticated public endpoints backed by WhitePact, an open-source AI governance platform.",
+    "version": "1.0.0",
+    "contact": {
+      "name": "Guruprasath Annadurai",
+      "email": "milchcreamfoods@gmail.com",
+      "url": "https://github.com/Guruprasath-Annadurai/Whitepact"
+    }
+  },
+  "host": "responsibleai-dashboard.onrender.com",
+  "basePath": "/",
+  "schemes": ["https"],
+  "consumes": ["application/json"],
+  "produces": ["application/json"],
+  "paths": {
+    "/api/health": {
+      "get": {
+        "summary": "Check service health",
+        "description": "Returns the live health and version of the WhitePact service. Useful as a connectivity test before running other actions.",
+        "operationId": "CheckHealth",
+        "x-ms-summary": "Check service health",
+        "responses": {
+          "200": {
+            "description": "Service is healthy or degraded",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "status": { "type": "string", "description": "healthy or degraded" },
+                "version": { "type": "string" },
+                "uptime_seconds": { "type": "number" },
+                "timestamp": { "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/trust-index/assess": {
+      "post": {
+        "summary": "Self-assess a model or tool",
+        "description": "Score any AI model or tool against the six-dimension Trust Index (fairness, privacy, security, robustness, compliance, authenticity) and get back a durable, independently-verifiable Trust Passport. Public, free, no signup required. Self-assessed scores are always marked certified: false.",
+        "operationId": "AssessModel",
+        "x-ms-summary": "Self-assess a model or tool",
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "type": "object",
+              "required": ["model_name", "provider"],
+              "properties": {
+                "model_name": {
+                  "type": "string",
+                  "description": "Name of the model or tool being assessed",
+                  "x-ms-summary": "Model name"
+                },
+                "provider": {
+                  "type": "string",
+                  "description": "Provider/vendor of the model or tool",
+                  "x-ms-summary": "Provider"
+                },
+                "fairness": {
+                  "type": "number",
+                  "format": "double",
+                  "default": 0.5,
+                  "description": "Fairness score, 0.0 to 1.0",
+                  "x-ms-summary": "Fairness (0-1)"
+                },
+                "privacy": {
+                  "type": "number",
+                  "format": "double",
+                  "default": 0.5,
+                  "description": "Privacy score, 0.0 to 1.0",
+                  "x-ms-summary": "Privacy (0-1)"
+                },
+                "security": {
+                  "type": "number",
+                  "format": "double",
+                  "default": 0.5,
+                  "description": "Security score, 0.0 to 1.0",
+                  "x-ms-summary": "Security (0-1)"
+                },
+                "robustness": {
+                  "type": "number",
+                  "format": "double",
+                  "default": 0.5,
+                  "description": "Robustness score, 0.0 to 1.0",
+                  "x-ms-summary": "Robustness (0-1)"
+                },
+                "compliance": {
+                  "type": "number",
+                  "format": "double",
+                  "default": 0.5,
+                  "description": "Compliance score, 0.0 to 1.0",
+                  "x-ms-summary": "Compliance (0-1)"
+                },
+                "authenticity": {
+                  "type": "number",
+                  "format": "double",
+                  "default": 0.5,
+                  "description": "Authenticity score, 0.0 to 1.0",
+                  "x-ms-summary": "Authenticity (0-1)"
+                }
+              }
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Trust Passport created",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "passport_id": { "type": "string" },
+                "citation": { "type": "string" },
+                "verify_url": { "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/trust-index/verify/{passport_id}": {
+      "get": {
+        "summary": "Verify a Trust Passport",
+        "description": "Look up a previously issued Trust Passport by ID. Lets anyone check that a cited trust score is real, not just an unfalsifiable claim.",
+        "operationId": "VerifyPassport",
+        "x-ms-summary": "Verify a Trust Passport",
+        "parameters": [
+          {
+            "name": "passport_id",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "description": "The Trust Passport ID to verify",
+            "x-ms-summary": "Passport ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Trust Passport record",
+            "schema": { "type": "object" }
+          },
+          "404": {
+            "description": "No Trust Passport found with this ID"
+          }
+        }
+      }
+    },
+    "/api/trust-index/check": {
+      "get": {
+        "summary": "Check a model's known trust score",
+        "description": "Free lookup: does this model/provider have a Trust Index assessment on file, and does it have any reported incidents? The endpoint agent frameworks (LangChain, LangGraph, ADK) call before letting an agent invoke a third-party model or tool.",
+        "operationId": "CheckModel",
+        "x-ms-summary": "Check a model's known trust score",
+        "parameters": [
+          {
+            "name": "model",
+            "in": "query",
+            "required": true,
+            "type": "string",
+            "description": "Model name to check",
+            "x-ms-summary": "Model name"
+          },
+          {
+            "name": "provider",
+            "in": "query",
+            "required": true,
+            "type": "string",
+            "description": "Provider/vendor of the model",
+            "x-ms-summary": "Provider"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Trust check result",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "known": { "type": "boolean" },
+                "trust_score": { "type": "object" },
+                "certified": { "type": "boolean" },
+                "has_reported_incidents": { "type": "boolean" },
+                "verify_url": { "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/trust-index/registry": {
+      "get": {
+        "summary": "Browse the Trust Index registry",
+        "description": "Every assessed model/tool, certified and self-reported alike, newest first.",
+        "operationId": "BrowseRegistry",
+        "x-ms-summary": "Browse the Trust Index registry",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "default": 50,
+            "description": "Max results, 1 to 200",
+            "x-ms-summary": "Limit"
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "default": 0,
+            "description": "Pagination offset",
+            "x-ms-summary": "Offset"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Registry page",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "registry": { "type": "array", "items": { "type": "object" } },
+                "limit": { "type": "integer" },
+                "offset": { "type": "integer" }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,28 @@
+services:
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: responsibleai:0.5.0
+    container_name: responsibleai-dashboard
+    restart: unless-stopped
+    ports:
+      - "8765:8765"
+    volumes:
+      - rai-data:/data
+    env_file:
+      - .env
+    environment:
+      RAI_DB_PATH: /data/responsibleai.db
+      RAI_LOG_JSON: "true"
+      RAI_AUTH_ENABLED: "true"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8765/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  rai-data:
+    driver: local

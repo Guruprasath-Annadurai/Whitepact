@@ -1,0 +1,16 @@
+{
+  "_comment": "Example AgentCore Gateway MCP target registration for WhitePact. Not a real credential -- apiKeyValue is a placeholder. Provisioning a live Gateway is a founder action (requires an AWS account/Bedrock AgentCore access).",
+  "targetName": "whitepact",
+  "targetType": "mcp",
+  "mcpServer": {
+    "transport": "streamable-http",
+    "endpoint": "https://whitepact-mcp-http.onrender.com/mcp",
+    "authentication": {
+      "type": "apiKey",
+      "headerName": "Authorization",
+      "headerValuePrefix": "Bearer ",
+      "apiKeyValue": "<STORE_IN_AWS_SECRETS_MANAGER_NOT_HERE>"
+    }
+  },
+  "toolCatalogSyncNote": "Re-sync this target's cached tool catalog after any WhitePact version bump that changes the 27-tool count -- see docs/integrations/aws-agentcore.md."
+}

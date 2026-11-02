@@ -1,0 +1,125 @@
+# Enterprise Security Posture — WhitePact Platform v1.2.0
+
+This document answers the questions a security/procurement team asks before
+approving a vendor. It states current fact, not aspiration — where a control
+isn't implemented yet, that's said plainly rather than implied.
+
+For vulnerability disclosure, see [SECURITY.md](SECURITY.md). For SLA/uptime
+commitments, see [SLA.md](SLA.md).
+
+---
+
+## Encryption at rest
+
+Encryption at rest is the deployer's responsibility, not something the
+application layer provides on top of the database — this is standard for
+self-hosted software and worth being explicit about:
+
+| Database backend | Encryption at rest |
+|---|---|
+| SQLite (default, self-hosted) | **Not encrypted by the application.** The `.db` file is plaintext on disk unless the host filesystem/volume is encrypted (LUKS, dm-crypt, encrypted EBS/PD volume, FileVault, BitLocker). **Not used by the live reference deployment** — Render's free tier has no persistent local disk at all, which is exactly why that deployment uses managed Postgres (Supabase) rather than in-container SQLite; this row applies to self-hosted deployments choosing the SQLite default. |
+| PostgreSQL (recommended for production, `RAI_DATABASE_URL`) | Encryption at rest depends on your Postgres provider. Managed services (AWS RDS, GCP Cloud SQL, Azure Database for PostgreSQL, Supabase) encrypt storage by default. **The live reference deployment uses Supabase's managed Postgres**, which encrypts data at rest by default as part of its SOC 2 Type II / ISO 27001-certified infrastructure — self-managed Postgres on other providers still requires disk-level encryption configured separately. |
+| Redis (optional, rate limiting only) | Redis stores rate-limit counters, never governance data, PII, or credentials. Encryption at rest is not required for this use case but is unaffected by our config either way — follow your Redis provider's defaults. |
+
+**What the application layer does guarantee regardless of disk encryption:**
+- API keys are never stored in plaintext — only SHA-256 hashes (`org_api_keys.key_hash`). A raw key is shown exactly once at creation and cannot be recovered from the database.
+- Stripe secrets, OIDC client secrets, and webhook HMAC secrets are read from environment variables, never written to the database.
+- Webhook payloads are HMAC-SHA256 signed in transit (`X-RAI-Signature-256`), independent of storage encryption.
+
+**Encryption in transit:** TLS termination is the deployer's responsibility (reverse proxy / load balancer / ingress). The application itself speaks plain HTTP — see `DEPLOYMENT.md` for the recommended nginx TLS config, which **must** be configured for TLS 1.2+ with PFS-only (ephemeral-key) cipher suites — see that document's own section for the exact directives, not left to the proxy's un-audited defaults.
+
+**Perfect forward secrecy — verified, not assumed:** the live reference deployment (`whitepact.com`, Render's edge) was checked directly with Python's `ssl` module during this security review and negotiates **TLS 1.3** (`TLS_AES_256_GCM_SHA384`) — TLS 1.3 removed static (non-ephemeral) key exchange from the protocol entirely, so every TLS 1.3 connection is PFS by construction, not a configuration choice that could silently regress. Outbound HTTPS calls this application itself makes (OIDC JWKS fetches in `auth/oidc.py`, webhook deliveries in `webhooks/manager.py`) use the same underlying `ssl`/OpenSSL stack and inherit the same guarantee against any peer that itself supports TLS 1.2+ with modern ciphers — this project does not pin or restrict outbound TLS versions/ciphers beyond Python's own current defaults (which have not permitted SSLv3/TLS 1.0/1.1 or non-PFS cipher suites by default in any Python version this codebase supports).
+
+**Partially resolved, stated honestly:** `audit_log.ip_address` — the platform's one standalone PII field that isn't tied to your own LLM-provider account or Stripe billing relationship — now supports opt-in field-level encryption (Fernet, AES-128-CBC + HMAC) via `RAI_FIELD_ENCRYPTION_KEY`, independent of whatever disk-level encryption your database host provides. Off by default so existing installs aren't broken by a new required key; see `.env.example`. This is not transparent database encryption (no SQLCipher, no pgcrypto column encryption across every column) — it covers the one column that's actually PII today. Other columns (`metadata` free-text fields on `token_usage`/`trust_scores`) aren't encrypted; flag it during evaluation if your data model puts sensitive values there.
+
+---
+
+## Data residency
+
+WhitePact is self-hosted by default. **You control where your data lives** because you control the infrastructure — there is no WhitePact-operated cloud region your data passes through unless you explicitly configure one (e.g. calling OpenAI/Anthropic/Google APIs from the cost-tracking or eval modules, which is opt-in per your own provider configuration).
+
+| Deployment mode | Data location |
+|---|---|
+| Self-hosted (Docker / Helm / bare-metal) | Entirely within your infrastructure and region. No data leaves your network unless you configure outbound integrations (webhooks, LLM provider APIs, Stripe billing, OTLP telemetry export) — all of which are optional and explicitly configured. |
+| Live reference deployment | **Not self-hosted** — a managed three-vendor stack: Render (compute, US/Oregon region), Supabase (Postgres, `aws-1-us-west-2`), Upstash (Redis). See `compliance/CAIQ_SELF_ASSESSMENT.md` Domain 6 for full detail on each vendor's region and constraints. |
+| Hosted MCP (`responsibleai-mcp-http`), self-operated | Same as above — this is a transport option you run yourself, not a managed service we operate. |
+| A future WhitePact-operated SaaS tier | **Not yet available.** No such offering exists today. If/when one ships, this document will be updated with the specific region(s), sub-processor list, and data flow diagram before it's sold as a data-residency-compliant product. |
+
+**Third-party data flows that exist only if you enable them:**
+- LLM provider calls (OpenAI, Anthropic, Google, etc.) — your API keys, your account, your provider's data handling terms apply.
+- Stripe (billing) — customer/subscription metadata only (see `billing/stripe_service.py`); no governance data is sent to Stripe.
+- OTLP telemetry export — opt-in via `RAI_OTEL_ENDPOINT`; sends operational metrics/traces to your configured collector, not governance data.
+- OIDC/SSO provider — authentication claims only, per your IdP configuration.
+
+---
+
+## Audit trail integrity
+
+Every API request is logged to the `audit_log` table (endpoint, method, org, key, status, timing — never request/response bodies). As of v1.2.0, entries are **hash-chained**: each entry's hash is computed from its own fields plus the previous entry's hash (`entry_hash = sha256(prev_hash + fields)`), so any row edited or deleted directly against the database breaks the chain at that point.
+
+- Verify integrity: `GET /api/audit/verify` (super-admin only) recomputes the chain and reports the first broken link, if any.
+- Export for SIEM/compliance evidence: `GET /api/audit/export` (CSV, includes `entry_hash`/`prev_hash`) or `GET /api/audit` (JSON).
+- Retention: configurable via `AuditRepository.cleanup(retention_days=N)`; not run automatically — schedule it per your compliance retention policy.
+
+**Stated honestly — what this does and doesn't protect against:**
+- Detects: accidental or malicious row edits/deletes made directly against the database outside the application (the common tamper scenario auditors ask about).
+- Does not detect: an attacker with full database write access recomputing the entire chain from scratch. No hash chain without external anchoring (e.g. periodic publication to write-once storage) can defend against that — we don't claim otherwise.
+- Chain scope: process-local. Each server replica maintains its own chain over its own writes; this is not a single global chain across a multi-replica deployment. Verification reports on whichever database it's pointed at.
+
+---
+
+## SSO / authentication
+
+- **OIDC (OAuth2 Authorization Code flow)** is supported — configure `RAI_OIDC_ISSUER`, `RAI_OIDC_CLIENT_ID`, `RAI_OIDC_CLIENT_SECRET`. Login: `GET /api/auth/login/oidc`, callback: `GET /api/auth/callback`.
+- **SAML 2.0** is supported, independently of OIDC — configure `RAI_SAML_IDP_ENTITY_ID`, `RAI_SAML_IDP_SSO_URL`, `RAI_SAML_IDP_X509_CERT`, and `RAI_SAML_SESSION_SECRET`. Login: `GET /api/auth/login/saml`, Assertion Consumer Service: `POST /api/auth/acs`, SP metadata for the IdP-side setup: `GET /api/auth/saml/metadata`. Both SP-initiated (starts at `/api/auth/login/saml`) and IdP-initiated (user starts from their IdP's application dashboard) flows are supported. Signature verification is delegated to `signxml` against the configured IdP certificate — see `src/responsibleai/auth/saml.py`'s module docstring for the XML-signature-wrapping defense this specifically guards against, and `tests/test_saml.py` for the real signed-assertion round-trip and rejection tests (tampered assertion, wrong signing cert, expired assertion, wrong audience, replayed/mismatched request ID). Unlike OIDC, SAML has no bearer-token concept — a consumed assertion isn't a repeatable API credential — so a successful SAML login mints WhitePact's own short-lived (1 hour), HMAC-signed session token, not a forwarded IdP token.
+- **SSO enforcement**: an org can require SSO-only login via `PUT /api/orgs/{id}/sso {"sso_required": true}` (OWNER role). Once enabled, that org's static API keys stop authenticating — every request must present a valid OIDC-issued or SAML-session Bearer token. This closes the common gap where a departed employee's static API key remains a valid backdoor after SSO rollout.
+
+---
+
+## RBAC
+
+Four roles, strictly hierarchical: `OWNER > ADMIN > ANALYST > VIEWER`. Every endpoint declares its minimum required role via `require_role(...)`. Org-scoped API keys can only act within their own org; only legacy super-admin keys (flat `RAI_API_KEYS`, not tied to an org) can act across orgs — and that cross-org capability is itself logged in the audit trail per request.
+
+---
+
+## Multi-tenancy isolation
+
+All governance data (trust scores, cost/token usage, audit log, MCP tool call metering) carries an `org_id` column and every repository method filters by it. Cross-org data leakage is a defect if found — file it under `SECURITY.md`'s scope, not a feature request.
+
+---
+
+## What's not covered here
+
+- SOC2 / ISO 27001 certification status — see `SLA.md` and ask directly; certification is a roadmap item, not a current claim.
+- Penetration test reports — request current status directly; not published in this repo.
+- A signed Data Processing Agreement — a draft template with the current sub-processor list (Render, Supabase, Upstash, Stripe, customer's own OIDC/LLM choices) exists at `compliance/DPA_TEMPLATE.md`, explicitly marked as unreviewed by counsel; not something to treat as an executable contract yet.
+
+---
+
+## Summary: what you can expect vs. what you cannot assume
+
+Everything below is a pointer back into the sections above — nothing new
+is claimed here that isn't already stated with detail elsewhere in this
+document. This section exists so a security/procurement reviewer doesn't
+have to reconstruct the two lists themselves from prose.
+
+**You can expect:**
+
+- API keys are never stored in plaintext (SHA-256 hash only, shown once at creation) — see "Encryption at rest."
+- Stripe secrets, OIDC client secrets, and webhook HMAC secrets live only in environment variables, never in the database — see "Encryption at rest."
+- Webhook payloads are HMAC-SHA256 signed in transit, independent of storage encryption — see "Encryption at rest."
+- The live reference deployment (`whitepact.com`) negotiates TLS 1.3 with PFS-by-construction, independently verified during this review, not assumed — see "Encryption at rest."
+- Self-hosted deployments keep all data within your own infrastructure unless you explicitly configure an outbound integration (webhook, LLM provider call, Stripe, OTLP export) — see "Data residency."
+- `audit_log` entries are hash-chained and independently verifiable via `GET /api/audit/verify`, detecting any row edited or deleted directly against the database outside the application — see "Audit trail integrity."
+- Every governance-data table carries `org_id` and every repository method filters by it; a cross-tenant leak is treated as a security defect, not a feature gap — see "Multi-tenancy isolation."
+- SSO enforcement, once turned on for an org, disables that org's static API keys — a departed employee's key stops working the moment SSO is required, not just recommended — see "SSO / authentication."
+
+**You cannot assume:**
+
+- **No independent penetration test has been performed on this codebase, and none is claimed.** `compliance/INTERNAL_SECURITY_REVIEW.md` is a self-review by the same person who maintains the code — real, but not independent oversight. Request current pentest status directly; do not infer one exists from this document's thoroughness.
+- **No SOC 2 or ISO 27001 certification exists.** See `SLA.md` for the honest alternative-evidence path (`compliance/SOC2_ALTERNATIVE_PATH.md`) — self-attested OpenSSF badges are not equivalent to independent certification.
+- **The audit-log hash chain cannot detect an attacker with full database write access who recomputes the entire chain from scratch.** It defends against the far more common tamper scenario (a partial edit/delete against an otherwise-untouched chain), not a total-compromise scenario — see "Audit trail integrity." The chain is also process-local, not a single global chain across a multi-replica deployment.
+- **Encryption at rest is not guaranteed by the application for every deployment mode.** The SQLite default is plaintext-on-disk unless the host volume is encrypted; only the live reference deployment's managed Postgres (Supabase) and one PII column (`audit_log.ip_address`, opt-in) have encryption-at-rest guarantees this document actually stands behind — see "Encryption at rest."
+- **Any LLM provider you configure (OpenAI, Anthropic, Google, etc.) is a third-party dependency outside WhitePact's control.** Your API keys, your provider account, your provider's own data handling and retention terms apply to whatever you send it — WhitePact's cost-tracking and eval modules call these APIs only when you configure them to, but cannot alter or audit what the provider itself does with the request once sent. Provider outages, policy changes, or data-handling practices are a risk you inherit by choice of provider, not something this platform mitigates — see "Data residency."
+
+This document is updated alongside the platform. If you find a claim here that's stale relative to the code, treat the code as ground truth and report the discrepancy per `SECURITY.md`.

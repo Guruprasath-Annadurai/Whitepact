@@ -1,0 +1,37 @@
+{
+  "nav.group.overview": "Overview",
+  "nav.group.evaluate": "Evaluate",
+  "nav.group.cost_trust": "Cost & Trust",
+  "nav.group.governance": "Governance",
+  "nav.group.account": "Account",
+
+  "nav.overview": "Dashboard",
+  "nav.evaluate": "Evaluate Model",
+  "nav.guardrails": "Guardrails",
+  "nav.hallucination": "Hallucination",
+  "nav.eval": "Compare & Benchmark",
+  "nav.redteam": "Red Team",
+  "nav.cost": "Cost Intelligence",
+  "nav.router": "Model Router",
+  "nav.trust_scores": "Trust Scores",
+  "nav.leaderboard": "Leaderboard",
+  "nav.audit": "Audit Log",
+  "nav.incidents": "Incidents",
+  "nav.incident_db": "Incident Database",
+  "nav.webhooks": "Webhooks",
+  "nav.organizations": "Organizations & Access",
+  "nav.billing": "Billing",
+  "nav.settings": "Settings",
+
+  "topbar.toggle_nav": "Toggle navigation",
+  "topbar.toggle_theme": "Toggle theme",
+  "topbar.logout": "Logout",
+  "topbar.signup": "Sign up",
+  "topbar.login": "Login",
+  "topbar.locale_label": "Language",
+
+  "toast.results_count": {
+    "one": "{count} result",
+    "other": "{count} results"
+  }
+}
