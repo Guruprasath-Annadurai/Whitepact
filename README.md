@@ -6,6 +6,8 @@
 
 ### Intelligence may propose. WhitePact decides.
 
+**WhitePact v1.2.6** · [whitepact.com](https://whitepact.com) · [GitHub: Guruprasath-Annadurai/Whitepact](https://github.com/Guruprasath-Annadurai/Whitepact)
+
 **Runtime governance and assurance for AI agents, automated workflows and MCP-connected systems.**
 
 [Python package](https://pypi.org/project/rai-governance-platform/) · [MCP Registry](https://registry.modelcontextprotocol.io/) · [Smithery listing](https://smithery.ai/servers/guruprasathannadurai-official/whitepact) · [Report a security issue](mailto:annaduraiguruprasath7@gmail.com?subject=WhitePact%20Security)
