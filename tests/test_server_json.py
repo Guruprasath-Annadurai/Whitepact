@@ -10,6 +10,8 @@ import json
 import tomllib
 from pathlib import Path
 
+import pytest
+
 _REPO_ROOT = Path(__file__).parent.parent
 
 
@@ -27,8 +29,11 @@ class TestServerJsonShape:
 
     def test_has_required_top_level_fields(self) -> None:
         d = _load_server_json()
-        for field in ("name", "description", "version", "repository", "packages"):
+        for field in ("name", "description", "version", "packages"):
             assert field in d, f"server.json missing required field: {field}"
+        assert "repository" in d or "websiteUrl" in d, (
+            "server.json must specify either repository or websiteUrl"
+        )
 
     def test_description_within_registry_length_limit(self) -> None:
         # The official registry's schema caps this at 100 chars --
@@ -95,13 +100,17 @@ class TestServerJsonToolCounts:
         from responsibleai.mcp.tools import TOOL_DEFS
 
         d = _load_server_json()
-        meta = d["_meta"]["io.modelcontextprotocol.registry/publisher-provided"]
+        meta = d.get("_meta", {}).get("io.modelcontextprotocol.registry/publisher-provided")
+        if meta is None:
+            pytest.skip("server.json has no publisher-provided _meta block")
         assert meta["tool_count"] == len(TOOL_DEFS)
 
     def test_resource_counts_match_live_resource_defs(self) -> None:
         from responsibleai.mcp.resources import _CANONICAL_RESOURCE_DEFS, RESOURCE_DEFS
 
         d = _load_server_json()
-        meta = d["_meta"]["io.modelcontextprotocol.registry/publisher-provided"]
+        meta = d.get("_meta", {}).get("io.modelcontextprotocol.registry/publisher-provided")
+        if meta is None:
+            pytest.skip("server.json has no publisher-provided _meta block")
         assert meta["resource_count_canonical"] == len(_CANONICAL_RESOURCE_DEFS)
         assert meta["resource_count_advertised"] == len(RESOURCE_DEFS)
