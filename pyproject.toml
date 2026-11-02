@@ -72,7 +72,8 @@ dashboard = [
 postgres   = ["asyncpg>=0.29.0"]
 redis      = ["limits[redis]>=3.6.0"]
 telemetry  = [
-    "opentelemetry-sdk>=1.24.0",
+    "opentelemetry-api>=1.45.1",  # CVE-2026-114603 fixed; ADK must remain isolated
+    "opentelemetry-sdk>=1.45.1",
     "opentelemetry-exporter-otlp-proto-http>=1.24.0",
     "opentelemetry-instrumentation-fastapi>=0.45b0",
     "opentelemetry-instrumentation-httpx>=0.45b0",
@@ -95,6 +96,11 @@ billing    = ["stripe>=9.0.0"]
 # google-adk 2.5.0 as of this writing (2026-07-25).
 langchain  = ["langchain>=1.0.0"]
 langgraph  = ["langgraph>=1.0.0"]
+# Independent Google ADK adapter only. As of 2026-11-02 the tested
+# google-adk<=2.13.0 dependency closure caps opentelemetry-api<=1.44,
+# conflicting with the CVE-2026-114603 patched floor >=1.45.1.
+# Do not install this extra in core/dev CI, SaaS, or telemetry environments.
+# Treat this path as QUARANTINED until independently qualified.
 adk        = ["google-adk>=2.0.0"]
 # A2A (Agent2Agent protocol, src/responsibleai/integrations/a2a_adapter.py)
 # -- only needed for extract_agent_and_message()'s optional real-SDK
@@ -104,7 +110,9 @@ adk        = ["google-adk>=2.0.0"]
 # module's docstring for the duck-typed, best-effort caveat this
 # implies.
 a2a        = ["a2a-sdk>=0.1.0"]
-agent-frameworks = ["rai-governance-platform[langchain,langgraph,adk,a2a]"]
+# Secure default agent adapters: excludes quarantined Google ADK integration.
+# Explicit [adk] users must validate in a separate isolated environment.
+agent-frameworks = ["rai-governance-platform[langchain,langgraph,a2a]"]
 # Optional VADER sentiment-divergence scoring (src/biasbuster/core/scoring.py).
 # Not installed by default. nltk 3.9.4 carried four known advisories;
 # three (PYSEC-2026-3582/3583/3584) are fixed in 3.10.0, verified by
@@ -139,7 +147,8 @@ dev = [
     "aiosqlite>=0.19.0",
     "websockets>=12.0",
     "prometheus-client>=0.20.0",
-    "opentelemetry-sdk>=1.24.0",
+    "opentelemetry-api>=1.45.1",  # CVE-2026-114603 fixed; ADK must remain isolated
+    "opentelemetry-sdk>=1.45.1",
     "opentelemetry-exporter-otlp-proto-http>=1.24.0",
     "opentelemetry-instrumentation-fastapi>=0.45b0",
     "opentelemetry-instrumentation-httpx>=0.45b0",
@@ -147,7 +156,8 @@ dev = [
     "pyotp>=2.9.0",
     "langchain>=1.0.0",
     "langgraph>=1.0.0",
-    "google-adk>=2.0.0",
+    # Google ADK deliberately excluded from the standard dev environment.
+    # Qualify [adk] independently after Google ADK supports patched OTel API.
     "hypothesis>=6.100.0",
     "PyYAML>=6.0.3",
 ]
