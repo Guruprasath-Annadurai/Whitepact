@@ -12,3 +12,5 @@ wiki/Authentication-and-RBAC.md:curl-auth-header:26
 wiki/Authentication-and-RBAC.md:curl-auth-header:66
 wiki/Authentication-and-RBAC.md:curl-auth-header:75
 wiki/Authentication-and-RBAC.md:curl-auth-header:86
+# Historic OSS-export commit only: SAML wrong-signer test contained parameter names for ephemeral in-memory test keys, not an embedded credential.
+72bffd113545936d2be4c64646b6cf694fe4284c:tests/test_saml.py:generic-api-key:252
