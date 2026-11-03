@@ -1,0 +1,33 @@
+{
+  "archives": [
+    {
+      "member_count": 22,
+      "path": "dist/whitepact_community-0.1.0a1-py3-none-any.whl",
+      "problems": []
+    },
+    {
+      "member_count": 45,
+      "path": "dist/whitepact_community-0.1.0a1.tar.gz",
+      "problems": []
+    }
+  ],
+  "ok": true,
+  "problems": [],
+  "static_imports": [
+    "__future__",
+    "click",
+    "dataclasses",
+    "datetime",
+    "enum",
+    "fnmatch",
+    "hashlib",
+    "json",
+    "logging",
+    "pathlib",
+    "pydantic",
+    "sys",
+    "typing",
+    "uuid",
+    "whitepact_community"
+  ]
+}

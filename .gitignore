@@ -27,6 +27,8 @@ venv/
 !examples/aws-agentcore/*.json
 !.cursor-example/*.json
 !.cursor-plugin/*.json
+!packages/whitepact-community/docs/**/*.json
+!packages/whitepact-community/docs/receipts/**/*.jsonl
 htmlcov/
 .coverage
 coverage.xml
