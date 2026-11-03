@@ -1,0 +1,3 @@
+clean wheel install py3.11.18: ok
+wpc run-local: ALLOW
+wpc deny-demo: exit 3

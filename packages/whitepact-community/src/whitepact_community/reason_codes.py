@@ -1,0 +1,31 @@
+"""Stable reason-code vocabulary for community governance decisions."""
+
+from __future__ import annotations
+
+from enum import StrEnum
+
+
+class ReasonCode(StrEnum):
+    AUTHORITY_NOT_DELEGATED = "AUTHORITY_NOT_DELEGATED"
+    AUTHORITY_EXPIRED = "AUTHORITY_EXPIRED"
+    AUTHORITY_REVOKED = "AUTHORITY_REVOKED"
+    ACTION_NOT_ALLOWED = "ACTION_NOT_ALLOWED"
+    TARGET_NOT_ALLOWED = "TARGET_NOT_ALLOWED"
+    VALUE_LIMIT_EXCEEDED = "VALUE_LIMIT_EXCEEDED"
+    POLICY_EXPLICIT_DENY = "POLICY_EXPLICIT_DENY"
+    POLICY_REQUIRES_APPROVAL = "POLICY_REQUIRES_APPROVAL"
+    POLICY_DENY_BY_DEFAULT = "POLICY_DENY_BY_DEFAULT"
+    IDENTITY_QUARANTINED = "IDENTITY_QUARANTINED"
+    INVALID_TOOL_INPUT = "INVALID_TOOL_INPUT"
+    CONFIGURATION_INVALID = "CONFIGURATION_INVALID"
+    ENTERPRISE_CAPABILITY_UNAVAILABLE = "ENTERPRISE_CAPABILITY_UNAVAILABLE"
+    AUTHORIZATION_REPLAY = "AUTHORIZATION_REPLAY"
+    AUTHORIZATION_EXPIRED = "AUTHORIZATION_EXPIRED"
+    AUTHORIZATION_MISMATCH = "AUTHORIZATION_MISMATCH"
+
+
+def format_reason(code: ReasonCode, /, **details: object) -> str:
+    if not details:
+        return code.value
+    detail = ";".join(f"{key}={value}" for key, value in details.items())
+    return f"{code.value}:{detail}"

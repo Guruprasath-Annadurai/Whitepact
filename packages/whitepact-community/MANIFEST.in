@@ -1,0 +1,7 @@
+include LICENSE README.md pyproject.toml
+recursive-include src/whitepact_community *
+recursive-include tests *
+recursive-include scripts *
+recursive-include docs *
+recursive-include security *
+global-exclude *.py[cod] __pycache__ .pytest_cache

@@ -1,0 +1,7 @@
+wpc version: ok
+wpc run-local: ALLOW echo qualify
+wpc deny-demo: exit 3 DENY AUTHORITY_NOT_DELEGATED
+wpc mcp diagnose: 4 tools, requires_saas_account=false
+wpc enterprise billing_checkout: exit 4 CommunityCapabilityUnavailable
+MCP stdio initialize/tools.list/local_echo ALLOW / tenant_admin DENY: ok
+fail-closed denylist injection: rc=1

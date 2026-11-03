@@ -1,0 +1,2 @@
+Checking dist/whitepact_community-0.1.0a1-py3-none-any.whl: PASSED
+Checking dist/whitepact_community-0.1.0a1.tar.gz: PASSED

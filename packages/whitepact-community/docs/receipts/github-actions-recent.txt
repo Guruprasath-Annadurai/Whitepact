@@ -1,0 +1,5 @@
+completed	success	release(oss): WhitePact 1.2.6 source candidate — current-head requalification pending	CI	release/1.2.6-oss	pull_request	41419029773	6m0s	2026-11-02T09:14:33Z
+completed	failure	release(oss): WhitePact 1.2.6 source candidate — current-head requalification pending	Dependency Review	release/1.2.6-oss	pull_request	41419029626	31s	2026-11-02T09:14:33Z
+completed	success	release(oss): WhitePact 1.2.6 source candidate — current-head requalification pending	Gitleaks	release/1.2.6-oss	pull_request	41419029619	18s	2026-11-02T09:14:33Z
+completed	success	release(oss): WhitePact 1.2.6 source candidate — current-head requalification pending	DCO	release/1.2.6-oss	pull_request	41419029615	22s	2026-11-02T09:14:33Z
+completed	failure	release(oss): WhitePact 1.2.6 source candidate — current-head requalification pending	Dependency Review	release/1.2.6-oss	pull_request	41418379363	7s	2026-11-02T09:09:37Z
