@@ -1,0 +1,88 @@
+[build-system]
+requires = ["hatchling==1.32.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "whitepact-community"
+version = "0.1.0a1"
+description = "WhitePact Community Core — local governance SDK, MCP stdio server, and CLI with deny-by-default policy evaluation. Separable from private SaaS infrastructure."
+readme = "README.md"
+license = { file = "LICENSE" }
+authors = [{ name = "Guruprasath Annadurai", email = "annaduraiguruprasath7@gmail.com" }]
+keywords = [
+    "whitepact",
+    "ai-governance",
+    "mcp",
+    "policy",
+    "runtime-authority",
+    "community",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Security",
+    "Typing :: Typed",
+]
+requires-python = ">=3.11"
+dependencies = [
+    "click>=8.1.0",
+    "pydantic>=2.0.0",
+]
+
+[project.optional-dependencies]
+mcp = [
+    # Pre-2.0 camelCase Tool/Resource kwargs; migrate deliberately.
+    "mcp>=1.0.0,<2.0.0",
+    "anyio>=4.0.0",
+]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "ruff>=0.5.0",
+    "mypy>=1.10.0",
+    "build>=1.2.0",
+    "twine>=5.0.0",
+    "whitepact-community[mcp]",
+]
+
+[project.scripts]
+whitepact-community = "whitepact_community.cli:main"
+wpc = "whitepact_community.cli:main"
+whitepact-community-mcp = "whitepact_community.mcp_server:main"
+
+[project.urls]
+Homepage = "https://github.com/Guruprasath-Annadurai/Whitepact"
+Documentation = "https://github.com/Guruprasath-Annadurai/Whitepact/tree/main/packages/whitepact-community"
+Issues = "https://github.com/Guruprasath-Annadurai/Whitepact/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/whitepact_community"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/src/whitepact_community",
+    "/tests",
+    "/scripts",
+    "/docs",
+    "/security",
+    "/README.md",
+    "/LICENSE",
+    "/pyproject.toml",
+    "/MANIFEST.in",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+packages = ["whitepact_community"]

@@ -1,0 +1,50 @@
+{
+  "spdxVersion": "SPDX-2.3",
+  "dataLicense": "CC0-1.0",
+  "SPDXID": "SPDXRef-DOCUMENT",
+  "name": "whitepact-community-0.1.0a1",
+  "documentNamespace": "https://github.com/Guruprasath-Annadurai/Whitepact/packages/whitepact-community@0.1.0a1",
+  "creationInfo": {
+    "created": "2026-11-03T07:23:00Z",
+    "creators": [
+      "Tool: cursor-a005"
+    ]
+  },
+  "packages": [
+    {
+      "name": "annotated-types",
+      "SPDXID": "SPDXRef-annotated-types",
+      "versionInfo": "0.8.0",
+      "downloadLocation": "NOASSERTION",
+      "licenseConcluded": "NOASSERTION"
+    },
+    {
+      "name": "click",
+      "SPDXID": "SPDXRef-click",
+      "versionInfo": "8.5.0",
+      "downloadLocation": "NOASSERTION",
+      "licenseConcluded": "NOASSERTION"
+    },
+    {
+      "name": "pydantic",
+      "SPDXID": "SPDXRef-pydantic",
+      "versionInfo": "2.14.2",
+      "downloadLocation": "NOASSERTION",
+      "licenseConcluded": "NOASSERTION"
+    },
+    {
+      "name": "typing-inspection",
+      "SPDXID": "SPDXRef-typing-inspection",
+      "versionInfo": "0.4.4",
+      "downloadLocation": "NOASSERTION",
+      "licenseConcluded": "NOASSERTION"
+    },
+    {
+      "name": "whitepact-community",
+      "SPDXID": "SPDXRef-whitepact-community",
+      "versionInfo": "0.1.0a1",
+      "downloadLocation": "NOASSERTION",
+      "licenseConcluded": "NOASSERTION"
+    }
+  ]
+}

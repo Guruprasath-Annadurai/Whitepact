@@ -1,0 +1,27 @@
+# Fail-closed denylist: if any of these path prefixes appear inside a
+# whitepact-community wheel or sdist, package qualification MUST fail.
+# Paths are matched as substrings against archive member names.
+responsibleai/billing/
+responsibleai/dashboard/
+responsibleai/db/
+responsibleai/auth/
+responsibleai/webhooks/
+responsibleai/rbac/
+responsibleai/mcp/licensing.py
+stripe_service.py
+billing.html
+signup_guard.py
+plan_rate_limiter.py
+FOUNDER_ACTION_CHECKLIST.md
+GAME_CHANGER_STRATEGY.md
+GAME_CHANGER_BUILD_PLAN.md
+STRATEGY_ROADMAP.md
+SALES_TARGETING.md
+INSURANCE_PARTNERSHIP_PITCH.md
+DPA_ATTORNEY_SCOPE_BRIEF.md
+NO_BUDGET_TRUST_PATH.md
+SOC2_ALTERNATIVE_PATH.md
+TABLETOP_EXERCISE_2026-07-21.md
+INTERNAL_SECURITY_REVIEW.md
+COMPLIANCE_STARTER_KIT_OFFER.md
+OEM_LICENSING.md
